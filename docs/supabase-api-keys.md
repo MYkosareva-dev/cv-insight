@@ -36,7 +36,7 @@ const supabase = createClient(
 ```
 
 > **ANNOTATION:** this is the key `NEXT_PUBLIC_SUPABASE_ANON_KEY` holds. The variable
-> keeps its name for continuity with the rest of the sprint's docs; the *role* is
+> keeps its name for continuity with SPEC.md Block H and `.env.example`; the *role* is
 > identical, which is why nothing in `lib/supabase/` changed when the panel did. The
 > corresponding admin snippet in the same upstream guide — a client built with the
 > secret key — is **deliberately not quoted here.** It is a copy-paste-ready line

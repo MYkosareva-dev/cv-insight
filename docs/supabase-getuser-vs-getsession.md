@@ -225,10 +225,13 @@ export async function updateProfile(formData: FormData) {
 > **ANNOTATION — this is the pattern the Data access rules are about.** Every Server Action is a
 > publicly callable endpoint, so each one re-derives the user with `getUser()` and
 > refuses to run without one. Two adaptations for CV Insight:
-> 1. The check belongs in **`lib/db/*`** (marked `server-only`), not repeated inline
->    per action — the DAL is the authoritative gate and it derives `user.id` itself. A
->    Server Action must never accept a user id from the client (CLAUDE.md "Data access rules").
+> 1. The check is NOT repeated inside `lib/db/*`. The DALs (marked `server-only`) run
+>    under the user's session and rely on RLS to scope every statement to `auth.uid()` —
+>    see the comment on `getUser` in `lib/supabase/server.ts`. `getUser()` is called
+>    where a decision is actually made: the member layout, `lib/auth/requireApiUser.ts`,
+>    `src/middleware.ts`, and the two model-call gates. Either way, a Server Action must
+>    never accept a user id from the client (CLAUDE.md "Data access rules").
 > 2. The action derives `email` from `formData` but takes **`user.id` from `getUser()`**,
->    never from the payload. Same discipline for every notes mutation: the note id may
+>    never from the payload. Same discipline for every mutation: a career item id may
 >    come from the client, the owner id never does — and the query still carries
 >    `.eq('user_id', user.id)` (CLAUDE.md "Data access rules").

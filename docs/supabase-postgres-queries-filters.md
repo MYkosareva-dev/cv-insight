@@ -28,9 +28,9 @@ const { data } = supabase
 ```
 
 > **ANNOTATION — this is the shape of every query in `lib/db/*`.** Note *why* the
-> official docs recommend the duplicate filter: query planning. Rule 7 requires it for a
-> second reason — defense in depth, so a missing or mis-scoped RLS policy is not the only
-> thing standing between two users' notes.
+> official docs recommend the duplicate filter: query planning. This project requires it
+> for a second reason — defense in depth, so a missing or mis-scoped RLS policy is not
+> the only thing standing between two users' career bases.
 >
 > Two adaptations:
 > 1. `userId` must come from `await supabase.auth.getUser()` inside the DAL — never from
@@ -83,10 +83,10 @@ Demonstrates the general composition pattern: `.eq()` filter followed by `.order
 > `await`, an explicit column list in `.select()` rather than `*`, `.eq()` before
 > `.order()`, and `error` destructured alongside `data`.
 >
-> For the notes list: name the columns explicitly so a later schema addition cannot
-> silently start shipping a new column to the client, and derive any `.limit()` from
-> `LIMITS` in code — never a typed-out number (rules 10 and 11 — import constants, never
-> redeclare them).
+> For a list query (the career base, the applications list): name the columns explicitly
+> so a later schema addition cannot silently start shipping a new column to the client,
+> and derive any `.limit()` from the shared `LIMITS` constants rather than typing a
+> number — a redeclared limit drifts from the one the UI and SPEC agree on.
 
 ---
 
@@ -155,8 +155,8 @@ Canonical documentation example from the Supabase API docs showing the .in() fil
 > `@supabase/postgrest-js` type definitions in `node_modules`) first.
 >
 > Also note: **SPEC.md is the source of truth for whether CV Insight has such a column at all.** If
-> an app table has no array or `jsonb` column this sprint, `.contains()` has no
-> caller and adding one would be inventing scope (rules 17 and "do not invent"). Check
+> no app table has an array or `jsonb` column, `.contains()` has no caller and adding
+> one would be inventing scope this project has not asked for. Check
 > SPEC.md Block B before writing any containment query, and remember any column that
 > would need one is a schema change that goes through `supabase/migrations/001_init.sql` (SPEC Block C).
 

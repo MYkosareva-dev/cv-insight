@@ -74,8 +74,8 @@ export async function createClient() {
 
 > **ANNOTATION:** This is the shape we want for our server client — the session lives
 > in **cookies only**, via `getAll`/`setAll`. Do not swap in a custom `storage` adapter
-> (see the browser section below) and never put session or note data in
-> `localStorage`/`sessionStorage` (CLAUDE.md "Authentication rules").
+> (see the browser section below) and never put session data, career items or vacancy
+> text in `localStorage`/`sessionStorage` (CLAUDE.md "Authentication rules").
 
 > **ANNOTATION — key name:** the snippet uses `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 > (Supabase's newer name for the public key). This project uses the **anon key** under
@@ -133,10 +133,13 @@ const { data, error } = await supabase.auth.signInWithPassword({
 > 1. **Never hardcode the URL, the key, or an email address.** Read URL and key from
 >    `process.env.NEXT_PUBLIC_*`; hardcoded email addresses are banned outright
 >    (CLAUDE.md "Secrets"), including in examples and placeholders.
-> 2. `createBrowserClient` already stores the session in cookies — that is the point of
->    `@supabase/ssr`. Use it only where a client component genuinely needs a Supabase
->    client. **All notes data access goes through `lib/db/*` on the server**
->    (CLAUDE.md "Data access rules"), so a browser client must never touch an app table.
+> 2. `createBrowserClient` is **BANNED in this project** — do not copy this snippet at
+>    all. It stores the session in cookies via `document.cookie`, which can never be
+>    `httpOnly`; using it anywhere would make the httpOnly session rule unachievable.
+>    `scripts/check.mjs` R11c fails the build on any import of it, and adding one back
+>    requires an owner amendment to CLAUDE.md. All data access goes through `lib/db/*`
+>    on the server (CLAUDE.md "Data access rules"), and all auth flows are Server
+>    Actions (SPEC Block F), so nothing here needs a browser client.
 
 ---
 
@@ -281,14 +284,21 @@ export const config = {
 > from Context7 with a single backslash before the extension dot (`.*\.` became
 > `.*.`), and `favicon.ico` has an unescaped dot in the upstream snippet too. In a TS
 > string a single backslash collapses, so the pattern matches ANY character there and
-> silently skips paths like `/notes/axsvg`. Restored above. Our own `proxy.ts` writes
-> those dots as `[.]` instead, which cannot be mis-escaped by a later edit.
+> silently skips paths like `/applications/axsvg`. Restored above. Our own
+> `src/middleware.ts` writes those dots as `[.]` instead, which cannot be mis-escaped by
+> a later edit, and `tests/unit/middleware-matcher.test.mjs` pins the behaviour by
+> extracting the pattern from the shipped file.
 
 > **ANNOTATION — this is NOT our access gate.** The docs present this redirect as route
 > protection. In this project **middleware is never trusted as the gate** (CLAUDE.md Authentication rule 3): it
 > refreshes the session cookie and may do a *cheap early redirect*, nothing more. The
-> authoritative gate is `lib/db/*` calling `getUser()` on every operation;
-> `src/app/(app)/layout.tsx` is the second fence. Do not move an authorization decision
+> authoritative fence is **RLS in the database**: the DALs in `lib/db/*` run under the
+> user's session and every statement is scoped to `auth.uid()` by policy, which is why
+> they deliberately do NOT call `getUser()` themselves (see the comment on `getUser` in
+> `lib/supabase/server.ts` — do not read DAL-level authorization into its absence).
+> `src/app/(app)/layout.tsx` verifies the user before any member page renders, and
+> `lib/auth/requireApiUser.ts` does the same for route handlers. Do not move an
+> authorization decision
 > into middleware just because the doc does — middleware can be bypassed by direct
 > Server Action invocation, and every Server Action is a public endpoint (CLAUDE.md "Data access rules").
 
@@ -379,14 +389,14 @@ export async function middleware(request: NextRequest) {
 ```
 
 > **ANNOTATION — three divergences from the snippet we should actually follow.**
-> 1. It refreshes with `getClaims()`. Rule 2 says the only valid server-side check is
->    `supabase.auth.getUser()`. Use `getUser()` — see
+> 1. It refreshes with `getClaims()`. Authentication rule 2 says the only valid
+>    server-side check is `supabase.auth.getUser()`. Use `getUser()` — see
 >    [supabase-getuser-vs-getsession.md](supabase-getuser-vs-getsession.md).
-> 2. It creates `response` **once**, before the client. The `nextjs-supabase-auth.md`
->    version re-creates it inside `setAll` with `NextResponse.next({ request })` so
->    refreshed cookies reach *both* the incoming request and the outgoing response.
->    Prefer the `nextjs-supabase-auth.md` version — it is the one Supabase maintains as
->    the canonical Next.js pattern.
+> 2. It creates `response` **once**, before the client. `src/middleware.ts` re-creates it
+>    inside `setAll` with `NextResponse.next({ request })` so refreshed cookies reach
+>    *both* the incoming request and the outgoing response, and its `redirectTo()` helper
+>    copies those cookies onto every redirect branch — a bare `NextResponse.redirect()`
+>    silently drops a token refresh.
 > 3. `parseCookieHeader(request.cookies.toString())` is the framework-agnostic path. In
 >    Next.js, `request.cookies.getAll()` is direct and skips a parse round-trip.
 
@@ -443,12 +453,15 @@ export async function middleware(request: NextRequest) {
 ```
 
 > **ANNOTATION — PROHIBITED PATTERN, two ways over.** This snippet is the exact thing
-> rules 2 and 3 forbid:
+> Authentication rules 2 and 3 forbid:
 > 1. It makes an **access decision from `getSession()`** (`data.session?.user`). That
 >    user object comes straight out of the cookie and is not revalidated — it is
->    attacker-controlled input. Rule 2: on the server, the only valid check is
->    `supabase.auth.getUser()`.
-> 2. It treats **middleware as the gate**. Rule 3: middleware refreshes the cookie and
->    may redirect early; the gate is `lib/db/*` (+ `src/app/(app)/layout.tsx`).
+>    attacker-controlled input. Authentication rule 2: on the server, the only valid
+>    check is `supabase.auth.getUser()`. `scripts/check.mjs` R9 fails the build on
+>    `getSession` anywhere in the app.
+> 2. It treats **middleware as the gate**. Authentication rule 3: middleware refreshes
+>    the cookie and may redirect early; the fence is RLS, with
+>    `src/app/(app)/layout.tsx` and `lib/auth/requireApiUser.ts` verifying the user
+>    before anything renders or answers.
 >
 > Nothing in this snippet should be copied into the project.
