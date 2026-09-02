@@ -7,25 +7,12 @@ import 'server-only';
  * editor content, written as PLAIN TEXT: resume text may contain HTML-looking
  * characters and must never be interpreted (edge case S2).
  *
- * Filename: CV_<Name>_<Company>_<Role>.docx
+ * The filename builder lives in `lib/utils.ts` — it is pure string logic and
+ * needs no server guard — and is re-exported here so the export path has one
+ * import.
  */
 
-export function exportFilename(args: {
-  name: string;
-  company: string | null;
-  role: string | null;
-}): string {
-  const slug = (value: string | null) =>
-    (value ?? '')
-      .normalize('NFKD')
-      .replace(/[^\w\s-]/g, '')
-      .trim()
-      .replace(/\s+/g, '_');
-  return ['CV', slug(args.name), slug(args.company), slug(args.role)]
-    .filter(Boolean)
-    .join('_')
-    .concat('.docx');
-}
+export { exportFilename } from '@/lib/utils';
 
 export async function resumeToDocx(_content: string): Promise<Uint8Array> {
   throw new Error('resumeToDocx is a phase-0 stub — implemented with the export phase.');
