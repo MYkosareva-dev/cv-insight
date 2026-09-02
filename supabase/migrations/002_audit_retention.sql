@@ -1,5 +1,6 @@
 -- Retention for Supabase Auth's audit trail, which lives in THIS database (we are the controller).
--- Disclosed on /privacy as 90 days. pg_cron must be enabled for the project (Database → Extensions).
+-- /privacy states NO period until a succeeded run exists (R12 + the evidence gate);
+-- after that it discloses 90 days. pg_cron must be enabled for the project (Database → Extensions).
 create extension if not exists pg_cron;
 
 -- The auth schema is owned by supabase_auth_admin and the job runs as the scheduling
