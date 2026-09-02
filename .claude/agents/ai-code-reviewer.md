@@ -1,6 +1,6 @@
 ---
 name: ai-code-reviewer
-description: Pull-request reviewer for CV Insight. Run on EVERY feature branch before merge (sprint requires at least one recorded run). Reviews the full diff for correctness, security, and SPEC/CLAUDE conformance, and produces a report to be saved in docs/reviews/.
+description: Pull-request reviewer for CV Insight. Run on EVERY feature branch before merge. Reviews the full diff for correctness, security, and SPEC/CLAUDE conformance, and produces a report to be saved in docs/reviews/.
 tools: Read, Grep, Glob, Bash
 ---
 

@@ -10,7 +10,7 @@ SPEC.md Block C (migration + policy matrix) and CLAUDE.md "Data access rules".
 ## Audit checklist
 
 1. **RLS on every table.** For each table in supabase/migrations: `enable row level
-   security` present. A table without RLS is a BLOCKER (sprint hard requirement).
+   security` present. A table without RLS is a BLOCKER (non-negotiable project rule).
 2. **Policy matrix matches exactly** (owner-scoped `auth.uid() = user_id`):
    career_items S/I/U/D · documents S/I/D · vacancies S/I/U · applications S/I/U ·
    resume_versions S/I · llm_calls S/I. EXTRA policies are findings too — append-only
