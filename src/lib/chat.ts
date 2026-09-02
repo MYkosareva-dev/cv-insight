@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { User } from '@supabase/supabase-js';
 
+import { UnauthorizedError } from '@/lib/errors';
 import { getUser } from '@/lib/supabase/server';
 import {
   type ChatMessage,
@@ -27,14 +28,11 @@ import {
  * itself errored. No debounce-driven calls, no background refresh, no ladders.
  */
 
-export class UnauthorizedError extends Error {
-  readonly code = 'UNAUTHORIZED';
-  constructor() {
-    super('No verified user.');
-  }
-}
-
-/** Refuses without a verified user. Called first in every exported function. */
+/**
+ * Refuses without a verified user. Called first in every exported function.
+ * Throws the SHARED UnauthorizedError from lib/errors, so a route handler maps
+ * it to 401 UNAUTHORIZED per Block D with a single instanceof check.
+ */
 async function requireUser(): Promise<User> {
   const user = await getUser();
   if (!user) throw new UnauthorizedError();

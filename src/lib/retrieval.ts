@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { User } from '@supabase/supabase-js';
 
+import { UnauthorizedError } from '@/lib/errors';
 import { getUser } from '@/lib/supabase/server';
 import { type ConnectionResult, createEmbeddings } from '@/lib/openrouter/server';
 
@@ -18,21 +19,16 @@ import { type ConnectionResult, createEmbeddings } from '@/lib/openrouter/server
  * appended to any transcript.
  */
 
-export class UnauthorizedError extends Error {
-  readonly code = 'UNAUTHORIZED';
-  constructor() {
-    super('No verified user.');
-  }
-}
-
+/** Throws the SHARED UnauthorizedError from lib/errors (→ 401, Block D). */
 async function requireUser(): Promise<User> {
   const user = await getUser();
   if (!user) throw new UnauthorizedError();
   return user;
 }
 
-/** Requirement counts as covered at or above this similarity (SPEC rule B1). */
-export const COVERAGE_THRESHOLD = 0.6;
+// The coverage threshold is rule B1 arithmetic and lives in lib/scoring.ts —
+// one source for one constant. Re-exported here for callers of this gate.
+export { COVERAGE_THRESHOLD } from '@/lib/scoring';
 
 export type MatchedChunk = {
   id: string;
