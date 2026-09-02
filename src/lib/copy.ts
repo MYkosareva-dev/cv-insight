@@ -54,7 +54,15 @@ export const AUTH = {
   privacyLink: 'Privacy',
   invalidEmail: 'Enter a valid email address.',
   shortPassword: 'Password must be at least 8 characters.',
+  /**
+   * Sign-in has THREE outcomes, never two (SPEC Block E) — the same principle
+   * as the three retrieval outcomes. Telling someone their password is wrong
+   * when the app never got to check it is the app lying about something it
+   * did not observe.
+   */
   badCredentials: 'Email or password is incorrect.',
+  rateLimited: 'Too many attempts — try again in a minute.',
+  signInUnavailable: 'Sign-in is temporarily unavailable. Try again.',
   emailTaken: 'An account with this email already exists.',
   /** Only reachable if email confirmation is re-enabled in the dashboard. */
   checkEmail: 'Check your email to confirm this address, then sign in.',

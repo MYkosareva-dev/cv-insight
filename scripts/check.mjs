@@ -3,7 +3,7 @@
  * Repo invariants that a type-checker cannot see (SPEC v1.9 Block A, CLAUDE.md).
  * Runs as `npm run check`, and as `prebuild` so a build cannot skip it.
  *
- * Nine rules:
+ * Ten rules:
  *   R1  `.from(` outside lib/db — one DAL per table, and DALs are the only
  *       files allowed to reach the database. Non-database receivers such as
  *       `Array.from(` and `Buffer.from(` are excluded.
@@ -26,6 +26,10 @@
  *   R9  `getSession(` anywhere in src/ — it does not validate the token, so
  *       using it for any access decision is prohibited (CLAUDE.md auth rule 2).
  *       No exemptions: the only valid server-side check is getUser().
+ *   R10 SUPABASE_SERVICE_ROLE_KEY read anywhere but lib/supabase/admin.ts. The
+ *       service role bypasses RLS entirely, so "exactly one module" was a
+ *       documented rule with nothing enforcing it — R7 only proves SOME reader
+ *       imported `server-only`, which a second consumer would also do.
  *
  * This script opens exactly one dotfile — `.env.example`, the committed
  * template of NAMES — and for that file it prints only the matched variable
@@ -64,6 +68,10 @@ const DAL_FILES = [
 
 /** The connection module — the only file allowed to name the OpenRouter host. */
 const CONNECTION_FILE = 'src/lib/openrouter/server.ts';
+
+/** The one module allowed to read the service-role key (SPEC v2.0 Block A). */
+const SERVICE_ROLE_FILE = 'src/lib/supabase/admin.ts';
+const SERVICE_ROLE_KEY_NAME = 'SUPABASE_SERVICE_ROLE_KEY';
 
 /** The committed template of variable NAMES. The only dotfile this script reads. */
 const ENV_TEMPLATE = '.env.example';
@@ -372,6 +380,16 @@ scanLines(
   (line) => /\bgetSession\s*\(/.test(line),
 );
 
+// R10. The service-role key is pinned to one module. R7 only proves that SOME
+//      reader imported 'server-only' — a second service-role consumer in a
+//      later phase would import it too and sail through. This rule is what
+//      makes CLAUDE.md's "exactly one module" enforceable rather than written.
+scanLines(
+  `R10 ${SERVICE_ROLE_KEY_NAME} outside ${SERVICE_ROLE_FILE} — the service role bypasses RLS`,
+  (abs) => isCode(abs) && rel(abs) !== SERVICE_ROLE_FILE,
+  (line) => line.includes(SERVICE_ROLE_KEY_NAME),
+);
+
 if (failures.length) {
   for (const { label, hits } of failures) {
     console.error(`\nFAIL: ${label}`);
@@ -381,9 +399,11 @@ if (failures.length) {
   process.exit(1);
 }
 
+const NL = String.fromCharCode(10);
 console.log(
-  'check passed (9 rules): .from( and .rpc( confined to lib/db; no security definer;\n' +
-    '  NEXT_PUBLIC_ hygiene incl. .env.example; no openrouter.ai URL or connection import\n' +
-    "  outside the gates; every secret reader imports 'server-only'; next.config.* clean\n" +
-    '  of secrets and env injection; no getSession() in src/.',
+  'check passed (10 rules): .from( and .rpc( confined to lib/db; no security definer;' +
+    NL + '  NEXT_PUBLIC_ hygiene incl. .env.example; no openrouter.ai URL or connection' +
+    NL + '  import outside the gates; every secret reader imports server-only;' +
+    NL + '  next.config.* clean of secrets and env injection; no getSession() in src/;' +
+    NL + '  service-role key pinned to lib/supabase/admin.ts.',
 );
