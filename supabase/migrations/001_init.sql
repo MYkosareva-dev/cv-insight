@@ -125,6 +125,11 @@ begin
   end loop;
 end $$;
 
+-- > Decision: Supabase-linter hardening (extensions schema, SET search_path, `to authenticated`,
+-- `(select auth.uid())` wrapping) is DEFERRED to a future 002 migration. None is security-relevant
+-- under this RLS design (anon has no policies → denied; auth.uid() is null for anon); search_path
+-- has a real HNSW-inlining tradeoff; scale is tiny. Revisit only if the linter matters pre-deploy.
+
 -- Vector search over the caller's own base (SECURITY INVOKER: RLS applies; user filter is belt-and-braces)
 create or replace function match_documents(query_embedding vector(1536), match_count int default 5)
 returns table (id uuid, career_item_id uuid, content text, similarity float)
