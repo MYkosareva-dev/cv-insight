@@ -1,6 +1,6 @@
 # CV Insight — Technical Specification
-> Version: 1.9 | Date: 2026-09-02 | Status: Production-ready
-> Amendment trail: v1.1 gate architecture · v1.2 fictional persona · v1.3 application notes · v1.4 HNSW index · v1.5 module-path cleanup · v1.6–1.9 phase-0 review rounds (B1a/B1b, middleware, check.mjs 7 rules, cost_known, errors.ts/requireApiUser.ts, Block A completeness)
+> Version: 2.0 | Date: 2026-09-02 | Status: Production-ready
+> Amendment trail: v1.1 gate architecture · v1.2 fictional persona · v1.3 application notes · v1.4 HNSW index · v1.5 module-path cleanup · v1.6–1.9 phase-0 review rounds (B1a/B1b, middleware, check.mjs rules, cost_known, errors.ts/requireApiUser.ts, Block A completeness) · v2.0 phase-1 review (httpOnly cookieOptions + no browser client, three sign-in outcomes, error.code not status, best-effort signOut after delete, anchored matcher, cookie propagation on redirect, audit-log disclosure, R10 service-role pin, actions.ts/admin.ts)
 > Tier: M | Modules: M1 Auth, M2 Database, M3 API, M5 Legal & Privacy, M8 File upload, M12 Third-party integrations, M15 AI/LLM
 
 ## Module checklist
@@ -82,6 +82,8 @@ cv-insight/
 │   │   ├── chat.ts              # GATE (server-only): completions — parse/generate/judge; getUser() first
 │   │   ├── errors.ts            # single shared UnauthorizedError (→401), imported by both gates
 │   │   ├── auth/requireApiUser.ts # API-side gate twin: getUser() → throws UnauthorizedError (401)
+│   │   ├── auth/actions.ts      # Server Actions: signUp / signIn / signOut (no browser Supabase client)
+│   │   ├── supabase/admin.ts    # the ONE service-role client — imported ONLY by DELETE /api/account
 │   │   ├── retrieval.ts         # GATE (server-only): embeddings + getUser() first; ORCHESTRATES
 │   │   │                        # matching by calling lib/db/documents.ts (the .rpc lives in the DAL)
 │   │   ├── db/                  # one DAL per table (+ types.ts) — the ONLY files calling .from()/.rpc(
@@ -93,7 +95,9 @@ cv-insight/
 │   ├── app/not-found.tsx        # 404 page (RLS-absent rows render here, not 403)
 │   └── components/              # shadcn/ui-based (incl. components/ui/), see Block E
 ├── tests/unit/                  # node:test — keywordPresent, matchScore branch (`npm test`)
-├── scripts/check.mjs            # 7 rules — FAILs on: .from( AND .rpc( outside lib/db;
+├── scripts/check.mjs            # 10 rules — FAILs on: .from( AND .rpc( outside lib/db;
+│                                # (R8) secret in next.config.*; (R9) getSession( in src/;
+│                                # (R10) SUPABASE_SERVICE_ROLE_KEY read outside lib/supabase/admin.ts;
 │                                # "security definer" in supabase/; NEXT_PUBLIC_ on any secret name
 │                                # (incl. .env.example); openrouter.ai URL outside lib/openrouter/server.ts;
 │                                # a secret read without a 'server-only' import; OpenRouter fetch outside
@@ -190,7 +194,7 @@ Persona: **Mira** (fictional), 33, AI Quality Analyst in Hamburg, Germany, activ
 1. A signed-out visitor opens `/applications/9f2…` directly → redirected to `/login`; no data flash.
 2. A second account tries the same URL signed-in → 404 page "Not found" (RLS returns no row).
 3. Mira opens `/settings`, clicks [Delete account and all data], types `DELETE` to confirm.
-4. Server removes the auth user; all rows cascade-delete; she is signed out to `/login` with toast "Your account and all data were deleted."
+4. Server removes the auth user (`auth.admin.deleteUser`, hard delete — never `shouldSoftDelete`, which would turn GDPR erasure into a no-op); all rows cascade-delete; the follow-up `signOut()` is BEST-EFFORT (try/catch — the account is already gone, a network failure there must not surface as "Deletion failed"); session cookies are cleared locally regardless; redirect to `/login` with toast "Your account and all data were deleted."
 5. Error path: confirmation text mismatch → button stays disabled.
 - [ ] Incognito direct URL never renders user data (Playwright-verified)
 - [ ] Cross-user access returns 404, not another user's data (Playwright-verified)
@@ -490,7 +494,7 @@ Responsive test widths: **1280 / 375**. Nothing may overflow horizontally at eit
 ### Screens (three mandatory states each)
 
 **`/login`, `/signup`** — centered card 400 px; fields Email, Password; primary green button [Sign in]/[Create account]; link to the other form; footer link Privacy.
-Loading: button spinner + disabled. Empty: n/a (form). Error: inline under field — invalid credentials → "Email or password is incorrect."; signup with existing email → "An account with this email already exists."
+Loading: button spinner + disabled. Empty: n/a (form). Error: inline under field. Sign-in has THREE outcomes, never collapsed (same principle as the three retrieval outcomes): invalid credentials (`invalid_credentials`) → "Email or password is incorrect."; rate-limited (`over_request_rate_limit` / 429) → "Too many attempts — try again in a minute."; Supabase unreachable / any other error → "Sign-in is temporarily unavailable. Try again." Sign-up: branch on GoTrue `error.code`, NEVER on HTTP status — `user_already_exists` → "An account with this email already exists."; `weak_password` → the Block F password copy (both return 422, so a status check would show the wrong message and leak a false enumeration signal).
 
 **`/scan` — New scan.** Stepper on top: `1 Resume → 2 Vacancy → 3 Results`. Two panels (grid-cols-2):
 Left: resume source Tabs (shadcn `Tabs`): **Career base** (default; shows "Using all N items of your base") / **Saved version** (Select of previous tailored resumes) / **Paste text** (Textarea) / **Upload PDF** (dropzone: "Drag & drop or choose a .pdf file, max 5 MB").
@@ -517,7 +521,7 @@ Loading: skeleton tiles. Empty: "No AI calls yet." Error: toast "Couldn't load m
 
 **`/settings`.** Email (read-only), [Sign out] (outline), Danger zone card: [Delete account and all data] (danger red) → Dialog: "This permanently deletes your career base, scans and resumes. Type DELETE to confirm." Input + disabled confirm until exact match.
 
-**`/privacy`** — static: what is stored, where (Supabase, EU project region), that resume content is sent to OpenRouter for processing (retention choice documented), auth cookies are strictly necessary (no consent banner needed, no trackers), right to erasure via Settings, Impressum block.
+**`/privacy`** — static: what is stored, where (Supabase, EU project region), that resume content is sent to OpenRouter for processing (retention choice documented), auth cookies are strictly necessary (no consent banner needed, no trackers), right to erasure via Settings, **authentication audit records** (Supabase `auth.audit_log_entries` retains actor id + email after account deletion — disclosed as provider-side security logging with the provider's retention), Impressum block.
 > Decision: Supabase project region = EU (Frankfurt) — closest to the user base and simplifies the GDPR story.
 
 ### Actions table (cross-screen)
@@ -573,10 +577,13 @@ Application notes: ≤2,000 chars ("Notes are limited to 2000 characters."), inl
 - **Login**: `signInWithPassword` → redirect `/scan`. Invalid → copy per Block E.
 - **Logout**: `signOut()` → `/login`.
 - **Password reset**: OUT of MVP. > Decision: cut — requires email delivery; reviewer flow doesn't need it; noted in README known-limitations.
-- **Sessions**: Supabase SSR cookies (`@supabase/ssr`), httpOnly, strictly necessary → no consent banner.
+- **Sessions**: Supabase SSR cookies (`@supabase/ssr`), strictly necessary → no consent banner. `@supabase/ssr` DEFAULTS are `httpOnly: false`, no `secure`, 400-day maxAge — NOT acceptable for a personal-data app. Both `createServerClient` call sites (server.ts, middleware.ts) MUST pass `cookieOptions: { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' }`.
+> Decision: all auth flows are Server Actions; `createBrowserClient` is NOT used anywhere (it writes the session via `document.cookie`, which can never be httpOnly — using it would make this rule unachievable). Adding a browser Supabase client later requires an owner amendment.
+- **Middleware cookie propagation**: every redirect branch must copy the refreshed session cookies from the Supabase response onto the redirect response — a bare `NextResponse.redirect()` silently drops a token refresh (production-shaped bug: dev sessions rarely cross the refresh boundary).
+- **Middleware matcher** is anchored: `/applications/x.png`, `/apifoo`, `/privacyleak` must NOT slip past it (the (app) layout is a second net, not the boundary).
 - **Route protection**: `src/middleware.ts` — no session on member route → redirect `/login`; session on /login|/signup → redirect `/scan`. `/privacy` is EXCLUDED from the middleware matcher (public page — no getUser() round trip).
 > Decision: keep the filename `middleware.ts`. Next 16 deprecates it in favour of `proxy.ts` and prints a build warning, but `middleware.ts` is still read and wired (build output shows `ƒ Proxy (Middleware)`). SPEC and CLAUDE.md name `middleware.ts`; revisit only if a future Next removes it, not silently.
-> Decision: `src/app/api/` does not exist until Phase 2 — the first route handlers (career import/items) land there then; scan/generate/etc. follow in Phases 3–4. Its absence in the Phase 0 scaffold is intended, not a gap.
+> Decision (superseded in Phase 1): `src/app/api/` is absent from the Phase 0 scaffold by design. Its FIRST route handler is `DELETE /api/account` (Phase 1 — account lifecycle, the sole service-role consumer); career import/items follow in Phase 2, scan/generate/etc. in Phases 3–4.
 - **Rate limiting**: Supabase Auth built-in limits + B7 for AI endpoints. No custom limiter in MVP.
 
 ### Security (M2/M3)
