@@ -9,7 +9,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test \"tests/unit/*.test.mjs\"",
+    "test": "node --import ./tests/alias-hook.mjs --test \"tests/unit/*.test.mjs\"",
     "check": "node scripts/check.mjs"
   },
   "engines": {
