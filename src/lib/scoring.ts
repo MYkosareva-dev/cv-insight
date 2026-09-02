@@ -9,7 +9,7 @@
  *
  * A requirement counts as covered at bestSimilarity ≥ 0.60.
  *
- * Two degenerate parses, and they are NOT the same case (SPEC v1.7 B1):
+ * Two degenerate parses, and they are NOT the same case (SPEC v1.9 B1):
  *   - 0 requirements TOTAL → null, rendered "—" (edge case N4).
  *   - ≥1 requirement but 0 MUST → S has nothing to average, so it is dropped
  *     and the score is round(100 × K). A nice-only posting still gets a real

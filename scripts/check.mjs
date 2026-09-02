@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Repo invariants that a type-checker cannot see (SPEC v1.7 Block A, CLAUDE.md).
+ * Repo invariants that a type-checker cannot see (SPEC v1.9 Block A, CLAUDE.md).
  * Runs as `npm run check`, and as `prebuild` so a build cannot skip it.
  *
  * Seven rules:
@@ -169,7 +169,7 @@ scanLines(
 );
 
 // R2. .rpc( outside the listed DALs. lib/db/documents.ts owns match_documents;
-//     lib/retrieval.ts orchestrates by calling that DAL (SPEC v1.7 Block A).
+//     lib/retrieval.ts orchestrates by calling that DAL (SPEC v1.9 Block A).
 scanLines(
   'R2 .rpc( outside lib/db — match_documents lives in lib/db/documents.ts',
   (abs) => isCode(abs) && !isDal(abs),

@@ -68,7 +68,7 @@ export type MatchDocumentsRow = {
  *
  * The call lives HERE and not in the retrieval gate, because this DAL owns
  * every route to the `documents` table and the RPC is one of them
- * (SPEC v1.7 Block A). `scripts/check.mjs` allows `.rpc(` only inside lib/db,
+ * (SPEC v1.9 Block A). `scripts/check.mjs` allows `.rpc(` only inside lib/db,
  * so a page or handler cannot reach the function directly.
  *
  * `match_documents` is `security invoker` and filters on `auth.uid()` INSIDE

@@ -16,7 +16,7 @@ import { type ConnectionResult, createEmbeddings } from '@/lib/openrouter/server
  * gates are separate files (CLAUDE.md, "AI model calls").
  *
  * The `match_documents` call itself lives in `lib/db/documents.ts`, because
- * that DAL owns every route to the `documents` table (SPEC v1.7 Block A). This
+ * that DAL owns every route to the `documents` table (SPEC v1.9 Block A). This
  * module embeds the query, calls the DAL, and turns the result into one of the
  * three retrieval outcomes.
  *
