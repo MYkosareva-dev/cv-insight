@@ -19,6 +19,20 @@ export const APP_NAME = 'CV Insight';
  */
 export const NO_SCORE = '—';
 
+/**
+ * App-level error boundary (src/app/error.tsx). Deliberately says nothing about
+ * WHAT failed: a thrown error can carry resume or vacancy text in its message,
+ * and that must never be rendered or logged (CLAUDE.md, Privacy). Per-screen
+ * error copy lives in the sections below and is more specific.
+ */
+export const ERROR_PAGE = {
+  title: 'Something went wrong',
+  body: 'This page could not be loaded. Try again, or head back to your scans.',
+  retry: 'Try again',
+  home: 'Go to Applications',
+  reference: 'Reference',
+} as const;
+
 export const NAV = {
   scan: 'New scan',
   career: 'Career base',
