@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { AUTH_COOKIE_OPTIONS } from '@/lib/supabase/cookie-options';
+import { AUTH_COOKIE_OPTIONS, cappedMaxAge } from '@/lib/supabase/cookie-options';
 
 /**
  * Public routes — everything else under the matcher requires a session.
@@ -35,7 +35,8 @@ export async function middleware(request: NextRequest) {
           }
           supabaseResponse = NextResponse.next({ request });
           for (const { name, value, options } of cookiesToSet) {
-            supabaseResponse.cookies.set(name, value, options);
+            // cappedMaxAge, not `options`: the library discards our maxAge.
+            supabaseResponse.cookies.set(name, value, cappedMaxAge(options));
           }
         },
       },

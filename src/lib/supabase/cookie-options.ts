@@ -26,9 +26,33 @@ import type { CookieOptions } from '@supabase/ssr';
  *    rotates independently. 400 days of a resurrectable session is not
  *    data-minimisation on an app holding CVs.
  */
+export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+
 export const AUTH_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax',
-  maxAge: 60 * 60 * 24 * 30,
+  maxAge: SESSION_MAX_AGE_SECONDS,
 };
+
+/**
+ * Caps a cookie's lifetime at SESSION_MAX_AGE_SECONDS, for use inside a
+ * `setAll` adapter.
+ *
+ * This exists because `cookieOptions.maxAge` ALONE DOES NOT WORK. @supabase/ssr
+ * builds its write options as
+ *   `{ ...DEFAULT_COOKIE_OPTIONS, ...cookieOptions, maxAge: DEFAULT.maxAge }`
+ * (node_modules/@supabase/ssr/dist/main/cookies.js:325-329) — our value is
+ * spread in and then overwritten by the library's own 400 days. Verified
+ * empirically: with `maxAge` in AUTH_COOKIE_OPTIONS the browser still received
+ * `Max-Age=34560000`. The only place left that we control is the adapter, so
+ * the cap is applied there.
+ *
+ * `Math.min` and not an assignment, because DELETION passes `maxAge: 0` through
+ * the same path: `Math.min(0, cap)` is 0, so sign-out still clears the cookie.
+ * An unset maxAge (a session cookie) is left alone.
+ */
+export function cappedMaxAge(options: { maxAge?: number } | undefined) {
+  if (!options || options.maxAge === undefined) return options;
+  return { ...options, maxAge: Math.min(options.maxAge, SESSION_MAX_AGE_SECONDS) };
+}
