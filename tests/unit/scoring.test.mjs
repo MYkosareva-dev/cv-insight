@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { keywordPresent, keywordShare, matchScore, scoreBand } from '../../src/lib/scoring.ts';
+import {
+  insufficientSignal,
+  keywordPresent,
+  keywordShare,
+  matchScore,
+  scoreBand,
+} from '../../src/lib/scoring.ts';
 
 /**
  * Zero-dependency unit tests: `node:test` + `node:assert` ship with Node, and
@@ -117,6 +123,25 @@ describe('matchScore — B1 branches', () => {
         keywords: ['Kubernetes'],
       }),
       0,
+    );
+  });
+});
+
+describe('insufficientSignal — B1b', () => {
+  test('true only when there is neither a MUST requirement nor a keyword', () => {
+    assert.equal(insufficientSignal({ mustBestSimilarities: [], keywords: [] }), true);
+    assert.equal(insufficientSignal({ mustBestSimilarities: [], keywords: ['Docker'] }), false);
+    assert.equal(insufficientSignal({ mustBestSimilarities: [0.7], keywords: [] }), false);
+    assert.equal(insufficientSignal({ mustBestSimilarities: [0.7], keywords: ['Docker'] }), false);
+  });
+
+  test('marks the exact case where matchScore returns a meaningless 0', () => {
+    const args = { requirementCount: 2, mustBestSimilarities: [], resumeText: 'x', keywords: [] };
+    assert.equal(matchScore(args), 0, 'the stored score stays a number per B1b');
+    assert.equal(
+      insufficientSignal(args),
+      true,
+      'and the UI must render NO_SCORE rather than that 0',
     );
   });
 });

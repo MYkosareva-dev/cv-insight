@@ -8,6 +8,17 @@
 
 export const APP_NAME = 'CV Insight';
 
+/**
+ * The score placeholder. Rendered wherever a match score exists as a slot but
+ * not as a number:
+ *   - the parse produced 0 requirements (edge case N4, matchScore returns null);
+ *   - rule B1b: 0 MUST requirements AND 0 keywords, so matchScore returns a 0
+ *     that means "nothing was measured" rather than "measured, scored zero".
+ *     Use `insufficientSignal()` from lib/scoring.ts to detect that case.
+ * An em dash, not a hyphen — the same glyph SPEC Block F writes.
+ */
+export const NO_SCORE = '—';
+
 export const NAV = {
   scan: 'New scan',
   career: 'Career base',

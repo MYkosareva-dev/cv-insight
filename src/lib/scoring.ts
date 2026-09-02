@@ -80,12 +80,38 @@ export function matchScore(args: {
   const k = keywordShare(resumeText, keywords);
 
   // No MUST requirements: S is undefined, so drop it and score on K alone.
+  //
+  // RULE B1b — read this before rendering the return value. When there is also
+  // nothing to compute K from (0 keywords extracted), this returns a hard 0,
+  // and that 0 is arithmetic, not a judgement: the app measured nothing. The
+  // /scan result UI must show NO_SCORE ("—") from lib/copy.ts for that case,
+  // exactly as it does for the null above. B1b puts that decision in the UI
+  // (Phase 3), not here, so the stored score stays a number. See
+  // `insufficientSignal` below for the predicate.
   if (mustBestSimilarities.length === 0) return Math.round(100 * k);
 
   const s =
     mustBestSimilarities.reduce((sum, v) => sum + normalizeSimilarity(v), 0) /
     mustBestSimilarities.length;
   return Math.round(100 * (WEIGHT_SIMILARITY * s + WEIGHT_KEYWORDS * k));
+}
+
+/**
+ * RULE B1b — "the app measured nothing", as opposed to "the app measured zero".
+ *
+ * True when S is undefined (no MUST requirements) AND K has nothing to work
+ * from (no keywords extracted). `matchScore` still returns 0 for this case by
+ * design; the /scan result UI (Phase 3) calls this and renders `NO_SCORE` from
+ * lib/copy.ts instead of the number, the same as it does for a null score.
+ *
+ * The condition lives here because it is B1 arithmetic; the RENDERING decision
+ * is the UI's, which is what B1b specifies.
+ */
+export function insufficientSignal(args: {
+  mustBestSimilarities: number[];
+  keywords: string[];
+}): boolean {
+  return args.mustBestSimilarities.length === 0 && args.keywords.length === 0;
 }
 
 export type ScoreBand = 'low' | 'mid' | 'high';
