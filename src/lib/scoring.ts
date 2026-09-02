@@ -5,10 +5,15 @@
  *   score = round(100 × (0.6 × S + 0.4 × K))
  *     S = mean over MUST requirements of clamp((bestSimilarity − 0.30) / 0.55, 0, 1)
  *     K = share of vacancy keywords present in the resume text
- *         (case-insensitive, word-boundary)
+ *         (case-insensitive, word-boundary — see B1a and `keywordPresent`)
  *
- * A requirement counts as covered at bestSimilarity ≥ 0.60. When the parse
- * produced 0 requirements the score is null and renders as "—" (edge case N4).
+ * A requirement counts as covered at bestSimilarity ≥ 0.60.
+ *
+ * Two degenerate parses, and they are NOT the same case (SPEC v1.7 B1):
+ *   - 0 requirements TOTAL → null, rendered "—" (edge case N4).
+ *   - ≥1 requirement but 0 MUST → S has nothing to average, so it is dropped
+ *     and the score is round(100 × K). A nice-only posting still gets a real
+ *     number; reporting "—" there would hide a score we can actually compute.
  */
 
 export const SIMILARITY_FLOOR = 0.3;
@@ -52,18 +57,34 @@ export function keywordShare(resumeText: string, keywords: string[]): number {
   return hits / keywords.length;
 }
 
-/** Returns null when there are no MUST requirements — the caller renders "—". */
+/**
+ * SPEC B1. Returns null ONLY when the parse produced 0 requirements in total —
+ * that is the single case the UI renders as "—" (edge case N4).
+ *
+ * `requirementCount` is the TOTAL from the parse (must + nice), not the length
+ * of `mustBestSimilarities`: a posting can have requirements that are all
+ * "nice", and that case scores round(100 × K) rather than "—".
+ */
 export function matchScore(args: {
+  /** Total requirements the parser returned, must + nice. */
+  requirementCount: number;
+  /** Best similarity per MUST requirement; empty for a nice-only posting. */
   mustBestSimilarities: number[];
   resumeText: string;
   keywords: string[];
 }): number | null {
-  const { mustBestSimilarities, resumeText, keywords } = args;
-  if (mustBestSimilarities.length === 0) return null;
+  const { requirementCount, mustBestSimilarities, resumeText, keywords } = args;
+
+  if (requirementCount === 0) return null;
+
+  const k = keywordShare(resumeText, keywords);
+
+  // No MUST requirements: S is undefined, so drop it and score on K alone.
+  if (mustBestSimilarities.length === 0) return Math.round(100 * k);
+
   const s =
     mustBestSimilarities.reduce((sum, v) => sum + normalizeSimilarity(v), 0) /
     mustBestSimilarities.length;
-  const k = keywordShare(resumeText, keywords);
   return Math.round(100 * (WEIGHT_SIMILARITY * s + WEIGHT_KEYWORDS * k));
 }
 
