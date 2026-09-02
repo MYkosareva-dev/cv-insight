@@ -1,24 +1,26 @@
 #!/usr/bin/env node
 /**
- * Repo invariants that a type-checker cannot see (SPEC Block A, CLAUDE.md).
+ * Repo invariants that a type-checker cannot see (SPEC v1.7 Block A, CLAUDE.md).
  * Runs as `npm run check`, and as `prebuild` so a build cannot skip it.
  *
- * The three SPEC-mandated FAIL rules:
- *   1. `.from(` outside the listed DALs — one DAL per table, and DALs are the
- *      only files allowed to reach the database.
- *   2. `security definer` anywhere in supabase/ — match_documents must stay
- *      `security invoker` so RLS is the fence, not the function.
- *   3. NEXT_PUBLIC_ on a secret name — a secret behind that prefix is shipped
- *      to the browser.
+ * Seven rules:
+ *   R1  `.from(` outside lib/db — one DAL per table, and DALs are the only
+ *       files allowed to reach the database. `Array.from(` is excluded: Block E
+ *       builds its skeleton states with `Array.from({ length: 6 })`.
+ *   R2  `.rpc(` outside lib/db — match_documents is reachable only through
+ *       lib/db/documents.ts, which the retrieval gate orchestrates.
+ *   R3  `security definer` anywhere in supabase/ — match_documents must stay
+ *       `security invoker` so RLS is the fence, not the function.
+ *   R4  NEXT_PUBLIC_ on a secret name, in source AND in .env.example.
+ *   R5  an openrouter.ai URL outside the connection module — no hand-rolled
+ *       model call can skip the gates.
+ *   R6  importing the connection module from outside the two gates.
+ *   R7  reading a secret from process.env without `import 'server-only'`.
  *
- * Plus four that close the ways a later phase could walk around them:
- *   4. importing the OpenRouter connection from outside the two gates,
- *   5. `.rpc(` outside the DALs and the retrieval gate,
- *   6. a literal openrouter.ai URL outside the connection module,
- *   7. reading a secret from process.env without importing 'server-only'.
- *
- * This script never opens .env* — it skips those names during the walk — and
- * never prints a value.
+ * This script opens exactly one dotfile — `.env.example`, the committed
+ * template of NAMES — and for that file it prints only the matched variable
+ * name, never the line. `.env`, `.env.local` and every other `.env.*` are
+ * skipped during the walk and never read. No value is ever printed.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -36,15 +38,11 @@ const DAL_FILES = [
   'src/lib/db/llmCalls.ts',
 ];
 
-/**
- * `match_documents` is reachable only through the retrieval gate, which SPEC
- * Block A names as its home ("retrieval.ts — GATE: embeddings + match_documents").
- * So the RPC allowlist is the DALs plus that one gate, not lib/db alone.
- */
-const RPC_ALLOWED = [...DAL_FILES, 'src/lib/retrieval.ts'];
-
 /** The connection module — the only file allowed to name the OpenRouter host. */
 const CONNECTION_FILE = 'src/lib/openrouter/server.ts';
+
+/** The committed template of variable NAMES. The only dotfile this script reads. */
+const ENV_TEMPLATE = '.env.example';
 
 /** Server-only secrets. None of these may ever appear behind NEXT_PUBLIC_. */
 const SECRET_NAMES = ['OPENROUTER_API_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
@@ -58,9 +56,13 @@ const CODE_EXT = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir)) {
-    // Never touch .env* — not even to stat it (CLAUDE.md, Secrets).
-    if (entry.startsWith('.env')) continue;
     const abs = path.join(dir, entry);
+    // .env.example is the committed NAMES template and is scanned by R4.
+    // Every other .env* holds values and is never opened (CLAUDE.md, Secrets).
+    if (entry.startsWith('.env')) {
+      if (path.relative(ROOT, abs) === ENV_TEMPLATE) out.push(abs);
+      continue;
+    }
     if (statSync(abs).isDirectory()) {
       if (SKIP_DIRS.has(entry)) continue;
       walk(abs, out);
@@ -82,16 +84,23 @@ function stripComments(text) {
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
-/** Per-line rule. The matcher sees the comment-stripped line. */
+/**
+ * Per-line rule. The matcher sees the comment-stripped line and returns either
+ * a boolean or a string. A string REPLACES the echoed source line in the
+ * report — that is how R4 names a variable in .env.example without printing
+ * the line it sits on.
+ */
 function scanLines(label, predicate, matcher) {
   const hits = [];
   for (const abs of files.filter(predicate)) {
-    const raw = readFileSync(abs, 'utf8').split(/\r?\n/);
-    const stripped = stripComments(readFileSync(abs, 'utf8')).split(/\r?\n/);
+    const text = readFileSync(abs, 'utf8');
+    const raw = text.split(/\r?\n/);
+    const stripped = stripComments(text).split(/\r?\n/);
     raw.forEach((line, i) => {
-      if (matcher(stripped[i] ?? '', abs)) {
-        hits.push(`${rel(abs)}:${i + 1}: ${line.trim().slice(0, 120)}`);
-      }
+      const verdict = matcher(stripped[i] ?? '', abs);
+      if (!verdict) return;
+      const shown = typeof verdict === 'string' ? verdict : line.trim().slice(0, 120);
+      hits.push(`${rel(abs)}:${i + 1}: ${shown}`);
     });
   }
   if (hits.length) failures.push({ label, hits });
@@ -112,18 +121,41 @@ const isCode = (abs) => {
   const r = rel(abs);
   return (r.startsWith('src/') || r.startsWith('tests/')) && CODE_EXT.test(r);
 };
+const isDal = (abs) => DAL_FILES.includes(rel(abs));
 
-// 1. .from( outside the listed DALs.
+/**
+ * `.from(` / `.rpc(` on a receiver that is not Array/String. `Array.from(` is
+ * Block E's idiom for skeleton rows and has nothing to do with the database;
+ * excluding it now keeps the rule from being weakened later under deadline.
+ */
+function callsDbMethod(line, method) {
+  const re = new RegExp(`([A-Za-z0-9_$\\]\\)]+)\\s*\\.\\s*${method}\\s*\\(`, 'g');
+  for (const m of line.matchAll(re)) {
+    if (method === 'from' && (m[1] === 'Array' || m[1] === 'String')) continue;
+    return true;
+  }
+  return false;
+}
+
+// R1. .from( outside the listed DALs.
 scanLines(
-  '.from( outside lib/db — only a DAL may call the database',
-  (abs) => isCode(abs) && !DAL_FILES.includes(rel(abs)),
-  (line) => /\.from\s*\(/.test(line),
+  'R1 .from( outside lib/db — only a DAL may call the database',
+  (abs) => isCode(abs) && !isDal(abs),
+  (line) => callsDbMethod(line, 'from'),
 );
 
-// 2. security definer anywhere in supabase/. Scanned whole-file: the two words
-//    can be split across a newline, which a per-line scan would miss.
+// R2. .rpc( outside the listed DALs. lib/db/documents.ts owns match_documents;
+//     lib/retrieval.ts orchestrates by calling that DAL (SPEC v1.7 Block A).
+scanLines(
+  'R2 .rpc( outside lib/db — match_documents lives in lib/db/documents.ts',
+  (abs) => isCode(abs) && !isDal(abs),
+  (line) => callsDbMethod(line, 'rpc'),
+);
+
+// R3. security definer anywhere in supabase/. Scanned whole-file: the two words
+//     can be split across a newline, which a per-line scan would miss.
 scanFiles(
-  'security definer in supabase/ — match_documents must stay security invoker',
+  'R3 security definer in supabase/ — match_documents must stay security invoker',
   (abs) => rel(abs).startsWith('supabase/'),
   (raw) => {
     const sql = raw.replace(/--.*$/gm, '');
@@ -131,30 +163,47 @@ scanFiles(
   },
 );
 
-// 3. NEXT_PUBLIC_ on a secret name, in source or in .env.example (names only).
+// R4a. NEXT_PUBLIC_ on a secret name — in source and in the .env.example template.
 scanLines(
-  'NEXT_PUBLIC_ prefix on a secret — that ships the value to the browser',
+  'R4 NEXT_PUBLIC_ prefix on a secret — that ships the value to the browser',
   (abs) => !rel(abs).startsWith('scripts/'),
-  (line) => SECRET_NAMES.some((name) => line.includes(`NEXT_PUBLIC_${name}`)),
+  (line, abs) => {
+    const hit = SECRET_NAMES.find((name) => line.includes(`NEXT_PUBLIC_${name}`));
+    if (!hit) return false;
+    // In the env template, report the NAME only — never echo the line.
+    return rel(abs) === ENV_TEMPLATE ? `NEXT_PUBLIC_${hit}` : true;
+  },
 );
 
-// 3b. Any NEXT_PUBLIC_ variable that is not one of the two allowed ones.
+// R4b. Any NEXT_PUBLIC_ variable that is not one of the two allowed ones.
 scanLines(
-  'unknown NEXT_PUBLIC_ variable — only the Supabase URL and anon key may reach the browser',
+  'R4 unknown NEXT_PUBLIC_ variable — only the Supabase URL and anon key may reach the browser',
   (abs) => {
     const r = rel(abs);
-    return (r.startsWith('src/') || r === '.env.example') && !r.startsWith('scripts/');
+    return (r.startsWith('src/') || r === ENV_TEMPLATE) && !r.startsWith('scripts/');
   },
-  (line) => {
-    const names = line.match(/NEXT_PUBLIC_[A-Z0-9_]+/g);
-    return !!names && names.some((n) => !ALLOWED_PUBLIC.includes(n));
+  (line, abs) => {
+    const names = (line.match(/NEXT_PUBLIC_[A-Z0-9_]+/g) ?? []).filter(
+      (n) => !ALLOWED_PUBLIC.includes(n),
+    );
+    if (names.length === 0) return false;
+    return rel(abs) === ENV_TEMPLATE ? names.join(', ') : true;
   },
 );
 
-// 4. The connection module is reachable only through the two gates. Covers
-//    `from '…'`, bare side-effect imports and `await import('…')`.
+// R5. A literal openrouter.ai URL outside the connection module. R6 guards the
+//     MODULE; this guards the ENDPOINT, so a route handler cannot hand-roll its
+//     own fetch and skip both gates.
 scanLines(
-  'direct import of lib/openrouter/server — every model call goes through a gate',
+  'R5 openrouter.ai URL outside the connection module — no hand-rolled model calls',
+  (abs) => isCode(abs) && rel(abs) !== CONNECTION_FILE,
+  (line) => line.includes('openrouter.ai'),
+);
+
+// R6. The connection module is reachable only through the two gates. Covers
+//     `from '…'`, bare side-effect imports and `await import('…')`.
+scanLines(
+  'R6 direct import of lib/openrouter/server — every model call goes through a gate',
   (abs) => {
     const r = rel(abs);
     return (
@@ -170,41 +219,32 @@ scanLines(
     ),
 );
 
-// 5. .rpc( outside the DALs and the retrieval gate. Without this rule any file
-//    could call supabase.rpc('match_documents', …) and bypass the gate.
-scanLines(
-  '.rpc( outside lib/db and the retrieval gate — match_documents goes through the gate',
-  (abs) => isCode(abs) && !RPC_ALLOWED.includes(rel(abs)),
-  (line) => /\.rpc\s*\(/.test(line),
-);
-
-// 6. A literal openrouter.ai URL outside the connection module. Rule 4 guards
-//    the MODULE; this guards the ENDPOINT, so a route handler cannot hand-roll
-//    its own fetch and skip both gates.
-scanLines(
-  'openrouter.ai URL outside the connection module — no hand-rolled model calls',
-  (abs) => isCode(abs) && rel(abs) !== CONNECTION_FILE,
-  (line) => line.includes('openrouter.ai'),
-);
-
-/** Env names that are secrets by shape. NEXT_PUBLIC_* is public by definition. */
-function secretNamesIn(text) {
-  const names = text.match(/\b[A-Z][A-Z0-9_]{2,}\b/g) ?? [];
+/**
+ * Names actually READ off process.env, captured rather than scanned loosely: a
+ * file-wide token scan fails any client component that happens to hold a
+ * `const ROW_KEY` next to a `process.env.NODE_ENV`, and the only way to silence
+ * that is adding `server-only` to a client file — which breaks the build. A
+ * rule whose false positive has no correct remedy gets deleted.
+ */
+function envSecretsRead(text) {
+  const names = [
+    ...[...text.matchAll(/process\s*\.\s*env\s*\.\s*([A-Z][A-Z0-9_]*)/g)].map((m) => m[1]),
+    ...[...text.matchAll(/process\s*\.\s*env\s*\[\s*['"]([A-Z][A-Z0-9_]*)['"]/g)].map((m) => m[1]),
+  ];
   const isSecret = (n) =>
     !n.startsWith('NEXT_PUBLIC_') &&
     (/(?:_KEY|_SECRET|_TOKEN)$/.test(n) || n.includes('SERVICE_ROLE'));
   return [...new Set(names.filter(isSecret))];
 }
 
-// 7. Reading a secret without `import 'server-only'`. That import is the actual
-//    mechanism keeping a secret out of a client bundle, and nothing verified it
-//    was present.
+// R7. Reading a secret without `import 'server-only'`. That import is the actual
+//     mechanism keeping a secret out of a client bundle, and nothing else
+//     verified it was present.
 scanFiles(
-  "reads a secret from process.env without importing 'server-only'",
+  "R7 reads a secret from process.env without importing 'server-only'",
   isCode,
   (raw, stripped) => {
-    if (!/process\s*\.\s*env/.test(stripped)) return null;
-    const found = secretNamesIn(stripped);
+    const found = envSecretsRead(stripped);
     if (found.length === 0) return null;
     if (/^\s*import\s+['"]server-only['"];?\s*$/m.test(stripped)) return null;
     return `reads ${found.join(', ')} without import 'server-only'`;
@@ -221,6 +261,7 @@ if (failures.length) {
 }
 
 console.log(
-  'check passed: DAL boundary, RPC boundary, security invoker, NEXT_PUBLIC_ hygiene,\n' +
-    '              gate chokepoint, endpoint chokepoint, server-only on secrets.',
+  'check passed (7 rules): .from( and .rpc( confined to lib/db; no security definer;\n' +
+    '  NEXT_PUBLIC_ hygiene incl. .env.example; no openrouter.ai URL or connection import\n' +
+    "  outside the gates; every secret reader imports 'server-only'.",
 );
