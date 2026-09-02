@@ -10,6 +10,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --import ./tests/alias-hook.mjs --test \"tests/unit/*.test.mjs\"",
+    "test:e2e": "playwright test",
     "check": "node scripts/check.mjs"
   },
   "engines": {
@@ -31,6 +32,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.1.14",
     "@types/node": "^24.7.0",
     "@types/react": "^19.2.0",
