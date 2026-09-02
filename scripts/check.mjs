@@ -35,6 +35,15 @@
  *       session httpOnly, it must be repeated at each call site, and a third
  *       site that forgets it downgrades the cookie SILENTLY — no error, no test
  *       failure. Pinning the call sites is what makes that impossible.
+ *   R13 a backticked repo path in a docs/ reference that does not resolve against
+ *       the tree. Three consecutive keyword sweeps declared docs/ clean while an
+ *       annotation described a boot-time guard in `lib/supabase/env.ts`, a module
+ *       that has never existed — because a keyword sweep can only look for strings
+ *       already known to be wrong. What makes such an annotation wrong is a
+ *       PROPERTY (it asserts something about this repo that is not the case), and
+ *       a property belongs in the build. A stale note is an instruction to the
+ *       next agent to do the wrong thing (CLAUDE.md, docs/ is THIS project's
+ *       reference shelf).
  *   R12 the 90-day audit-retention claim in user-facing copy while
  *       docs/eval/audit-retention-evidence.md is absent. The claim and its proof
  *       ship together or not at all: a pg_cron job scheduled against the `auth`
@@ -485,6 +494,59 @@ scanFiles(
   },
 );
 
+/**
+ * R13. Every backticked repo path in a docs/ reference must resolve against the
+ *      tree.
+ *
+ *      Scope is the vendored reference shelf — `docs/*.md` — and NOT `docs/reviews/`
+ *      or `docs/eval/`. A review report is a DATED record of the tree as it stood
+ *      when it was written; `docs/reviews/phase-0.md` correctly names
+ *      `src/lib/supabase/client.ts`, which existed at Phase 0 and was deleted in
+ *      Phase 1. Failing on that would push the next agent to falsify a historical
+ *      record. The shelf is different: it is read as current instruction.
+ *
+ *      A path is EXEMPT when the annotation itself says it is gone — "was deleted",
+ *      "is deleted", "deleted in Phase N". That is the one case where naming a
+ *      non-existent file is the point of the sentence.
+ *
+ *      Known limit, in the spirit of the others: this checks that a path RESOLVES,
+ *      not that the claim around it is true. An annotation can still describe a real
+ *      file inaccurately. It closes the specific failure that recurred three times —
+ *      a confident description of a module that is not there.
+ */
+const DOC_PATH_PREFIXES = /^(?:src|lib|scripts|tests|supabase|docs|app|components)\//;
+const DOC_ROOT_FILES = /^(?:README|SPEC|CLAUDE|package|next\.config|eslint\.config|tsconfig)\./;
+const DELETED_MARKER = /\b(?:was|is|were|are)\s+deleted\b|\bdeleted\s+in\s+Phase\b/i;
+
+/** Resolve a path that may carry a `*` segment (e.g. `lib/db/*`). */
+function resolvesInTree(p) {
+  const abs = path.join(ROOT, p);
+  if (!p.includes('*')) return existsSync(abs);
+  const parent = p.slice(0, p.indexOf('*')).replace(/\/[^/]*$/, '');
+  return parent.length > 0 && existsSync(path.join(ROOT, parent));
+}
+
+scanLines(
+  'R13 a docs/ annotation names a repo path that does not exist',
+  (abs) => {
+    const r = rel(abs);
+    return r.startsWith('docs/') && r.endsWith('.md') && r.split('/').length === 2;
+  },
+  (line) => {
+    for (const m of line.matchAll(
+      /`([A-Za-z0-9_@.()[\]/*-]+\.(?:ts|tsx|mjs|cjs|js|jsx|sql|json|md))`/g,
+    )) {
+      let p = m[1];
+      if (p.startsWith('@/')) p = `src/${p.slice(2)}`;
+      if (!DOC_PATH_PREFIXES.test(p) && !DOC_ROOT_FILES.test(p)) continue;
+      if (resolvesInTree(p) || resolvesInTree(`src/${p}`)) continue;
+      if (DELETED_MARKER.test(line)) continue;
+      return `names \`${m[1]}\`, which does not exist — describe what the repo actually does`;
+    }
+    return false;
+  },
+);
+
 if (failures.length) {
   for (const { label, hits } of failures) {
     console.error(`\nFAIL: ${label}`);
@@ -496,11 +558,12 @@ if (failures.length) {
 
 const NL = String.fromCharCode(10);
 console.log(
-  'check passed (12 rules): .from( and .rpc( confined to lib/db; no security definer;' +
+  'check passed (13 rules): .from( and .rpc( confined to lib/db; no security definer;' +
     NL + '  NEXT_PUBLIC_ hygiene incl. .env.example; no openrouter.ai URL or connection' +
     NL + '  import outside the gates; every secret reader imports server-only;' +
     NL + '  next.config.* clean of secrets and env injection; no getSession() in src/;' +
     NL + '  service-role key pinned to lib/supabase/admin.ts; createServerClient pinned to' +
     NL + '  server.ts + middleware.ts with shared cookieOptions, no createBrowserClient;' +
-    NL + '  no 90-day audit-retention claim without its evidence file.',
+    NL + '  no audit-retention period without its evidence file; every backticked' +
+    NL + '  repo path in the docs/ shelf resolves against the tree.',
 );

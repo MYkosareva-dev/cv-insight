@@ -159,6 +159,61 @@ describe('scripts/check.mjs — the gate the other gates rest on', () => {
   });
 
   /**
+   * R13 is the rule that exists because THREE keyword sweeps in a row declared
+   * docs/ clean while an annotation described `lib/supabase/env.ts`, a module
+   * that has never existed here. A keyword sweep can only look for strings
+   * already known to be wrong; what made that annotation wrong was a property.
+   * These cases pin the property.
+   */
+  const docNote = (body) => `# note\n\n> **ANNOTATION:** ${body}\n`;
+
+  test('R13 FAILS on a docs/ annotation naming a module that does not exist', () => {
+    const dir = sandbox();
+    write(dir, 'docs/invented.md', docNote('the boot-time guard in `lib/supabase/env.ts` does X.'));
+    const { status, stderr } = run(dir);
+    assert.equal(status, 1, 'a docs/ path that does not resolve must fail the build');
+    assert.match(stderr, /R13/);
+    assert.match(stderr, /env\.ts/, 'R13 must name the path it could not resolve');
+  });
+
+  test('R13 PASSES on paths that do resolve, including @/ and a glob segment', () => {
+    const dir = sandbox();
+    write(
+      dir,
+      'docs/real.md',
+      docNote(
+        'the gate `lib/chat.ts` imports `@/lib/supabase/server.ts`; the DALs live in `lib/db/*`.',
+      ),
+    );
+    const { status, stderr } = run(dir);
+    assert.equal(status, 0, `real paths must not trip R13:\n${stderr}`);
+  });
+
+  test('R13 exempts a path the annotation itself marks as deleted', () => {
+    // The one case where naming a missing file is the point of the sentence.
+    const dir = sandbox();
+    write(dir, 'docs/gone.md', docNote('`lib/supabase/client.ts` was deleted in Phase 1.'));
+    const { status, stderr } = run(dir);
+    assert.equal(status, 0, `an explicitly-deleted path must be allowed:\n${stderr}`);
+  });
+
+  test('R13 does not police docs/reviews — a dated record must stay accurate to its date', () => {
+    // phase-0.md names src/lib/supabase/client.ts, which existed at Phase 0.
+    // Failing on it would push the next agent to falsify a historical record.
+    const dir = sandbox();
+    write(dir, 'docs/reviews/phase-9.md', docNote('`src/lib/supabase/client.ts:14-15` reads two.'));
+    const { status, stderr } = run(dir);
+    assert.equal(status, 0, `review reports are out of R13 scope:\n${stderr}`);
+  });
+
+  test('R13 ignores package and upstream references, not just repo paths', () => {
+    const dir = sandbox();
+    write(dir, 'docs/upstream.md', docNote('see `@supabase/ssr` and `self-hosted-auth-keys.mdx`.'));
+    const { status, stderr } = run(dir);
+    assert.equal(status, 0, `non-repo references must not trip R13:\n${stderr}`);
+  });
+
+  /**
    * The two banned tokens are COMPOSED, never spelled. R9 and R11c scan for the
    * literal, and this file is inside the tree they scan — writing either one out
    * would make the fixture fail the very build it is asserting about. (It did,
