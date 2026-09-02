@@ -3,7 +3,7 @@
  * Repo invariants that a type-checker cannot see (SPEC v1.9 Block A, CLAUDE.md).
  * Runs as `npm run check`, and as `prebuild` so a build cannot skip it.
  *
- * Twelve rules:
+ * Thirteen rules:
  *   R1  `.from(` outside lib/db — one DAL per table, and DALs are the only
  *       files allowed to reach the database. Non-database receivers such as
  *       `Array.from(` and `Buffer.from(` are excluded.
@@ -35,23 +35,24 @@
  *       session httpOnly, it must be repeated at each call site, and a third
  *       site that forgets it downgrades the cookie SILENTLY — no error, no test
  *       failure. Pinning the call sites is what makes that impossible.
- *   R13 a backticked repo path in a docs/ reference that does not resolve against
- *       the tree. Three consecutive keyword sweeps declared docs/ clean while an
- *       annotation described a boot-time guard in `lib/supabase/env.ts`, a module
- *       that has never existed — because a keyword sweep can only look for strings
- *       already known to be wrong. What makes such an annotation wrong is a
- *       PROPERTY (it asserts something about this repo that is not the case), and
- *       a property belongs in the build. A stale note is an instruction to the
- *       next agent to do the wrong thing (CLAUDE.md, docs/ is THIS project's
- *       reference shelf).
- *   R12 the 90-day audit-retention claim in user-facing copy while
- *       docs/eval/audit-retention-evidence.md is absent. The claim and its proof
- *       ship together or not at all: a pg_cron job scheduled against the `auth`
- *       schema (owned by supabase_auth_admin) can fail with permission denied
- *       every night and leave no user-visible trace, so a page saying "deleted
- *       automatically" would be the app promising an erasure nothing performs.
- *       A source comment saying "do not deploy this" is itself a configured
- *       mechanism, not a working one — this is the working one.
+ *   R12 an audit-retention period in user-facing copy while
+ *       docs/eval/audit-retention-evidence.md is absent or records no succeeded
+ *       run. The claim and its proof ship together or not at all: a pg_cron job
+ *       scheduled against the `auth` schema (owned by supabase_auth_admin) can
+ *       fail with permission denied every night and leave no user-visible trace,
+ *       so a page saying "deleted automatically" would be the app promising an
+ *       erasure nothing performs. A source comment saying "do not deploy this"
+ *       is itself a configured mechanism, not a working one — this is the
+ *       working one.
+ *   R13 a backticked repo path in a docs/ shelf reference that does not resolve
+ *       against the tree. Three consecutive keyword sweeps declared docs/ clean
+ *       while an annotation described a boot-time guard in `lib/supabase/env.ts`,
+ *       a module that has never existed — because a keyword sweep can only look
+ *       for strings already known to be wrong. What makes such an annotation
+ *       wrong is a PROPERTY (it asserts something about this repo that is not the
+ *       case), and a property belongs in the build. A stale note is an
+ *       instruction to the next agent to do the wrong thing (CLAUDE.md, docs/ is
+ *       THIS project's reference shelf).
  *
  * This script opens exactly one dotfile — `.env.example`, the committed
  * template of NAMES — and for that file it prints only the matched variable
@@ -507,7 +508,15 @@ scanFiles(
  *
  *      A path is EXEMPT when the annotation itself says it is gone — "was deleted",
  *      "is deleted", "deleted in Phase N". That is the one case where naming a
- *      non-existent file is the point of the sentence.
+ *      non-existent file is the point of the sentence. The marker must sit within
+ *      80 characters of the backtick, not merely somewhere on the line: retention
+ *      prose in this repo says "rows ARE DELETED when they age out", which would
+ *      otherwise exempt every stale path sharing a line with it.
+ *
+ *      DIRECTORIES count too (`src/lib/supabase/`). The annotation that closed the
+ *      round-5 blocker asserts that directory "holds exactly server.ts,
+ *      cookie-options.ts and admin.ts" — a claim about a path, and one a
+ *      file-extension-only rule would never revisit.
  *
  *      Known limit, in the spirit of the others: this checks that a path RESOLVES,
  *      not that the claim around it is true. An annotation can still describe a real
@@ -533,14 +542,17 @@ scanLines(
     return r.startsWith('docs/') && r.endsWith('.md') && r.split('/').length === 2;
   },
   (line) => {
-    for (const m of line.matchAll(
-      /`([A-Za-z0-9_@.()[\]/*-]+\.(?:ts|tsx|mjs|cjs|js|jsx|sql|json|md))`/g,
-    )) {
+    // Either a file (trailing extension) or a directory (trailing slash).
+    const token =
+      /`([A-Za-z0-9_@.()[\]/*-]+(?:\.(?:ts|tsx|mjs|cjs|js|jsx|sql|json|md)|\/))`/g;
+    for (const m of line.matchAll(token)) {
       let p = m[1];
       if (p.startsWith('@/')) p = `src/${p.slice(2)}`;
       if (!DOC_PATH_PREFIXES.test(p) && !DOC_ROOT_FILES.test(p)) continue;
       if (resolvesInTree(p) || resolvesInTree(`src/${p}`)) continue;
-      if (DELETED_MARKER.test(line)) continue;
+      // The "it is gone" marker must be NEAR this path, not anywhere on the line.
+      const near = line.slice(Math.max(0, m.index - 80), m.index + m[0].length + 80);
+      if (DELETED_MARKER.test(near)) continue;
       return `names \`${m[1]}\`, which does not exist — describe what the repo actually does`;
     }
     return false;

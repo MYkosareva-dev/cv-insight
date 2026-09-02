@@ -182,11 +182,26 @@ describe('scripts/check.mjs — the gate the other gates rest on', () => {
       dir,
       'docs/real.md',
       docNote(
-        'the gate `lib/chat.ts` imports `@/lib/supabase/server.ts`; the DALs live in `lib/db/*`.',
+        'the gate `lib/chat.ts` imports `@/lib/supabase/server.ts`; the routes are ' +
+          '`src/app/api/*/route.ts`.',
       ),
     );
     const { status, stderr } = run(dir);
     assert.equal(status, 0, `real paths must not trip R13:\n${stderr}`);
+  });
+
+  test('R13 checks DIRECTORY paths too, not only files with an extension', () => {
+    // The annotation that closed the round-5 blocker asserts what
+    // `src/lib/supabase/` holds. An extension-only rule would never revisit it.
+    const dir = sandbox();
+    write(dir, 'docs/dir-ok.md', docNote('`src/lib/supabase/` holds the server client.'));
+    assert.equal(run(dir).status, 0, 'a real directory must pass');
+
+    const dir2 = sandbox();
+    write(dir2, 'docs/dir-bad.md', docNote('`src/lib/guards/` holds the boot-time check.'));
+    const { status, stderr } = run(dir2);
+    assert.equal(status, 1, 'a directory that does not exist must fail');
+    assert.match(stderr, /R13/);
   });
 
   test('R13 exempts a path the annotation itself marks as deleted', () => {
@@ -195,6 +210,24 @@ describe('scripts/check.mjs — the gate the other gates rest on', () => {
     write(dir, 'docs/gone.md', docNote('`lib/supabase/client.ts` was deleted in Phase 1.'));
     const { status, stderr } = run(dir);
     assert.equal(status, 0, `an explicitly-deleted path must be allowed:\n${stderr}`);
+  });
+
+  test('R13 does not let unrelated "are deleted" prose exempt a stale path', () => {
+    // Retention prose in this repo says "rows are deleted when they age out".
+    // Line-scoped matching would have exempted every stale path sharing that line.
+    const dir = sandbox();
+    write(
+      dir,
+      'docs/faroff.md',
+      docNote(
+        'audit rows are deleted when they age out, which is a completely separate ' +
+          'matter from the retention job and the disclosure wording on the privacy ' +
+          'page, and has nothing at all to do with `lib/supabase/env.ts` here.',
+      ),
+    );
+    const { status, stderr } = run(dir);
+    assert.equal(status, 1, 'a far-off "are deleted" must not exempt an unrelated stale path');
+    assert.match(stderr, /env\.ts/);
   });
 
   test('R13 does not police docs/reviews — a dated record must stay accurate to its date', () => {
