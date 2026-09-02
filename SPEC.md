@@ -1,5 +1,6 @@
 # CV Insight — Technical Specification
-> Version: 2.0 | Date: 2026-09-02 | Status: Production-ready
+> Version: 2.1 | Date: 2026-09-02 | Status: Production-ready
+> v2.1: maxAge 30d sliding window · R11 (createServerClient pin + createBrowserClient ban) · Sonner toast via ?notice flash (decided once) · Dialog for deletion · auth copy enumerated (signUpFailed, checkEmail, email_not_confirmed 4th outcome, deleting/cancel) · signup-enumeration decision · 500 SERVER_ERROR row · Block A: cookie-options.ts, validation.ts, error.tsx, alias hooks · exact /privacy exclusion
 > Amendment trail: v1.1 gate architecture · v1.2 fictional persona · v1.3 application notes · v1.4 HNSW index · v1.5 module-path cleanup · v1.6–1.9 phase-0 review rounds (B1a/B1b, middleware, check.mjs rules, cost_known, errors.ts/requireApiUser.ts, Block A completeness) · v2.0 phase-1 review (httpOnly cookieOptions + no browser client, three sign-in outcomes, error.code not status, best-effort signOut after delete, anchored matcher, cookie propagation on redirect, audit-log disclosure, R10 service-role pin, actions.ts/admin.ts)
 > Tier: M | Modules: M1 Auth, M2 Database, M3 API, M5 Legal & Privacy, M8 File upload, M12 Third-party integrations, M15 AI/LLM
 
@@ -38,7 +39,7 @@
 | Files | PDF text extraction via `unpdf` (server-side) | PDF only in MVP, ≤5 MB |
 | Resume export | `docx` npm package, server-side | .docx download only in MVP |
 | Validation | Zod | Every API input and every LLM JSON output |
-| Unit tests | node:test (zero-dep, built-in) | `npm test` — pure functions (keywordPresent, matchScore branch); files in `tests/unit/` |
+| Unit tests | node:test (zero-dep, built-in) | `npm test` — pure functions (keywordPresent, matchScore) AND shipped artifacts testable without a browser (middleware matcher, check.mjs rules); files in `tests/unit/`, TS resolved via `tests/alias-hook.mjs` |
 | E2E tests | Playwright (Phase 7) | See Block H; files in `tests/e2e/` |
 | Deploy | Vercel | All secrets in Vercel dashboard only |
 | **Prohibited** | `NEXT_PUBLIC_` prefix on any secret; any OpenRouter call from client code; service-role key anywhere client-accessible; LangChain/CrewAI or any agent framework (direct `fetch` only); analytics/telemetry/third-party cookies; LinkedIn scraping or auto-apply; DOCX/MD import (phase 2) | |
@@ -75,9 +76,12 @@ cv-insight/
 │   │   ├── (app)/quality/page.tsx
 │   │   ├── (app)/settings/page.tsx
 │   │   ├── privacy/page.tsx   # public
+│   │   ├── error.tsx          # error boundary — renders Next's digest only, never the message
 │   │   └── api/               # route handlers, see Block D
 │   ├── lib/
-│   │   ├── supabase/            # server client, browser client
+│   │   ├── supabase/            # server.ts (server client) · cookie-options.ts (shared httpOnly
+│   │   │                        # options) · admin.ts (service-role) — NO browser client (banned)
+│   │   ├── validation.ts        # Zod schemas for auth forms (+ API bodies as phases land)
 │   │   ├── openrouter/server.ts # CONNECTION only: speaks to both endpoints, no auth opinion
 │   │   ├── chat.ts              # GATE (server-only): completions — parse/generate/judge; getUser() first
 │   │   ├── errors.ts            # single shared UnauthorizedError (→401), imported by both gates
@@ -94,10 +98,13 @@ cv-insight/
 │   │   └── docx.ts              # resume export
 │   ├── app/not-found.tsx        # 404 page (RLS-absent rows render here, not 403)
 │   └── components/              # shadcn/ui-based (incl. components/ui/), see Block E
-├── tests/unit/                  # node:test — keywordPresent, matchScore branch (`npm test`)
-├── scripts/check.mjs            # 10 rules — FAILs on: .from( AND .rpc( outside lib/db;
+├── tests/unit/                  # node:test — keywordPresent, matchScore, middleware matcher, check rules
+├── tests/alias-hook.mjs         # + alias-resolver.mjs: resolve @/ TS imports for node:test
+├── scripts/check.mjs            # 11 rules — FAILs on: .from( AND .rpc( outside lib/db;
 │                                # (R8) secret in next.config.*; (R9) getSession( in src/;
 │                                # (R10) SUPABASE_SERVICE_ROLE_KEY read outside lib/supabase/admin.ts;
+│                                # (R11) createServerClient outside lib/supabase/server.ts + middleware.ts,
+│                                # or ANY createBrowserClient import;
 │                                # "security definer" in supabase/; NEXT_PUBLIC_ on any secret name
 │                                # (incl. .env.example); openrouter.ai URL outside lib/openrouter/server.ts;
 │                                # a secret read without a 'server-only' import; OpenRouter fetch outside
@@ -397,6 +404,7 @@ Conventions for ALL endpoints: Next.js App Router route handlers under `src/app/
 | 413 | FILE_TOO_LARGE | Upload >5 MB |
 | 422 | UNREADABLE_PDF | No text layer extracted |
 | 429 | DAILY_LIMIT | >50 LLM calls per user per day (rule B7) |
+| 500 | SERVER_ERROR | Unexpected failure after validation and auth (e.g. admin.deleteUser error); message is generic — never the underlying error text |
 | 502 | AI_UNAVAILABLE | Primary and fallback models both failed |
 
 | # | Endpoint | Purpose |
@@ -519,7 +527,12 @@ Loading: 8 skeleton rows. Empty: "No scans yet. Run your first scan." + [New sca
 **`/quality` — observability.** Stat tiles: Total LLM cost (USD, formatted from `cost_usd_micro`), Calls today, Avg judge score, Auto-revision rate, Fallback rate. Table of last 50 `llm_calls`: time, step, model, tokens in/out, cost, latency, ok.
 Loading: skeleton tiles. Empty: "No AI calls yet." Error: toast "Couldn't load metrics."
 
-**`/settings`.** Email (read-only), [Sign out] (outline), Danger zone card: [Delete account and all data] (danger red) → Dialog: "This permanently deletes your career base, scans and resumes. Type DELETE to confirm." Input + disabled confirm until exact match.
+**`/settings`.** Email (read-only), [Sign out] (outline), Danger zone card: [Delete account and all data] (danger red) → shadcn **Dialog** (modal, focus-trapped — destructive actions are never an inline panel): "This permanently deletes your career base, scans and resumes. Type DELETE to confirm." Input + disabled confirm until exact match; confirm button label while pending: "Deleting…"; secondary: "Cancel".
+
+**Toast mechanism (decided once, used by every phase):** shadcn **Sonner**. Server Actions cannot fire a client toast directly, so an action that redirects appends `?notice=<key>`; a client `<FlashToast />` mounted in the `(auth)` and `(app)` layouts reads the key ONCE, fires the toast with the matching `lib/copy.ts` string, and strips the param via `router.replace`. Keys are the copy.ts constant names (e.g. `account_deleted` → "Your account and all data were deleted."). No inline "?deleted=1 notice" variants — one mechanism.
+
+**Auth copy not previously enumerated (so `copy.ts` stays verbatim-to-SPEC):** `signUpFailed` → "Sign-up failed. Try again."; `checkEmail` (defensive — only reachable if the dashboard's Confirm-email toggle is ever re-enabled) → "Check your email to confirm your account."; `email_not_confirmed` on sign-in → "Confirm your email before signing in." (a fourth sign-in outcome: the credentials were RIGHT — never bucket it as "password is incorrect"); `over_email_send_rate_limit` is bucketed with `over_request_rate_limit` as rate-limited.
+> Decision: `/signup` MAY enumerate accounts ("An account with this email already exists.") — deliberate UX trade-off on a personal tool with no public user directory; `/login` stays non-enumerating. Do not "fix" one to match the other.
 
 **`/privacy`** — static: what is stored, where (Supabase, EU project region), that resume content is sent to OpenRouter for processing (retention choice documented), auth cookies are strictly necessary (no consent banner needed, no trackers), right to erasure via Settings, **authentication audit records** (Supabase `auth.audit_log_entries` retains actor id + email after account deletion — disclosed as provider-side security logging with the provider's retention), Impressum block.
 > Decision: Supabase project region = EU (Frankfurt) — closest to the user base and simplifies the GDPR story.
@@ -577,10 +590,12 @@ Application notes: ≤2,000 chars ("Notes are limited to 2000 characters."), inl
 - **Login**: `signInWithPassword` → redirect `/scan`. Invalid → copy per Block E.
 - **Logout**: `signOut()` → `/login`.
 - **Password reset**: OUT of MVP. > Decision: cut — requires email delivery; reviewer flow doesn't need it; noted in README known-limitations.
-- **Sessions**: Supabase SSR cookies (`@supabase/ssr`), strictly necessary → no consent banner. `@supabase/ssr` DEFAULTS are `httpOnly: false`, no `secure`, 400-day maxAge — NOT acceptable for a personal-data app. Both `createServerClient` call sites (server.ts, middleware.ts) MUST pass `cookieOptions: { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' }`.
+- **Sessions**: Supabase SSR cookies (`@supabase/ssr`), strictly necessary → no consent banner. `@supabase/ssr` DEFAULTS are `httpOnly: false`, no `secure`, 400-day maxAge — NOT acceptable for a personal-data app. Both `createServerClient` call sites (server.ts, middleware.ts) MUST pass the SHARED object from `lib/supabase/cookie-options.ts`: `{ httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 60 * 60 * 24 * 30 }`.
+> Decision: `maxAge` = 30 days. Middleware rewrites the cookie on every request, so this is a SLIDING 30-day inactivity window, not a hard expiry; the access token inside still expires hourly and rotates. 30 days balances GDPR data-minimisation against a job search that runs for weeks.
+> Decision: check.mjs R11 pins `createServerClient` to exactly `lib/supabase/server.ts` and `src/middleware.ts` and FAILs on any `createBrowserClient` import — the cookie rule is enforced by code, not prose (a future OAuth callback or reset handler that omits cookieOptions would otherwise downgrade the session silently).
 > Decision: all auth flows are Server Actions; `createBrowserClient` is NOT used anywhere (it writes the session via `document.cookie`, which can never be httpOnly — using it would make this rule unachievable). Adding a browser Supabase client later requires an owner amendment.
 - **Middleware cookie propagation**: every redirect branch must copy the refreshed session cookies from the Supabase response onto the redirect response — a bare `NextResponse.redirect()` silently drops a token refresh (production-shaped bug: dev sessions rarely cross the refresh boundary).
-- **Middleware matcher** is anchored: `/applications/x.png`, `/apifoo`, `/privacyleak` must NOT slip past it (the (app) layout is a second net, not the boundary).
+- **Middleware matcher** is anchored: `/applications/x.png`, `/apifoo`, `/privacyleak` must NOT slip past it (the (app) layout is a second net, not the boundary). `/privacy` is excluded as an EXACT path — it has no subtree, so no `privacy(?:/|$)` prefix exclusion.
 - **Route protection**: `src/middleware.ts` — no session on member route → redirect `/login`; session on /login|/signup → redirect `/scan`. `/privacy` is EXCLUDED from the middleware matcher (public page — no getUser() round trip).
 > Decision: keep the filename `middleware.ts`. Next 16 deprecates it in favour of `proxy.ts` and prints a build warning, but `middleware.ts` is still read and wired (build output shows `ƒ Proxy (Middleware)`). SPEC and CLAUDE.md name `middleware.ts`; revisit only if a future Next removes it, not silently.
 > Decision (superseded in Phase 1): `src/app/api/` is absent from the Phase 0 scaffold by design. Its FIRST route handler is `DELETE /api/account` (Phase 1 — account lifecycle, the sole service-role consumer); career import/items follow in Phase 2, scan/generate/etc. in Phases 3–4.
