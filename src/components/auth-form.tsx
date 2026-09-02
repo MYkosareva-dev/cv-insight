@@ -46,6 +46,15 @@ export function AuthForm({
    * costs a round trip. This is a convenience, NOT a gate — the action
    * re-validates, because a Server Action is a public endpoint and this check
    * lives in the browser where anyone can skip it.
+   *
+   * Why the form below carries `noValidate` (SPEC v2.4): the browser's native
+   * constraint validation runs BEFORE submit, so with it enabled a malformed
+   * address is caught by `type="email"` and the browser's own bubble — this
+   * handler never runs for that field and `AUTH.invalidEmail` is never seen.
+   * The password case still reached Zod (a 5-character password is natively
+   * valid), which is exactly why the gap was invisible: one path rendered our
+   * copy, the other quietly did not. `required` stays on each field for its
+   * semantics; `noValidate` is what keeps the copy ours.
    */
   function validateBeforeSubmit(event: React.FormEvent<HTMLFormElement>) {
     const data = new FormData(event.currentTarget);
@@ -65,7 +74,12 @@ export function AuthForm({
   const errorFor = (field: keyof FieldErrors) => state.fieldErrors[field] ?? clientErrors[field];
 
   return (
-    <form action={formAction} onSubmit={validateBeforeSubmit} className="flex flex-col gap-4">
+    <form
+      action={formAction}
+      onSubmit={validateBeforeSubmit}
+      noValidate
+      className="flex flex-col gap-4"
+    >
       <Field
         id="email"
         name="email"

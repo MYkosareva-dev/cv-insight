@@ -18,6 +18,7 @@ const SESSION_MAX_AGE = 2592000; // 30 days — SPEC Block F.
 /** Copy asserted verbatim, so drift from lib/copy.ts fails here. */
 const COPY = {
   badCredentials: 'Email or password is incorrect.',
+  invalidEmail: 'Enter a valid email address.',
   shortPassword: 'Password must be at least 8 characters.',
   emailTaken: 'An account with this email already exists.',
   accountDeleted: 'Your account and all data were deleted.',
@@ -190,19 +191,51 @@ test.describe('auth', () => {
     await expect(page.locator('body')).not.toContainText('Confirm your email');
   });
 
-  test('client-side validation blocks submit before any request', async ({ page }) => {
-    await page.goto('/signup');
-    let posted = false;
-    page.on('request', (r) => {
-      if (r.method() === 'POST') posted = true;
+  /**
+   * BOTH client-validation paths, because they fail differently (SPEC v2.4).
+   * A 5-character password is natively valid, so it reaches our Zod parse even
+   * when the browser is validating; a malformed address does NOT — `type="email"`
+   * catches it first and shows the browser's own bubble, and `AUTH.invalidEmail`
+   * is never rendered. That is why the form carries `noValidate`, and why a
+   * suite covering only the password case passed while the email path was
+   * silently unverified.
+   */
+  for (const [label, email, password, expected] of [
+    ['a malformed email', 'not-an-email', 'a-long-enough-password', COPY.invalidEmail],
+    ['a too-short password', 'someone@example.com', 'short', COPY.shortPassword],
+  ] as const) {
+    test(`client-side validation blocks submit on ${label}`, async ({ page }) => {
+      await page.goto('/signup');
+      let posted = false;
+      page.on('request', (r) => {
+        if (r.method() === 'POST') posted = true;
+      });
+
+      await page.getByLabel('Email').fill(email);
+      await page.getByLabel('Password').fill(password);
+      await page.getByRole('button', { name: 'Create account' }).click();
+
+      // OUR copy, rendered inline in the page — not a native validation bubble,
+      // which lives in browser chrome and is invisible to the DOM.
+      await expect(page.getByText(expected)).toBeVisible();
+      expect(posted, `${label} must not cost a round trip`).toBe(false);
     });
+  }
 
-    await page.getByLabel('Email').fill('someone@example.com');
-    await page.getByLabel('Password').fill('short');
-    await page.getByRole('button', { name: 'Create account' }).click();
-
-    await expect(page.getByText(COPY.shortPassword)).toBeVisible();
-    expect(posted, 'a too-short password must not cost a round trip').toBe(false);
+  test('native validation never pre-empts our copy', async ({ page }) => {
+    await page.goto('/signup');
+    const form = page.locator('form');
+    await expect(form, 'noValidate is what lets AUTH.invalidEmail render at all').toHaveAttribute(
+      'novalidate',
+      '',
+    );
+    // If native validation were active the field would report itself invalid
+    // and the submit handler would never run.
+    await page.getByLabel('Email').fill('not-an-email');
+    const nativelyValid = await page
+      .getByLabel('Email')
+      .evaluate((el) => (el as HTMLInputElement).form?.noValidate === true);
+    expect(nativelyValid).toBe(true);
   });
 
   test('a duplicate email is reported as such', async ({ page }) => {
