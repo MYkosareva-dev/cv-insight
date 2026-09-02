@@ -1,5 +1,6 @@
 # CV Insight — Technical Specification
-> Version: 2.5 | Date: 2026-09-02 | Status: Production-ready
+> Version: 2.6 | Date: 2026-09-02 | Status: Production-ready
+> v2.6: SPEC made buildable against its own rules — the deletion dialog names that records are kept and links, but never the period (a number there would trip R12); R12 described as the deny-by-default rule the code implements; migration comment matches what the page actually says; R13 mechanises path-resolution in docs/ (three rounds of drift a keyword sweep could not catch).
 > v2.5: deletion copy made honest at every surface ("all data" retired; dialog names what stays) · audit sentence states the consequence, not the FK · evidence gate mechanised as check R12 (claim and proof ship together; fallback wording until then) · revalidatePath on all three auth actions · docs/ declared a globbed set, never enumerated.
 > v2.4: audit-log claim has ONE canonical paragraph + evidence gate (a scheduled cron job is not a working one); no FK to auth.users so deletion does not cascade; 002 grants DELETE explicitly; noValidate KEPT (native bubbles would pre-empt our copy) + e2e must cover the email path; Phase-6 privacy gate triggers on any deployment reachable by anyone but the owner, preview URLs included.
 > v2.3: documentation voice — requirements stated as this project's own engineering standards, no external attribution anywhere in the repo (rule lives in CLAUDE.md Process); OpenRouter processing framed as deployment configuration.
@@ -64,6 +65,9 @@ cv-insight/
 ├── docs/                      # ALL vendored references live here — this tree NEVER enumerates
 │   │                          # them; any task touching docs/ globs the directory first and
 │   │                          # reports the count (an enumeration here caused two wrong scopes).
+│   │                          # R13 resolves every backticked repo path in docs/ against the tree:
+│   │                          # an annotation describing a module that does not exist is a defect a
+│   │                          # keyword sweep cannot catch, which is why it is a property, not a grep.
 │   │                          # Every file: source URL at top, annotations about THIS project only.
 │   ├── reviews/               # ai-code-reviewer reports per PR
 │   └── eval/                  # judge calibration; audit-retention-evidence.md (R12)
@@ -107,12 +111,15 @@ cv-insight/
 │   └── components/              # shadcn/ui-based (incl. components/ui/), see Block E
 ├── tests/unit/                  # node:test — keywordPresent, matchScore, middleware matcher, check rules
 ├── tests/alias-hook.mjs         # + alias-resolver.mjs: resolve @/ TS imports for node:test
-├── scripts/check.mjs            # 12 rules — FAILs on: .from( AND .rpc( outside lib/db;
+├── scripts/check.mjs            # 13 rules — FAILs on: .from( AND .rpc( outside lib/db;
 │                                # (R8) secret in next.config.*; (R9) getSession( in src/;
 │                                # (R10) SUPABASE_SERVICE_ROLE_KEY read outside lib/supabase/admin.ts;
 │                                # (R11) createServerClient outside lib/supabase/server.ts + middleware.ts,
-│                                # or ANY createBrowserClient import; (R12) the 90-day audit claim on
-│                                # /privacy without docs/eval/audit-retention-evidence.md;
+│                                # or ANY createBrowserClient import; (R12) an audit-retention period
+│                                # on any shipped surface without a succeeded run in
+│                                # docs/eval/audit-retention-evidence.md; (R13) a backticked repo path in
+│                                # docs/ that does not resolve against the tree (allow-list: paths the
+│                                # annotation itself marks as deleted);
 │                                # "security definer" in supabase/; NEXT_PUBLIC_ on any secret name
 │                                # (incl. .env.example); openrouter.ai URL outside lib/openrouter/server.ts;
 │                                # a secret read without a 'server-only' import; OpenRouter fetch outside
@@ -384,7 +391,8 @@ $$;
 ### Migration `supabase/migrations/002_audit_retention.sql` (Phase 1; run in SQL editor after 001)
 ```sql
 -- Retention for Supabase Auth's audit trail, which lives in THIS database (we are the controller).
--- Disclosed on /privacy as 90 days. pg_cron must be enabled for the project (Database → Extensions).
+-- /privacy states NO period until a succeeded run exists (R12 + the evidence gate);
+-- after that it discloses 90 days. pg_cron must be enabled for the project (Database → Extensions).
 create extension if not exists pg_cron;
 
 -- The auth schema is owned by supabase_auth_admin and the job runs as the scheduling
@@ -560,7 +568,8 @@ Loading: 8 skeleton rows. Empty: "No scans yet. Run your first scan." + [New sca
 **`/quality` — observability.** Stat tiles: Total LLM cost (USD, formatted from `cost_usd_micro`), Calls today, Avg judge score, Auto-revision rate, Fallback rate. Table of last 50 `llm_calls`: time, step, model, tokens in/out, cost, latency, ok.
 Loading: skeleton tiles. Empty: "No AI calls yet." Error: toast "Couldn't load metrics."
 
-**`/settings`.** Email (read-only), [Sign out] (outline), Danger zone card: [Delete account and data] (danger red) → shadcn **Dialog** (modal, focus-trapped — destructive actions are never an inline panel): "This permanently deletes your career base, scans and resumes. Authentication audit records are kept separately for 90 days — see Privacy. Type DELETE to confirm." (the Privacy link opens /privacy) Input + disabled confirm until exact match; confirm button label while pending: "Deleting…"; secondary: "Cancel".
+**`/settings`.** Email (read-only), [Sign out] (outline), Danger zone card: [Delete account and data] (danger red) → shadcn **Dialog** (modal, focus-trapped — destructive actions are never an inline panel): "This permanently deletes your career base, scans and resumes. Some authentication records are kept separately — see Privacy. Type DELETE to confirm." (the Privacy link opens /privacy)
+> Decision: the dialog names that something is kept, and links; it never carries the retention PERIOD. One retention story, told in one place — a number here plus a different (or absent) number one hop away on /privacy is the same two-truths defect, surfaces swapped. It also keeps the dialog under-promising rather than over-promising, which is the safe direction for a copy that a user acts on irreversibly. Mechanically: any period stated here would trip R12 the moment /privacy carries the fallback. Input + disabled confirm until exact match; confirm button label while pending: "Deleting…"; secondary: "Cancel".
 
 **Toast mechanism (decided once, used by every phase):** shadcn **Sonner**. Server Actions cannot fire a client toast directly, so an action that redirects appends `?notice=<key>`; a client `<FlashToast />` mounted in the `(auth)` and `(app)` layouts reads the key ONCE, fires the toast with the matching `lib/copy.ts` string, and strips the param via `router.replace`. Keys are the copy.ts constant names (e.g. `account_deleted` → "Your account and the data you created were deleted."). No inline "?deleted=1 notice" variants — one mechanism.
 
@@ -571,7 +580,7 @@ Loading: skeleton tiles. Empty: "No AI calls yet." Error: toast "Couldn't load m
 > Decision (audit log, corrected): `auth.audit_log_entries` lives in OUR Postgres (EU-Frankfurt) — the operator is the controller, there is no "provider retention period", and Supabase does not prune it. It has **no foreign key to `auth.users`**, so account deletion fires NO cascade into it: those rows survive deletion and disappear only on the scheduled purge. Retention is therefore OURS: migration `002_audit_retention.sql` schedules a `pg_cron` job (daily 03:00 UTC) deleting entries older than **90 days**.
 > **Deletion copy must match this decision everywhere, not only on /privacy.** "all data" is not a true claim while audit records survive, so it appears in no button, toast, dialog or heading. Canonical strings: button "Delete account and data"; dialog body names what goes AND what stays, with a link to /privacy; toast "Your account and the data you created were deleted." A promise made at the moment of an irreversible action is the one that must be most exact.
 > **Single source of this claim on /privacy** — exactly one paragraph, nowhere else, verbatim: "Deleting your account removes your account and the data you created in the app. Separately, we keep authentication audit records (event type, your user id, email address and IP address) in our EU database for 90 days for security purposes; these are not removed when you delete your account, and are deleted automatically when they age out." Any other sentence about audit records, provider retention, or "every row" erasure is a defect — grep /privacy for duplicates before hand-over.
-> **Evidence gate (mechanical, not advisory)**: the 90-day claim and its proof are coupled by the build. `scripts/check.mjs` **R12** FAILs if `/privacy` contains the 90-day audit sentence while `docs/eval/audit-retention-evidence.md` is absent. Until the owner has applied 002 and pasted a `succeeded` run into that file, /privacy carries the FALLBACK sentence: "Separately, we keep authentication audit records (event type, your user id, email address and IP address) in our EU database for security purposes; these are not removed when you delete your account. An automated retention schedule for them is being set up." The strong wording and the evidence file land in the SAME commit, never apart.
+> **Evidence gate (mechanical, not advisory)**: the 90-day claim and its proof are coupled by the build. `scripts/check.mjs` **R12** FAILs if ANY shipped surface (page, component, or copy constant — not `/privacy` alone; the rule is deny-by-default, so a claim that moves file still trips it) states an audit-retention period while `docs/eval/audit-retention-evidence.md` is missing or empty of a `succeeded` run. Until the owner has applied 002 and pasted a `succeeded` run into that file, /privacy carries the FALLBACK sentence: "Separately, we keep authentication audit records (event type, your user id, email address and IP address) in our EU database for security purposes; these are not removed when you delete your account. An automated retention schedule for them is being set up." The strong wording and the evidence file land in the SAME commit, never apart.
 > **Why**: this wording may ship only once a purge run has actually SUCCEEDED. `cron.schedule` returning a job id proves nothing — the `auth` schema is owned by `supabase_auth_admin`, so the job can fail with permission denied every night and leave no user-visible trace. The owner verifies `select status, return_message, end_time from cron.job_run_details where jobid = (select jobid from cron.job where jobname = 'purge-auth-audit-log') order by end_time desc limit 3;` shows `succeeded`. If it does not, the page reverts to the fallback wording ("...for security purposes; we are working on an automated retention schedule for them") and the purge is fixed before the claim is restored — the page never promises a deletion that is not happening.
 > Decision (scope): Phase 1 makes /privacy ACCURATE (no false claims, audit-log truth, email listed, reachable) — it is not yet public. COMPLETENESS — controller identity, legal bases per purpose, retention table, data-subject rights section, and a REAL Impressum (§5 DDG; a placeholder is abmahnfähig once public) — is a hard gate before ANY deployment reachable by anyone but the owner — preview and share URLs included, not just a public launch (the likely first exposure is a preview link handed to someone, and that is the day a real email gets typed in). Enforced by eu-compliance-reviewer + vercel-security. Owner task before Phase 2: `docs/openrouter-processing.md` (+ one sentence on /privacy), written as deployment configuration, never as project history: "Data retention and training opt-out for LLM processing are governed by the OpenRouter account a deployment is configured with (`OPENROUTER_API_KEY`). The reference deployment runs on a shared account whose privacy settings are managed by the account holder and processes demo data only. Operators serving real users must configure their own OpenRouter account with explicit retention (Zero Data Retention) and training settings." Consequence for the reference deployment: synthetic data only (the fictional persona).
 > Decision: Supabase project region = EU (Frankfurt) — closest to the user base and simplifies the GDPR story.
