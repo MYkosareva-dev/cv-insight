@@ -16,8 +16,9 @@ export default function PrivacyPage() {
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium">What is stored, and where</h2>
         <p className="text-muted-foreground text-sm">
-          {APP_NAME} stores your career items, job postings, scans and generated resumes in a
-          Supabase Postgres database hosted in the EU (Frankfurt). Rows are scoped to your account.
+          {APP_NAME} stores the email address you sign up with, together with your career items,
+          job postings, scans, generated resumes and per-call AI usage metadata, in a Supabase
+          Postgres database hosted in the EU (Frankfurt). Rows are scoped to your account.
         </p>
       </section>
 
@@ -50,10 +51,9 @@ export default function PrivacyPage() {
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium">Authentication audit records</h2>
         <p className="text-muted-foreground text-sm">
-          Supabase records authentication events — sign-in, sign-out, account changes — in its own
-          audit log. Those entries include the account identifier and email address and are kept
-          under Supabase&apos;s retention policy, so they are not removed when you delete your
-          account. They are provider-side security logging and are not used by CV Insight.
+          We keep authentication audit records (event type, your user id, email address and IP
+          address) for 90 days in our EU database for security purposes, then delete them
+          automatically.
         </p>
       </section>
 

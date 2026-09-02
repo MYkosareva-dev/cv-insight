@@ -1,9 +1,11 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 
 import { AppSidebar } from '@/components/app-sidebar';
 import { FlashToast } from '@/components/flash-toast';
 import { Toaster } from '@/components/ui/sonner';
+import { AUTH } from '@/lib/copy';
 import { getUser } from '@/lib/supabase/server';
 
 /**
@@ -22,7 +24,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </Suspense>
       <Toaster />
       <AppSidebar />
-      <main className="w-full max-w-5xl flex-1 p-4 md:p-8">{children}</main>
+      <div className="flex w-full max-w-5xl flex-1 flex-col">
+        <main className="flex-1 p-4 md:p-8">{children}</main>
+        {/*
+          Art. 12(1): the privacy statement has to be reachable from anywhere in the
+          app, not only from the signed-out screens.
+        */}
+        <footer className="text-muted-foreground p-4 text-xs md:px-8">
+          <Link href="/privacy" className="underline-offset-4 hover:underline">
+            {AUTH.privacyLink}
+          </Link>
+        </footer>
+      </div>
     </div>
   );
 }
