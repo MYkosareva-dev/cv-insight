@@ -1,5 +1,6 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import { AUTH } from '@/lib/copy';
@@ -22,6 +23,13 @@ import {
  * Supabase Auth does all password handling: signUp / signInWithPassword /
  * signOut and nothing else. No hashing, no comparison, no homemade tokens
  * (CLAUDE.md, Authentication rule 1).
+ *
+ * Every success path calls `revalidatePath('/', 'layout')` before redirecting
+ * (SPEC Block F, "Cache invalidation on auth change"). The session changed, so
+ * any Server Component output cached for the PREVIOUS auth state is now wrong —
+ * after sign-out a back-navigation could otherwise paint a signed-in shell.
+ * It goes before `redirect()` and outside any try/catch: `redirect` works by
+ * throwing, so a surrounding catch would swallow the navigation.
  */
 
 function parse(formData: FormData) {
@@ -61,6 +69,7 @@ export async function signUpAction(
     return { fieldErrors: {}, formError: AUTH.checkEmail };
   }
 
+  revalidatePath('/', 'layout');
   redirect('/career');
 }
 
@@ -81,12 +90,14 @@ export async function signInAction(
     return { fieldErrors: {}, formError: signInMessage(error.code) };
   }
 
+  revalidatePath('/', 'layout');
   redirect('/scan');
 }
 
 export async function signOutAction(): Promise<void> {
   const supabase = await createClient();
   await supabase.auth.signOut();
+  revalidatePath('/', 'layout');
   redirect('/login');
 }
 
