@@ -55,4 +55,41 @@ export async function insertDocuments(_userId: string, _rows: NewDocument[]): Pr
   throw new Error('insertDocuments is a phase-0 stub — implemented with the indexing phase.');
 }
 
-/** RPC wrapper lives in lib/retrieval.ts (the gate), not here. */
+/** One row from `match_documents`, in the RPC's own snake_case shape. */
+export type MatchDocumentsRow = {
+  id: string;
+  career_item_id: string;
+  content: string;
+  similarity: number;
+};
+
+/**
+ * The `match_documents` RPC — vector search over the caller's own base.
+ *
+ * The call lives HERE and not in the retrieval gate, because this DAL owns
+ * every route to the `documents` table and the RPC is one of them
+ * (SPEC v1.7 Block A). `scripts/check.mjs` allows `.rpc(` only inside lib/db,
+ * so a page or handler cannot reach the function directly.
+ *
+ * `match_documents` is `security invoker` and filters on `auth.uid()` INSIDE
+ * the function, with RLS on `documents` as the fence underneath. Both must stay
+ * true — making it `security definer` would turn the filter into the whole
+ * access decision, and `npm run check` fails on `security definer` anywhere in
+ * `supabase/`.
+ *
+ * Errors are thrown, never swallowed into an empty array: the caller has to be
+ * able to tell "found nothing" apart from "could not search" (CLAUDE.md,
+ * Retrieval — three outcomes, never two).
+ */
+export async function matchDocuments(
+  queryEmbedding: number[],
+  matchCount: number,
+): Promise<MatchDocumentsRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('match_documents', {
+    query_embedding: queryEmbedding,
+    match_count: matchCount,
+  });
+  if (error) throw error;
+  return (data ?? []) as MatchDocumentsRow[];
+}

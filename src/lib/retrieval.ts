@@ -2,17 +2,23 @@ import 'server-only';
 
 import type { User } from '@supabase/supabase-js';
 
+import { matchDocuments as matchDocumentsRpc } from '@/lib/db/documents';
 import { UnauthorizedError } from '@/lib/errors';
 import { getUser } from '@/lib/supabase/server';
 import { type ConnectionResult, createEmbeddings } from '@/lib/openrouter/server';
 
 /**
- * GATE — embeddings + vector search. Phase 0 stub.
+ * GATE — embeddings, and the ORCHESTRATOR for vector search. Phase 0 stub.
  *
  * Every embedding call (indexing, matching, re-scoring) goes through here, and
  * the gate calls getUser() FIRST. Unlike `lib/chat.ts` this also guards spends
  * that happen as a SIDE EFFECT of saving a career item, which is why the two
  * gates are separate files (CLAUDE.md, "AI model calls").
+ *
+ * The `match_documents` call itself lives in `lib/db/documents.ts`, because
+ * that DAL owns every route to the `documents` table (SPEC v1.7 Block A). This
+ * module embeds the query, calls the DAL, and turns the result into one of the
+ * three retrieval outcomes.
  *
  * Retrieved chunks are DATA: they go into a model call inside a tagged block,
  * are never stored in prompts, never echoed verbatim to the client, and never
@@ -56,9 +62,14 @@ export async function embedTexts(_texts: string[]): Promise<ConnectionResult<num
 }
 
 /**
- * Vector search over the caller's own base via the `match_documents` RPC
- * (security invoker; filters on auth.uid() inside the function, with RLS on
- * `documents` as the fence underneath).
+ * Vector search over the caller's own base: embed the query here, then call
+ * `lib/db/documents.ts` for the `match_documents` RPC (security invoker;
+ * filters on auth.uid() inside the function, with RLS on `documents` as the
+ * fence underneath).
+ *
+ * Returns one of THREE outcomes. A thrown RPC or embedding error becomes
+ * `could_not_search`, never `found_nothing` — the caller must fail the scan
+ * with AI_UNAVAILABLE rather than render the requirements as gaps.
  *
  * In development every run logs one line per considered chunk — career item
  * title and similarity, including below-threshold ones. This is an acceptance
@@ -69,5 +80,6 @@ export async function matchDocuments(
   _matchCount = 5,
 ): Promise<MatchOutcome> {
   await requireUser();
+  void matchDocumentsRpc; // wired up in the AI-pipeline phase
   throw new Error('Retrieval gate is a phase-0 stub — not implemented yet.');
 }
