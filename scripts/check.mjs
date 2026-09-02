@@ -35,6 +35,14 @@
  *       session httpOnly, it must be repeated at each call site, and a third
  *       site that forgets it downgrades the cookie SILENTLY — no error, no test
  *       failure. Pinning the call sites is what makes that impossible.
+ *   R12 the 90-day audit-retention claim in user-facing copy while
+ *       docs/eval/audit-retention-evidence.md is absent. The claim and its proof
+ *       ship together or not at all: a pg_cron job scheduled against the `auth`
+ *       schema (owned by supabase_auth_admin) can fail with permission denied
+ *       every night and leave no user-visible trace, so a page saying "deleted
+ *       automatically" would be the app promising an erasure nothing performs.
+ *       A source comment saying "do not deploy this" is itself a configured
+ *       mechanism, not a working one — this is the working one.
  *
  * This script opens exactly one dotfile — `.env.example`, the committed
  * template of NAMES — and for that file it prints only the matched variable
@@ -55,7 +63,7 @@
  *   - Runtime indirection generally: `eval`, dynamic property names, a helper
  *     that forwards `process.env`.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -441,6 +449,31 @@ scanLines(
   (line) => /createBrowserClient/.test(line),
 );
 
+// R12. The 90-day audit-retention claim may not ship ahead of its evidence.
+//      Scoped to the two surfaces that can make it: /privacy and the deletion
+//      dialog copy. Matched on the comment-STRIPPED text, so the block comment
+//      recording the strong sentence (and this rule's own prose) never trips it —
+//      what a reader sees is what is judged.
+const RETENTION_CLAIM_FILES = ['src/app/privacy/page.tsx', 'src/lib/copy.ts'];
+const RETENTION_EVIDENCE = 'docs/eval/audit-retention-evidence.md';
+scanFiles(
+  `R12 the 90-day audit-retention claim ships without ${RETENTION_EVIDENCE}`,
+  (abs) => RETENTION_CLAIM_FILES.includes(rel(abs)),
+  (raw, stripped) => {
+    // "audit records" and "90 days" within one sentence-ish window, either order.
+    const claim =
+      /audit records[\s\S]{0,300}?90 days/i.test(stripped) ||
+      /90 days[\s\S]{0,300}?audit records/i.test(stripped);
+    if (!claim) return null;
+    if (existsSync(path.join(ROOT, RETENTION_EVIDENCE))) return null;
+    return (
+      'promises a 90-day audit-record retention that nothing has been shown to perform - ' +
+      `either use the SPEC fallback wording or add ${RETENTION_EVIDENCE} ` +
+      "with a 'succeeded' row from cron.job_run_details, in this same commit"
+    );
+  },
+);
+
 if (failures.length) {
   for (const { label, hits } of failures) {
     console.error(`\nFAIL: ${label}`);
@@ -452,10 +485,11 @@ if (failures.length) {
 
 const NL = String.fromCharCode(10);
 console.log(
-  'check passed (11 rules): .from( and .rpc( confined to lib/db; no security definer;' +
+  'check passed (12 rules): .from( and .rpc( confined to lib/db; no security definer;' +
     NL + '  NEXT_PUBLIC_ hygiene incl. .env.example; no openrouter.ai URL or connection' +
     NL + '  import outside the gates; every secret reader imports server-only;' +
     NL + '  next.config.* clean of secrets and env injection; no getSession() in src/;' +
     NL + '  service-role key pinned to lib/supabase/admin.ts; createServerClient pinned to' +
-    NL + '  server.ts + middleware.ts with shared cookieOptions, no createBrowserClient.',
+    NL + '  server.ts + middleware.ts with shared cookieOptions, no createBrowserClient;' +
+    NL + '  no 90-day audit-retention claim without its evidence file.',
 );
