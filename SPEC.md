@@ -1,5 +1,7 @@
 # CV Insight — Technical Specification
-> Version: 2.2 | Date: 2026-09-02 | Status: Production-ready
+> Version: 2.4 | Date: 2026-09-02 | Status: Production-ready
+> v2.4: audit-log claim has ONE canonical paragraph + evidence gate (a scheduled cron job is not a working one); no FK to auth.users so deletion does not cascade; 002 grants DELETE explicitly; noValidate KEPT (native bubbles would pre-empt our copy) + e2e must cover the email path; Phase-6 privacy gate triggers on any deployment reachable by anyone but the owner, preview URLs included.
+> v2.3: documentation voice — requirements stated as this project's own engineering standards, no external attribution anywhere in the repo (rule lives in CLAUDE.md Process); OpenRouter processing framed as deployment configuration.
 > v2.2: maxAge enforced via cappedMaxAge (library discards cookieOptions.maxAge) + R11d/test · R11a bare token · client-side Zod (no noValidate) · auth.spec.ts pulled into Phase 1 as the only accepted evidence · audit-log corrected: WE are controller → 002_audit_retention.sql (pg_cron, 90d) + accurate disclosure · /privacy accurate-now / complete-before-deploy (Impressum = Phase 6 gate) · OpenRouter Art. 28/44 owner task before Phase 2 · linter hardening → 003
 > v2.1: maxAge 30d sliding window · R11 (createServerClient pin + createBrowserClient ban) · Sonner toast via ?notice flash (decided once) · Dialog for deletion · auth copy enumerated (signUpFailed, checkEmail, email_not_confirmed 4th outcome, deleting/cancel) · signup-enumeration decision · 500 SERVER_ERROR row · Block A: cookie-options.ts, validation.ts, error.tsx, alias hooks · exact /privacy exclusion
 > Amendment trail: v1.1 gate architecture · v1.2 fictional persona · v1.3 application notes · v1.4 HNSW index · v1.5 module-path cleanup · v1.6–1.9 phase-0 review rounds (B1a/B1b, middleware, check.mjs rules, cost_known, errors.ts/requireApiUser.ts, Block A completeness) · v2.0 phase-1 review (httpOnly cookieOptions + no browser client, three sign-in outcomes, error.code not status, best-effort signOut after delete, anchored matcher, cookie propagation on redirect, audit-log disclosure, R10 service-role pin, actions.ts/admin.ts)
@@ -8,7 +10,7 @@
 ## Module checklist
 | # | Module | YES/NO | Reason |
 |---|---|---|---|
-| M1 | Auth & Sessions | YES | Per-user server data; Supabase Auth required by sprint |
+| M1 | Auth & Sessions | YES | Per-user server data; every row is owner-scoped |
 | M2 | Database | YES | Supabase Postgres + pgvector; RLS on every table |
 | M3 | API Endpoints | YES | Next.js route handlers; all LLM/embedding calls server-side |
 | M4 | Payments | NO | Free tool — zero words about pricing |
@@ -45,7 +47,7 @@
 | Deploy | Vercel | All secrets in Vercel dashboard only |
 | **Prohibited** | `NEXT_PUBLIC_` prefix on any secret; any OpenRouter call from client code; service-role key anywhere client-accessible; LangChain/CrewAI or any agent framework (direct `fetch` only); analytics/telemetry/third-party cookies; LinkedIn scraping or auto-apply; DOCX/MD import (phase 2) | |
 
-> Decision: Next.js 16 + Tailwind v4 chosen as current stable majors; sprint imposes no version, so newest stable wins.
+> Decision: Next.js 16 + Tailwind v4 — current stable majors at project start; no external constraint pins a version, so newest stable wins.
 > Decision: `SUPABASE_SERVICE_ROLE_KEY` exists server-side in `.env.local` and is used in exactly one place — `DELETE /api/account` (auth.admin.deleteUser). It never appears in client bundles or `NEXT_PUBLIC_` variables.
 > Decision: Money does not exist in this app (M4 = NO); the only monetary value is LLM cost tracking, stored as INTEGER micro-USD (`cost_usd_micro`), formatted only at display.
 
@@ -225,7 +227,7 @@ auth.users 1──N resume_versions (user_id)    applications 1──N resume_ve
 auth.users 1──N llm_calls (user_id)          applications 1──N llm_calls (application_id, SET NULL)
 ```
 
-> Decision: the embeddings table is named `documents` (not `career_chunks`) to match the sprint requirement verbatim: "a documents table with vector(1536) columns".
+> Decision: the embeddings table is named `documents` (not `career_chunks`) — the conventional pgvector/Supabase naming, so the schema reads the way the ecosystem's examples and tooling expect.
 > Decision: no `profiles` table — `auth.users` covers MVP needs; nothing user-facing to store beyond owned rows.
 
 ### Migration `supabase/migrations/001_init.sql` (run in Supabase SQL editor as-is)
@@ -380,11 +382,24 @@ $$;
 -- Retention for Supabase Auth's audit trail, which lives in THIS database (we are the controller).
 -- Disclosed on /privacy as 90 days. pg_cron must be enabled for the project (Database → Extensions).
 create extension if not exists pg_cron;
+
+-- The auth schema is owned by supabase_auth_admin and the job runs as the scheduling
+-- role, so DELETE must be granted explicitly or the job fails silently every night.
+grant usage on schema auth to postgres;
+grant delete on table auth.audit_log_entries to postgres;
+
 select cron.schedule(
   'purge-auth-audit-log',            -- job name (idempotent: re-running replaces the schedule)
   '0 3 * * *',                       -- daily 03:00 UTC
   $$ delete from auth.audit_log_entries where created_at < now() - interval '90 days' $$
 );
+
+-- Prove it: schedule a one-off run a minute out, then read cron.job_run_details.
+-- A row in cron.job means "scheduled"; only status='succeeded' in cron.job_run_details
+-- means the purge actually has permission to run.
+--   select status, return_message, end_time from cron.job_run_details
+--   where jobid = (select jobid from cron.job where jobname = 'purge-auth-audit-log')
+--   order by end_time desc limit 3;
 ```
 
 ### Seed example (core table `career_items`)
@@ -549,8 +564,10 @@ Loading: skeleton tiles. Empty: "No AI calls yet." Error: toast "Couldn't load m
 > Decision: `/signup` MAY enumerate accounts ("An account with this email already exists.") — deliberate UX trade-off on a personal tool with no public user directory; `/login` stays non-enumerating. Do not "fix" one to match the other.
 
 **`/privacy`** — static, reachable from BOTH layouts (footer link in `(auth)` and `(app)` — Art. 12(1)). Content: what is stored (account email; career items, vacancies, applications, resume versions, LLM-call metadata), where (Supabase, EU-Frankfurt), that resume/vacancy text is sent to OpenRouter for processing (retention choice documented), auth cookies are strictly necessary (no consent banner, no trackers), right to erasure via Settings, **authentication audit records**, Impressum block.
-> Decision (audit log, corrected): `auth.audit_log_entries` lives in OUR Postgres (EU-Frankfurt) — the operator is the controller, there is no "provider retention period", and Supabase does not prune it. Retention is therefore OURS: migration `002_audit_retention.sql` schedules a `pg_cron` job (daily 03:00 UTC) deleting entries older than **90 days**. Disclosure wording: "We keep authentication audit records (event type, your user id, email address and IP address) for 90 days in our EU database for security purposes, then delete them automatically."
-> Decision (scope): Phase 1 makes /privacy ACCURATE (no false claims, audit-log truth, email listed, reachable) — it is not yet public. COMPLETENESS — controller identity, legal bases per purpose, retention table, data-subject rights section, and a REAL Impressum (§5 DDG; a placeholder is abmahnfähig once public) — is a hard gate of Phase 6, enforced by eu-compliance-reviewer + vercel-security before the first deploy. Owner task before Phase 2: read OpenRouter's DPA/privacy terms, set retention/training (ZDR decision), record the Art. 28 processor + Art. 44 transfer basis in docs/ (this doubles as the "OpenRouter privacy settings" optional task).
+> Decision (audit log, corrected): `auth.audit_log_entries` lives in OUR Postgres (EU-Frankfurt) — the operator is the controller, there is no "provider retention period", and Supabase does not prune it. It has **no foreign key to `auth.users`**, so account deletion fires NO cascade into it: those rows survive deletion and disappear only on the scheduled purge. Retention is therefore OURS: migration `002_audit_retention.sql` schedules a `pg_cron` job (daily 03:00 UTC) deleting entries older than **90 days**.
+> **Single source of this claim on /privacy** — exactly one paragraph, nowhere else, verbatim: "Deleting your account removes your account and the data you created in the app. Separately, we keep authentication audit records (event type, your user id, email address and IP address) in our EU database for 90 days for security purposes; these are not linked to your account record and are deleted automatically when they age out." Any other sentence about audit records, provider retention, or "every row" erasure is a defect — grep /privacy for duplicates before hand-over.
+> **Evidence gate**: this wording may ship only once a purge run has actually SUCCEEDED. `cron.schedule` returning a job id proves nothing — the `auth` schema is owned by `supabase_auth_admin`, so the job can fail with permission denied every night and leave no user-visible trace. The owner verifies `select status, return_message, end_time from cron.job_run_details where jobid = (select jobid from cron.job where jobname = 'purge-auth-audit-log') order by end_time desc limit 3;` shows `succeeded`. If it does not, the page reverts to the fallback wording ("...for security purposes; we are working on an automated retention schedule for them") and the purge is fixed before the claim is restored — the page never promises a deletion that is not happening.
+> Decision (scope): Phase 1 makes /privacy ACCURATE (no false claims, audit-log truth, email listed, reachable) — it is not yet public. COMPLETENESS — controller identity, legal bases per purpose, retention table, data-subject rights section, and a REAL Impressum (§5 DDG; a placeholder is abmahnfähig once public) — is a hard gate before ANY deployment reachable by anyone but the owner — preview and share URLs included, not just a public launch (the likely first exposure is a preview link handed to someone, and that is the day a real email gets typed in). Enforced by eu-compliance-reviewer + vercel-security. Owner task before Phase 2: `docs/openrouter-processing.md` (+ one sentence on /privacy), written as deployment configuration, never as project history: "Data retention and training opt-out for LLM processing are governed by the OpenRouter account a deployment is configured with (`OPENROUTER_API_KEY`). The reference deployment runs on a shared account whose privacy settings are managed by the account holder and processes demo data only. Operators serving real users must configure their own OpenRouter account with explicit retention (Zero Data Retention) and training settings." Consequence for the reference deployment: synthetic data only (the fictional persona).
 > Decision: Supabase project region = EU (Frankfurt) — closest to the user base and simplifies the GDPR story.
 
 ### Actions table (cross-screen)
@@ -610,7 +627,8 @@ Application notes: ≤2,000 chars ("Notes are limited to 2000 characters."), inl
 > Decision: `maxAge` = 30 days. Middleware rewrites the cookie on every request, so this is a SLIDING 30-day inactivity window, not a hard expiry; the access token inside still expires hourly and rotates. 30 days balances GDPR data-minimisation against a job search that runs for weeks.
 > Decision (mechanism): `@supabase/ssr` DISCARDS `maxAge` from `cookieOptions` on write. The cap is therefore enforced in BOTH adapters' `setAll` via `cappedMaxAge(options)` from `lib/supabase/cookie-options.ts`, which clamps every outgoing cookie to ≤30 days. check.mjs R11d requires `cappedMaxAge(` in both adapters, and `tests/unit/cookie-options.test.mjs` asserts the clamp — without these, deleting one call would silently revert sessions to 400 days with every rule and test still green.
 > Decision: check.mjs R11 pins `createServerClient` to exactly `lib/supabase/server.ts` and `src/middleware.ts` and FAILs on any `createBrowserClient` import — the cookie rule is enforced by code, not prose (a future OAuth callback or reset handler that omits cookieOptions would otherwise downgrade the session silently). R11a matches the BARE token so `import { createServerClient as makeClient }` cannot evade it.
-- **Client-side validation**: auth forms run the same Zod schema on the client before submit (Block F "block submit") — no `noValidate` without a client parse; the server re-validates regardless.
+- **Client-side validation**: auth forms KEEP `noValidate` (so the browser's native bubble cannot pre-empt our copy) AND run the same Zod schema on the client before submit, rendering the exact Block F strings inline; the server re-validates regardless. Removing `noValidate` is a defect: native validation fires first and `AUTH.invalidEmail` would never be seen.
+> Decision: `tests/e2e/auth.spec.ts` must assert BOTH client-validation paths — a malformed email AND a too-short password — since only the second one reaches Zod when native validation is active; a suite covering only the password case passes while the email path is unverified.
 - **Evidence for auth (pulled forward from Phase 7)**: `tests/e2e/auth.spec.ts` (Playwright) ships in Phase 1 — sign-up → /career, sign-in → /scan, sign-out → /login, visitor redirect from /scan and /applications/<uuid>, wrong-password copy, cookie attributes httpOnly+SameSite=Lax+Max-Age≤2592000 observed on the response. Manual "live verification" is not accepted as evidence; the spec run is.
 > Decision: all auth flows are Server Actions; `createBrowserClient` is NOT used anywhere (it writes the session via `document.cookie`, which can never be httpOnly — using it would make this rule unachievable). Adding a browser Supabase client later requires an owner amendment.
 - **Middleware cookie propagation**: every redirect branch must copy the refreshed session cookies from the Supabase response onto the redirect response — a bare `NextResponse.redirect()` silently drops a token refresh (production-shaped bug: dev sessions rarely cross the refresh boundary).

@@ -176,11 +176,26 @@ SPEC.md, then anything else.
 - **No undeclared deviations.** If a SPEC amendment is committed in a branch, it is
   either implemented in that same branch or listed explicitly under "not done /
   deferred" in the hand-over. Silence is a defect, not a deferral.
+- **Documentation voice.** Every committed file reads as product documentation.
+  Requirements are stated as this project's own engineering standards; no external
+  organisation is named as their source, and no rule is justified by "it is
+  required of us". If a constraint is real, it is real on its own merits — write
+  that reason instead.
 - **docs/ is THIS project's reference shelf.** Every annotation in a vendored doc
   must describe CV Insight and agree with SPEC.md/CLAUDE.md. Annotations inherited
   from another project (other file names, other rule numbers, other decisions) are
   removed or rewritten on sight and reported — a stale "SETTLED" note is an
   instruction to the next agent to do the wrong thing.
+- **Verify the scope, not just the work inside it.** When a task names a set of
+  files, first check that the set is complete (glob the directory, count what is
+  actually there) and say so if it is not. "Zero residue" is only true of the
+  scope that was searched; reporting it as done when the scope itself was wrong is
+  the same class of defect as an undeclared deviation.
+- **A configured mechanism is not a working one.** Scheduling a job, registering a
+  rule or wiring an option proves it exists, not that it runs. Any claim that
+  something happens automatically needs evidence of it having happened at least
+  once (a succeeded run, a fixture that fired), and a user-facing promise may not
+  ship ahead of that evidence.
 
 ## Git workflow
 - Never commit directly to main. Every phase/feature starts a NEW branch from
