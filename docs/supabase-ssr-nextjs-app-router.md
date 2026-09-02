@@ -5,7 +5,7 @@ Source: https://github.com/supabase/supabase/blob/master/examples/prompts/nextjs
 Fetched via Context7 from `/supabase/supabase` and `/supabase/ssr`.
 Content below is pasted as returned. Annotations are ours.
 
-> **ANNOTATION (applies to this whole file):** CLAUDE.md override anything
+> **ANNOTATION (applies to this whole file):** CLAUDE.md overrides anything
 > in these docs. Where an example below conflicts with a rule, the rule wins and the
 > conflict is called out inline.
 

@@ -5,7 +5,7 @@ Source: https://github.com/supabase/supabase/blob/master/apps/docs/content/_part
 Fetched via Context7 from `/supabase/supabase` and `/supabase/ssr`.
 Content below is pasted as returned. Annotations are ours.
 
-> **ANNOTATION (applies to this whole file):** CLAUDE.md override anything in
+> **ANNOTATION (applies to this whole file):** CLAUDE.md overrides anything in
 > these docs. In particular **Authentication rule 2**: the session is verified on the SERVER before any
 > protected page loads, and *on the server the only valid check is
 > `supabase.auth.getUser()`*. `getSession()` does not validate the token — using it for

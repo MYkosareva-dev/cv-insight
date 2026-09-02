@@ -5,9 +5,9 @@ Source: https://github.com/supabase/supabase/blob/master/apps/docs/content/guide
 Fetched via Context7 from `/supabase/supabase`.
 Content below is pasted as returned. Annotations are ours.
 
-> **ANNOTATION (applies to this whole file):** CLAUDE.md override anything in
-> these docs, and for queries the **Data access rules** are what govern: *every* notes query
-> filters by the signed-in user's id (`.eq('user_id', user.id)`). RLS is the second
+> **ANNOTATION (applies to this whole file):** CLAUDE.md overrides anything in
+> these docs, and for queries the **Data access rules** are what govern: *every* query
+> against an app table filters by the signed-in user's id (`.eq('user_id', user.id)`). RLS is the second
 > fence; the explicit filter is still mandatory. All of these queries live in
 > `lib/db/*` (CLAUDE.md "Data access rules") — no page, component or Server Action queries an app
 > table directly.
@@ -57,8 +57,8 @@ const { data } = supabase
 
 > **ANNOTATION — PROHIBITED IN THIS PROJECT.** The docs call this merely "suboptimal";
 > the DAL boundary makes it a hard error. A bare `.select()` on an app table is exactly the query that
-> returns every user's notes the moment an RLS policy is dropped, renamed, or disabled
-> during a schema change. If you see one in a review, it is a finding.
+> returns every user's career items the moment an RLS policy is dropped, renamed, or
+> disabled during a schema change. If you see one in a review, it is a finding.
 
 ---
 
