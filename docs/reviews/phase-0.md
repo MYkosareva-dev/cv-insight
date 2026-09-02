@@ -148,3 +148,27 @@ The `cost_known` mechanism is a good addition and correctly threaded through `Co
 **Quality gates.** `tsconfig.json` is `strict: true` with `noUncheckedIndexedAccess` and `noFallthroughCasesInSwitch`; `next.config.ts:5-8` pins `ignoreBuildErrors: false`. No `any` in the diff. `prebuild` runs `check` then `test`, so neither can be skipped by a deploy. `npm run build`, `npx tsc --noEmit`, `npx eslint`, `node scripts/check.mjs` and `npm test` were all run against this branch and all pass.
 
 **Scope.** No Playwright spec exists yet to break. Every path in the SPEC Block A routes table renders, and no new user-visible flow was added that would owe the Block E Loading/Empty/Error triad.
+
+---
+
+## Addendum — findings addressed before merge
+
+Added after the review above, on the same branch, before the PR was opened. The report body is unchanged; this section records what was done about it.
+
+| # | Finding | Status | Commit |
+|---|---|---|---|
+| **M1** | `check.mjs` R5/R6/R7 do not scan root-level config; a secret read in `next.config.ts` passes | **Fixed** — new rule **R8**: any `SECRET_NAMES` entry, any `process.env` read, an `env:` block or `publicRuntimeConfig` in `next.config.*` is an unconditional FAIL. Implemented as a separate rule rather than a widening of `isCode`, exactly as the finding recommended — `next.config.ts` cannot satisfy `import 'server-only'`, so widening R7 would have been a false positive with no correct remedy. | `a09a5d7` |
+| **M2** | No rule enforces the `getSession()` prohibition | **Fixed** — new rule **R9**: `getSession(` anywhere under `src/`, no exemptions. The two existing mentions are comments, which `stripComments()` already removes, so the rule cost nothing to adopt. In place before Phase 1 auth. | `a09a5d7` |
+| **m1** | R4 scans `docs/**/*.md`, so a review report quoting the forbidden literal breaks the build | **Fixed** — R4a/R4b now exempt `docs/`. Code and `.env.example` are still scanned, which is R4's actual job. This addendum could not otherwise have been written. | `a09a5d7` |
+| **m2** | R1 will false-positive on `Buffer.from(` in Phase 2 | **Fixed** — `NON_DB_RECEIVERS` extended to `Array`, `Buffer`, `Uint8Array`, `Object`, `Date`, `Set`, `Map`. Verified against both the single-line and Prettier-wrapped forms. | `a09a5d7` |
+| **m3** | SPEC Block H DoD #6 contradicts the least-privilege policy matrix | **Fixed by the owner** — DoD #6 now reads "owner-scoped policies EXACTLY per the least-privilege matrix in Block C — no more, no fewer", with the per-table matrix inline. | `e475bf8` |
+| **m4** | No `error.tsx` / `global-error.tsx` boundary | **Fixed** — `src/app/error.tsx` added, copy in `src/lib/copy.ts`. The error MESSAGE is deliberately never rendered or logged (it can carry resume or vacancy text); only Next's server-side `digest` is shown, so a report stays correlatable without exposing content. | `51a7fd0` |
+| **m7** | Sub-micro rounding: an embed under ~25 tokens gives `cost_usd_micro = 0` with `cost_known = true` | **Fixed** — `Math.ceil` instead of `Math.round`. A priced call now costs at least 1 micro-USD, so a stored `0` means the call genuinely consumed no tokens. | `2c02d50` |
+| **n4** | `exportFilename` drops non-ASCII names and is unbounded in length | **Fixed** — only filesystem-unsafe and non-printable characters are stripped, NFC normalisation, each part bounded to 40 chars. Müller, Мария Косарева and 田中 太郎 all survive intact. The function moved to `src/lib/utils.ts` (Block A: "shared helpers (cn, formatting)") because a `server-only` guard meant for secrets should not be what makes a pure function untestable; `docx.ts` re-exports it. Five tests added. | `096ea2f` |
+| **m6** | Migration hardening the Supabase linter will flag | **Deferred by SPEC decision** — recorded in Block C: extensions schema, `SET search_path`, `to authenticated` and `(select auth.uid())` move to a future `002` migration. None is security-relevant under this RLS design (anon has no policies, and `auth.uid()` is null for anon); pinning `search_path` carries a real HNSW-inlining tradeoff. | `e475bf8` |
+
+**Not actioned, with reasons.** `m5` (R4b narrower than R4a) is subsumed by R8, which covers the `next.config.*` path that motivated it. `m8` (untested pure functions) is half done: `exportFilename` now has five tests; `costUsdMicro` remains untested because `openrouter/server.ts` is `server-only`. `n1` (dead `button.tsx`) is resolved as a side effect — `src/app/error.tsx` is its first consumer. `n2`, `n3`, `n5`–`n9` are left as recorded; `n5` is a candidate for the KNOWN LIMITS block when re-export laundering becomes reachable.
+
+**One thing this addendum's work surfaced.** The Block C deferral note for `m6` was written inside the SQL fence, which broke the "migration is byte-for-byte with SPEC Block C" invariant that had been verified twice. Re-extracted and re-verified in `2754eb3`; the added lines are SQL comments and change no statement, and the migration is still unapplied.
+
+**Gates after these changes:** `npm run check` passes at **9 rules**, `npm test` 17/17, `npm run build` (with `prebuild` running both) and `npm run lint` clean. Every new rule was verified against a planted violation that was then removed, and against negative controls — `Buffer.from` single-line and wrapped, docs prose quoting the forbidden literal, and the two pre-existing `getSession` comments.
