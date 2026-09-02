@@ -1,5 +1,6 @@
 # CV Insight — Technical Specification
-> Version: 1.0 | Date: 2026-08-30 | Status: Production-ready
+> Version: 1.9 | Date: 2026-09-02 | Status: Production-ready
+> Amendment trail: v1.1 gate architecture · v1.2 fictional persona · v1.3 application notes · v1.4 HNSW index · v1.5 module-path cleanup · v1.6–1.9 phase-0 review rounds (B1a/B1b, middleware, check.mjs 7 rules, cost_known, errors.ts/requireApiUser.ts, Block A completeness)
 > Tier: M | Modules: M1 Auth, M2 Database, M3 API, M5 Legal & Privacy, M8 File upload, M12 Third-party integrations, M15 AI/LLM
 
 ## Module checklist
@@ -37,7 +38,8 @@
 | Files | PDF text extraction via `unpdf` (server-side) | PDF only in MVP, ≤5 MB |
 | Resume export | `docx` npm package, server-side | .docx download only in MVP |
 | Validation | Zod | Every API input and every LLM JSON output |
-| E2E tests | Playwright | See Block H |
+| Unit tests | node:test (zero-dep, built-in) | `npm test` — pure functions (keywordPresent, matchScore branch); files in `tests/unit/` |
+| E2E tests | Playwright (Phase 7) | See Block H; files in `tests/e2e/` |
 | Deploy | Vercel | All secrets in Vercel dashboard only |
 | **Prohibited** | `NEXT_PUBLIC_` prefix on any secret; any OpenRouter call from client code; service-role key anywhere client-accessible; LangChain/CrewAI or any agent framework (direct `fetch` only); analytics/telemetry/third-party cookies; LinkedIn scraping or auto-apply; DOCX/MD import (phase 2) | |
 
@@ -49,7 +51,8 @@
 ```
 cv-insight/
 ├── CLAUDE.md
-├── README.md
+├── README.md                    # Phase 0: stub (title + one-liner + pointer to SPEC.md);
+│                                # full README per Block H item 8 lands in Phase 7
 ├── SPEC.md
 ├── .env.local              # git-ignored; see Block F security
 ├── .env.example            # names only, no values
@@ -77,16 +80,25 @@ cv-insight/
 │   │   ├── supabase/            # server client, browser client
 │   │   ├── openrouter/server.ts # CONNECTION only: speaks to both endpoints, no auth opinion
 │   │   ├── chat.ts              # GATE (server-only): completions — parse/generate/judge; getUser() first
-│   │   ├── retrieval.ts         # GATE (server-only): embeddings + match_documents; getUser() first
-│   │   ├── db/                  # one DAL per table — the ONLY files allowed to call .from()
+│   │   ├── errors.ts            # single shared UnauthorizedError (→401), imported by both gates
+│   │   ├── auth/requireApiUser.ts # API-side gate twin: getUser() → throws UnauthorizedError (401)
+│   │   ├── retrieval.ts         # GATE (server-only): embeddings + getUser() first; ORCHESTRATES
+│   │   │                        # matching by calling lib/db/documents.ts (the .rpc lives in the DAL)
+│   │   ├── db/                  # one DAL per table (+ types.ts) — the ONLY files calling .from()/.rpc(
 │   │   ├── prompts.ts           # literal prompt templates (Block F)
-│   │   ├── scoring.ts           # match score + coverage math
-│   │   ├── copy.ts              # user-facing strings (tests import the same constants)
+│   │   ├── scoring.ts           # match score + coverage math (B1/B1a/B1b anchored here)
+│   │   ├── copy.ts              # user-facing strings incl. the B1b em-dash constant
+│   │   ├── utils.ts             # shared helpers (cn, formatting)
 │   │   └── docx.ts              # resume export
-│   └── components/              # shadcn/ui-based, see Block E
-├── scripts/check.mjs            # FAILs on: .from( outside lib/db, "security definer" in supabase/,
-│                                # NEXT_PUBLIC_ on any secret name
-└── tests/e2e/                   # Playwright: auth.spec.ts, scan.spec.ts, privacy.spec.ts
+│   ├── app/not-found.tsx        # 404 page (RLS-absent rows render here, not 403)
+│   └── components/              # shadcn/ui-based (incl. components/ui/), see Block E
+├── tests/unit/                  # node:test — keywordPresent, matchScore branch (`npm test`)
+├── scripts/check.mjs            # 7 rules — FAILs on: .from( AND .rpc( outside lib/db;
+│                                # "security definer" in supabase/; NEXT_PUBLIC_ on any secret name
+│                                # (incl. .env.example); openrouter.ai URL outside lib/openrouter/server.ts;
+│                                # a secret read without a 'server-only' import; OpenRouter fetch outside
+│                                # the connection. Wired as prebuild. Rule 1 excludes Array.from(.
+└── tests/e2e/                   # Playwright (Phase 7): auth.spec.ts, scan.spec.ts, privacy.spec.ts
 ```
 
 ### Roles table
@@ -293,6 +305,9 @@ create table llm_calls (
   tokens_in int not null default 0,
   tokens_out int not null default 0,
   cost_usd_micro int not null default 0,   -- INTEGER micro-dollars: $0.0431 → 43100
+  cost_known boolean not null default true, -- false when the served model has no price entry:
+                                            -- row is still written, cost_usd_micro=0, and /quality
+                                            -- surfaces "N calls with unknown pricing" (never a silent 0)
   latency_ms int not null default 0,
   created_at timestamptz not null default now()
 );
@@ -328,6 +343,11 @@ begin
     end loop;
   end loop;
 end $$;
+
+-- > Decision: Supabase-linter hardening (extensions schema, SET search_path, `to authenticated`,
+-- `(select auth.uid())` wrapping) is DEFERRED to a future 002 migration. None is security-relevant
+-- under this RLS design (anon has no policies → denied; auth.uid() is null for anon); search_path
+-- has a real HNSW-inlining tradeoff; scale is tiny. Revisit only if the linter matters pre-deploy.
 
 -- Vector search over the caller's own base (SECURITY INVOKER: RLS applies; user filter is belt-and-braces)
 create or replace function match_documents(query_embedding vector(1536), match_count int default 5)
@@ -535,7 +555,9 @@ Application notes: ≤2,000 chars ("Notes are limited to 2000 characters."), inl
 ### Business rules
 | # | Rule | Failure behavior |
 |---|---|---|
-| B1 | **Match score** = `round(100 × (0.6 × S + 0.4 × K))`, where S = mean over MUST requirements of `clamp((bestSimilarity − 0.30)/0.55, 0, 1)`; K = share of vacancy keywords present in the resume text (case-insensitive, word-boundary). Requirement counts as covered when bestSimilarity ≥ 0.60 | Score renders "—" if parse produced 0 requirements (edge N4) |
+| B1 | **Match score** = `round(100 × (0.6 × S + 0.4 × K))`, where S = mean over MUST requirements of `clamp((bestSimilarity − 0.30)/0.55, 0, 1)`; K = share of vacancy keywords present in the resume text (case-insensitive, word-boundary — see B1a). Requirement counts as covered when bestSimilarity ≥ 0.60 | Score renders "—" only when parse produced 0 requirements TOTAL (edge N4); with ≥1 requirement but 0 MUST, S is dropped and score = `round(100 × K)` |
+| B1b | **Insufficient signal**: if S is undefined (0 MUST requirements) AND K = 0 (0 keywords extracted), the score has nothing to compute from — render "—" (like N4), NOT a hard 0. Implemented in the /scan result UI (Phase 3), not the scoring function | — |
+| B1a | **Keyword word-boundary**: apply a `\b` boundary only on the side(s) where the keyword itself starts/ends with a word character. A literal `\bC++\b` is unsatisfiable (`+` is not a word char), so "C++", "C#", ".NET" would never count and K would understate every score. `keywordPresent` verified: Docker ✓ in "used Docker", ✗ in "dockerfile"; C++ ✓, .NET ✓, C# ✓ | — |
 | B2 | **Grounding gate**: any judge grounding violation ⇒ `verdict='revise'` regardless of other scores (fail cannot be compensated) | Auto-revision (B3) |
 | B3 | **Auto-revision**: at most ONE regenerate per /generate call, with judge feedback appended to the prompt | Second bad judge → return version anyway, honest card |
 | B4 | **Honest keywords**: generator may use a vacancy keyword only if supported by retrieved chunks; missing-but-unsupported keywords go to `missingHonest`, never into the text | Judge checks (keywordCoverage) |
@@ -552,7 +574,9 @@ Application notes: ≤2,000 chars ("Notes are limited to 2000 characters."), inl
 - **Logout**: `signOut()` → `/login`.
 - **Password reset**: OUT of MVP. > Decision: cut — requires email delivery; reviewer flow doesn't need it; noted in README known-limitations.
 - **Sessions**: Supabase SSR cookies (`@supabase/ssr`), httpOnly, strictly necessary → no consent banner.
-- **Route protection**: `src/middleware.ts` — no session on member route → redirect `/login`; session on /login|/signup → redirect `/scan`.
+- **Route protection**: `src/middleware.ts` — no session on member route → redirect `/login`; session on /login|/signup → redirect `/scan`. `/privacy` is EXCLUDED from the middleware matcher (public page — no getUser() round trip).
+> Decision: keep the filename `middleware.ts`. Next 16 deprecates it in favour of `proxy.ts` and prints a build warning, but `middleware.ts` is still read and wired (build output shows `ƒ Proxy (Middleware)`). SPEC and CLAUDE.md name `middleware.ts`; revisit only if a future Next removes it, not silently.
+> Decision: `src/app/api/` does not exist until Phase 2 — the first route handlers (career import/items) land there then; scan/generate/etc. follow in Phases 3–4. Its absence in the Phase 0 scaffold is intended, not a gap.
 - **Rate limiting**: Supabase Auth built-in limits + B7 for AI endpoints. No custom limiter in MVP.
 
 ### Security (M2/M3)
@@ -702,7 +726,7 @@ CAREER ITEMS: <items>{{retrievedChunksJson}}</items>
 3. Playwright suite green: `auth.spec.ts` (signup→login→logout; visitor redirect from `/scan`, `/applications/x`), `scan.spec.ts` (paste resume + vacancy → real AI response visible; happy path), `privacy.spec.ts` (user B gets 404 on user A's application id — cross-user privacy bonus; delete-account leaves 0 owned rows).
 4. Incognito check on the deployed URL: every member route redirects to `/login`; no data flash.
 5. `grep -r "NEXT_PUBLIC_OPENROUTER\|NEXT_PUBLIC_SERVICE" src/` returns nothing; `OPENROUTER_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` appear only in server files; `.env.local` is git-ignored (verified via `git check-ignore`).
-6. Every table in `001_init.sql` has RLS enabled + 4 owner policies (verified by the supabase-security subagent checklist and a failing-by-default anon query test).
+6. Every table in `001_init.sql` has RLS enabled + owner-scoped policies EXACTLY per the least-privilege matrix in Block C — no more, no fewer (career_items S/I/U/D · documents S/I/D · vacancies S/I/U · applications S/I/U · resume_versions S/I · llm_calls S/I). Verified by the supabase-security subagent checklist and a failing-by-default anon query test.
 7. `/quality` shows real rows for one full pipeline run: `parse_vacancy` + `embed` + `generate` + `judge`, with a nonzero integer `cost_usd_micro` and correct fallback flags.
 8. Repo contains: `CLAUDE.md` (AI rules pinned), `README.md` (what/why-AI-is-core, live URL, local run incl. env var names, screenshot with the AI feature, chosen optional tasks), `docs/` with ≥1 cited OpenRouter/Supabase vectors reference (source URL at top), ≥1 merged PR with an `ai-code-reviewer` report in `docs/reviews/`.
 

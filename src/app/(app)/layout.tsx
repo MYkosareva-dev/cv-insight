@@ -1,0 +1,21 @@
+import { redirect } from 'next/navigation';
+
+import { AppSidebar } from '@/components/app-sidebar';
+import { getUser } from '@/lib/supabase/server';
+
+/**
+ * Second fence behind src/middleware.ts: the session is verified on the SERVER
+ * before any protected page renders, with getUser() — never getSession()
+ * (CLAUDE.md, Authentication rules 2 and 3).
+ */
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const user = await getUser();
+  if (!user) redirect('/login');
+
+  return (
+    <div className="flex min-h-screen flex-col md:flex-row">
+      <AppSidebar />
+      <main className="w-full max-w-5xl flex-1 p-4 md:p-8">{children}</main>
+    </div>
+  );
+}

@@ -1,0 +1,85 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* ---------------------------------------------------------------------------
+   Block E colour tokens — VERBATIM from SPEC.md.
+   These are the only colour values in the app. Anything below this block maps
+   shadcn/ui's semantic token names onto these values; it never introduces a
+   new hex.
+   --------------------------------------------------------------------------- */
+:root {
+  --bg: #FFFFFF; --bg-subtle: #F8FAF9; --border: #E5E7EB;
+  --text: #111827; --text-muted: #6B7280;
+  --primary: #10B981; --primary-hover: #059669;         /* green: main actions */
+  --accent: #7C3AED; --accent-hover: #6D28D9;           /* violet: ONE hero action per screen max */
+  --gradient-accent: linear-gradient(135deg, #10B981 0%, #7C3AED 100%);
+  --score-low: #EF4444; --score-mid: #F59E0B; --score-high: #10B981;
+  --danger: #DC2626;
+}
+
+/* shadcn/ui semantic names → Block E values. No new colours. */
+:root {
+  --radius: 0.625rem;
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--bg);
+  --card-foreground: var(--text);
+  --popover: var(--bg);
+  --popover-foreground: var(--text);
+  --primary-foreground: var(--bg);
+  --secondary: var(--bg-subtle);
+  --secondary-foreground: var(--text);
+  --muted: var(--bg-subtle);
+  --muted-foreground: var(--text-muted);
+  --accent-foreground: var(--bg);
+  --destructive: var(--danger);
+  --destructive-foreground: var(--bg);
+  --input: var(--border);
+  --ring: var(--primary);
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-foreground: var(--text);
+  --color-muted: var(--bg-subtle);
+  --color-muted-foreground: var(--text-muted);
+  --color-card: var(--bg);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--bg);
+  --color-popover-foreground: var(--text);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--bg);
+  --color-secondary: var(--bg-subtle);
+  --color-secondary-foreground: var(--text);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-foreground: var(--bg);
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: var(--bg);
+  --color-danger: var(--danger);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--primary);
+  --color-score-low: var(--score-low);
+  --color-score-mid: var(--score-mid);
+  --color-score-high: var(--score-high);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
