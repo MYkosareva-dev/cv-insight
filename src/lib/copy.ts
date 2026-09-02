@@ -139,20 +139,19 @@ export const SETTINGS = {
   dangerZone: 'Danger zone',
   deleteAccount: 'Delete account and data',
   /**
-   * The dialog names what GOES and what STAYS (SPEC v2.5). Split across three
+   * The dialog names what GOES and what STAYS (SPEC v2.6). Split across three
    * constants only so the Privacy reference can be a real link and still keep
    * every word in this file — read them in order, they are one sentence run.
    *
-   * No "90 days" here, deliberately, and this is a DEVIATION from SPEC v2.5's
-   * dictated string: the same decision that made /privacy carry the fallback
-   * wording applies with more force at the moment of an irreversible action.
-   * Promising a retention period the purge is not yet performing would put the
-   * unproven claim back on the most consequential surface while /privacy
-   * declines to make it. check.mjs R12 covers both files, so the number returns
-   * here and there together, in the commit that adds the evidence.
+   * It never carries the retention PERIOD, by decision: one retention story told
+   * in one place. A number here plus a different (or absent) number one hop away
+   * on /privacy is the two-truths defect with the surfaces swapped — and this
+   * dialog links straight to that page. Under-promising is also the safe
+   * direction for copy a user acts on irreversibly. Mechanically, a period here
+   * would trip check.mjs R12 while /privacy carries the fallback wording.
    */
   deleteDialogBody:
-    'This permanently deletes your career base, scans and resumes. Authentication audit records are kept separately and are not removed when you delete your account — see',
+    'This permanently deletes your career base, scans and resumes. Some authentication records are kept separately — see',
   deleteDialogPrivacyLink: 'Privacy',
   deleteDialogBodyEnd: '. Type DELETE to confirm.',
   deleteConfirmWord: 'DELETE',

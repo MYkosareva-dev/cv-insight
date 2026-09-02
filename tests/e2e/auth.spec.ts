@@ -305,18 +305,20 @@ test.describe('auth', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    // SPEC v2.5: the dialog names what GOES and what STAYS. This is the surface
+    // SPEC v2.6: the dialog names what GOES and what STAYS. This is the surface
     // where an over-promise does the most damage — the user reads it once, at
-    // the moment the action becomes irreversible — so the audit-record carve-out
-    // and its link to /privacy are asserted, not assumed.
+    // the moment the action becomes irreversible — so the carve-out and its link
+    // to /privacy are asserted, not assumed.
     await expect(dialog).toContainText('career base, scans and resumes');
-    await expect(dialog).toContainText('are not removed when you delete your account');
+    await expect(dialog).toContainText('Some authentication records are kept separately');
     await expect(dialog.getByRole('link', { name: 'Privacy' })).toHaveAttribute(
       'href',
       '/privacy',
     );
-    // The 90-day figure may not appear until a purge run has succeeded (R12).
+    // No retention PERIOD here, ever — one retention story, told on /privacy.
+    // Asserted as an absence so re-adding a number fails here as well as in R12.
     await expect(dialog).not.toContainText('90 days');
+    await expect(dialog).not.toContainText(/\d+\s*(?:days|months|years)/);
 
     // Confirm stays disabled until the word matches EXACTLY.
     const confirm = dialog.getByRole('button', { name: 'Delete account', exact: true });
