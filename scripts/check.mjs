@@ -21,6 +21,20 @@
  * template of NAMES — and for that file it prints only the matched variable
  * name, never the line. `.env`, `.env.local` and every other `.env.*` are
  * skipped during the walk and never read. No value is ever printed.
+ *
+ * KNOWN LIMITS — deliberately out of scope. This is a grep gate: it defends
+ * against DRIFT, not against malice. Every one of these needs intent, none is
+ * something a phase reaches for by accident, and chasing them with more regex
+ * would buy false positives instead of safety. The real fences are RLS, the
+ * `server-only` import, and code review.
+ *   - Bracket access: `supabase['from']('career_items')` evades R1/R2.
+ *   - Identifier shadowing: `const Array = supabase` makes the safe-receiver
+ *     set in R1 match by NAME, not by binding.
+ *   - Host construction: `'//openrouter.ai/…'` is stripped as a line comment
+ *     before R5 sees it, and a concatenated host defeats R5 outright. R6 still
+ *     catches the module import, which is the path a real change takes.
+ *   - Runtime indirection generally: `eval`, dynamic property names, a helper
+ *     that forwards `process.env`.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -249,11 +263,25 @@ scanLines(
  * `const ROW_KEY` next to a `process.env.NODE_ENV`, and the only way to silence
  * that is adding `server-only` to a client file — which breaks the build. A
  * rule whose false positive has no correct remedy gets deleted.
+ *
+ * Three access forms are captured: `process.env.NAME`, `process.env['NAME']`,
+ * and destructuring — `const { NAME } = process.env`, which the first two
+ * patterns miss entirely. That last one is the same fail-open shape that was
+ * found in R1/R2, so it is closed here rather than left as a known limit.
  */
 function envSecretsRead(text) {
+  const destructured = [...text.matchAll(/\{([^{}]*)\}\s*=\s*process\s*\.\s*env\b/g)].flatMap((m) =>
+    // `const { A, B: local, C = 'x' } = process.env` — take the SOURCE key,
+    // which is the identifier before any `:` or `=`.
+    (m[1] ?? '')
+      .split(',')
+      .map((part) => part.split(/[:=]/)[0]?.trim() ?? '')
+      .filter((n) => /^[A-Z][A-Z0-9_]*$/.test(n)),
+  );
   const names = [
     ...[...text.matchAll(/process\s*\.\s*env\s*\.\s*([A-Z][A-Z0-9_]*)/g)].map((m) => m[1]),
     ...[...text.matchAll(/process\s*\.\s*env\s*\[\s*['"]([A-Z][A-Z0-9_]*)['"]/g)].map((m) => m[1]),
+    ...destructured,
   ];
   // The explicit list first, so a secret that does not end in one of the
   // suffixes below is still covered; the shape heuristic then catches the ones
