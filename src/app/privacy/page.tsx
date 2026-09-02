@@ -39,21 +39,46 @@ export default function PrivacyPage() {
         </p>
       </section>
 
+      {/*
+       * SINGLE SOURCE of the erasure + audit-record claim (SPEC v2.4). This
+       * paragraph is verbatim from SPEC and is the ONLY place the page may
+       * mention audit records, retention or erasure scope. Two sentences on the
+       * subject is how the page came to contradict itself once already: an
+       * earlier version claimed Supabase retained the records "for its own
+       * retention period" while a second section claimed we delete them at 90
+       * days. The first was simply false — auth.audit_log_entries lives in OUR
+       * Postgres and we are the controller. Before adding any sentence here,
+       * grep this file for "audit", "retention" and "provider": each must
+       * appear exactly once, in this block.
+       *
+       * The wording is also careful about SCOPE: auth.audit_log_entries has no
+       * foreign key to auth.users, so deleting an account fires NO cascade into
+       * it. "removes your account and the data you created in the app" is the
+       * true claim; "all data" / "every row" is not.
+       *
+       * EVIDENCE GATE (SPEC v2.4, CLAUDE.md "A configured mechanism is not a
+       * working one"): the "deleted automatically" half may only reach a
+       * deployment once a purge has actually SUCCEEDED —
+       *   select status, return_message, end_time from cron.job_run_details
+       *   where jobid = (select jobid from cron.job
+       *                  where jobname = 'purge-auth-audit-log')
+       *   order by end_time desc limit 3;
+       * must show `succeeded`. cron.schedule() returning a job id proves only
+       * that it is scheduled: the auth schema is owned by supabase_auth_admin,
+       * so without the grants in 002 the job fails nightly and leaves no
+       * user-visible trace. 002_audit_retention.sql is NOT applied yet, so
+       * until the owner confirms a succeeded run this page must not be reachable
+       * by anyone but the owner; if the run cannot be made to succeed, replace
+       * the clause after the semicolon with the SPEC fallback: "we are working
+       * on an automated retention schedule for them".
+       */}
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium">Right to erasure</h2>
         <p className="text-muted-foreground text-sm">
-          Deleting your account removes your account and all data you created. Our authentication
-          provider (Supabase) retains security audit records of sign-in events for its own retention
-          period.
-        </p>
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-medium">Authentication audit records</h2>
-        <p className="text-muted-foreground text-sm">
-          We keep authentication audit records (event type, your user id, email address and IP
-          address) for 90 days in our EU database for security purposes, then delete them
-          automatically.
+          Deleting your account removes your account and the data you created in the app.
+          Separately, we keep authentication audit records (event type, your user id, email address
+          and IP address) in our EU database for 90 days for security purposes; these are not linked
+          to your account record and are deleted automatically when they age out.
         </p>
       </section>
 
