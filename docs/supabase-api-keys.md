@@ -9,10 +9,10 @@ Content below is pasted as returned. Annotations are ours.
 
 > **ANNOTATION (applies to this whole file):** this file exists for one reason — the
 > setup instructions in `README.md` and `.env.example` named a dashboard label
-> ("anon public") that this project's own key no longer matches, which is a rule 18
+> ("anon public") that this project's own key no longer matches, which is a documentation-drift
 > divergence and, worse, sent the operator to improvise next to the one key that must
 > never be in this repo. It was found by the security audit on `lab/agents` (finding
-> W3). CLAUDE.md rule 4 is unchanged and unconditional: **this project uses only the
+> W3). CLAUDE.md "Secrets" is unchanged and unconditional: **this project uses only the
 > low-privilege key**, whichever of its two names the dashboard shows.
 
 ---

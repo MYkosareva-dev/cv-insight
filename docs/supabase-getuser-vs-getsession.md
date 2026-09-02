@@ -5,8 +5,8 @@ Source: https://github.com/supabase/supabase/blob/master/apps/docs/content/_part
 Fetched via Context7 from `/supabase/supabase` and `/supabase/ssr`.
 Content below is pasted as returned. Annotations are ours.
 
-> **ANNOTATION (applies to this whole file):** CLAUDE.md rules 1–5 override anything in
-> these docs. In particular **rule 2**: the session is verified on the SERVER before any
+> **ANNOTATION (applies to this whole file):** CLAUDE.md override anything in
+> these docs. In particular **Authentication rule 2**: the session is verified on the SERVER before any
 > protected page loads, and *on the server the only valid check is
 > `supabase.auth.getUser()`*. `getSession()` does not validate the token — using it for
 > any access decision is prohibited in this project. That holds even where the official
@@ -20,10 +20,10 @@ Source: https://github.com/supabase/supabase/blob/master/apps/docs/content/_part
 
 `getSession` when you need the raw session (the access token, refresh token, and expiry). For example to forward the access token to another service. The session is loaded directly from local storage and isn't re-validated against the Auth server, so the embedded user object shouldn't be trusted on its own when storage is shared with the client (cookies, request headers). To verify identity, validate the access token with `getClaims`, or call `getUser` for a fresh, server-confirmed user record.
 
-> **ANNOTATION — this is the core reason for rule 2.** "Loaded directly from local
+> **ANNOTATION — this is the core reason for Authentication rule 2.** "Loaded directly from local
 > storage and isn't re-validated against the Auth server" is the whole problem: in a
 > cookie-based SSR app the storage *is* client-controlled, so `session.user` is
-> unverified request input. Notera never forwards an access token anywhere, so there is
+> unverified request input. CV Insight never forwards an access token anywhere, so there is
 > **no legitimate use of `getSession()` in this codebase at all**. If you find yourself
 > reaching for it, the answer is `getUser()`.
 
@@ -35,9 +35,9 @@ Source: https://github.com/supabase/supabase/blob/master/examples/user-managemen
 
 This component uses the [`getUser()`](https://supabase.com/docs/reference/javascript/auth-getuser) method instead of `getSession()`. The `getUser()` method: - Performs a network request to the Supabase Auth server - Validates the current session on the server side - Returns the most up-to-date user information - Is more reliable than reading from local storage
 
-> **ANNOTATION:** This is the behavior rule 2 depends on — a real round-trip to the Auth
+> **ANNOTATION:** This is the behavior Authentication rule 2 depends on — a real round-trip to the Auth
 > server that validates the token. The cost is one network call per check. Accept it:
-> `lib/notes.ts` calls `getUser()` on **every** operation (rule 3, fence 1), and that is
+> `lib/db/*` calls `getUser()` on **every** operation (the first of the three fences), and that is
 > deliberate, not an optimization target. Do not "cache" the user in a module-level
 > variable — module scope is shared across requests on the server and would leak one
 > user's identity into another user's request.
@@ -74,7 +74,7 @@ const authGuard: Handle = async ({ event, resolve }) => {
 ```
 
 > **ANNOTATION — DO NOT ADOPT `getClaims()` IN THIS PROJECT.** This is genuinely current
-> Supabase advice, and it is genuinely *not* what rule 2 permits. Note the difference
+> Supabase advice, and it is genuinely *not* what Authentication rule 2 permits. Note the difference
 > from `getSession()`: `getClaims()` is a real cryptographic verification (local JWT
 > signature check against the project's asymmetric signing keys), so it is *not* the
 > unsafe pattern — it is a faster-but-different one. It still differs from `getUser()` in
@@ -83,10 +83,10 @@ const authGuard: Handle = async ({ event, resolve }) => {
 >   or banned seconds ago still passes until the token expires;
 > - it depends on the project having asymmetric (ECC/RSA) signing keys enabled — on a
 >   legacy HS256 shared-secret project it falls back to a network call anyway;
-> - rule 2 names exactly one valid server-side check, and it is `getUser()`.
+> - Authentication rule 2 names exactly one valid server-side check, and it is `getUser()`.
 >
 > **If `getClaims()` ever becomes desirable for this project, it is an owner decision**
-> and it requires editing CLAUDE.md rule 2 first. Do not introduce it unilaterally.
+> and it requires editing CLAUDE.md Authentication rule 2 first. Do not introduce it unilaterally.
 
 ---
 
@@ -97,9 +97,9 @@ Source: https://github.com/supabase/supabase/blob/master/apps/docs/content/_part
 In summary: use `getClaims` to verify identity (typically for protecting pages and data), `getUser` when you need an up-to-date user record from the Auth server, and `getSession` when you need the access or refresh token directly, but don't rely on the user object it returns for authorization decisions.
 
 > **ANNOTATION — mapping this three-way summary onto our rules:**
-> | Doc says | Notera does |
+> | Doc says | CV Insight does |
 > | --- | --- |
-> | `getClaims` to protect pages/data | **`getUser()`** — rule 2 |
+> | `getClaims` to protect pages/data | **`getUser()`** — Authentication rule 2 |
 > | `getUser` for a fresh user record | `getUser()` — same call, used for both jobs |
 > | `getSession` to get raw tokens | never; we forward no tokens |
 >
@@ -138,10 +138,10 @@ export async function getAccessToken() {
 > `if (typeof window === 'undefined') return undefined` — this is **browser-only code**
 > from Supabase's own internal dashboard, and it retrieves a *token to forward*, not an
 > identity to authorize. It is not a server-side auth pattern and not a
-> `getUser()`-is-too-slow argument. Notera has no equivalent need.
+> `getUser()`-is-too-slow argument. CV Insight has no equivalent need.
 >
 > (Note also that the returned snippet omits the `throw error` that the original file has
-> after destructuring `error` — under `noUnusedLocals` (rule 11 / our tsconfig) copying it
+> after destructuring `error` — under `noUnusedLocals` (our tsconfig strictness) copying it
 > as printed would not even compile. Another reason not to copy doc snippets verbatim.)
 
 ---
@@ -222,13 +222,13 @@ export async function updateProfile(formData: FormData) {
 }
 ```
 
-> **ANNOTATION — this is the pattern rule 3b is about.** Every Server Action is a
+> **ANNOTATION — this is the pattern the Data access rules are about.** Every Server Action is a
 > publicly callable endpoint, so each one re-derives the user with `getUser()` and
-> refuses to run without one. Two adaptations for Notera:
-> 1. The check belongs in **`lib/notes.ts`** (marked `server-only`), not repeated inline
+> refuses to run without one. Two adaptations for CV Insight:
+> 1. The check belongs in **`lib/db/*`** (marked `server-only`), not repeated inline
 >    per action — the DAL is the authoritative gate and it derives `user.id` itself. A
->    Server Action must never accept a user id from the client (rule 3b).
+>    Server Action must never accept a user id from the client (CLAUDE.md "Data access rules").
 > 2. The action derives `email` from `formData` but takes **`user.id` from `getUser()`**,
 >    never from the payload. Same discipline for every notes mutation: the note id may
 >    come from the client, the owner id never does — and the query still carries
->    `.eq('user_id', user.id)` (rule 7).
+>    `.eq('user_id', user.id)` (CLAUDE.md "Data access rules").
