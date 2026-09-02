@@ -3,7 +3,7 @@
  * Repo invariants that a type-checker cannot see (SPEC v1.9 Block A, CLAUDE.md).
  * Runs as `npm run check`, and as `prebuild` so a build cannot skip it.
  *
- * Ten rules:
+ * Eleven rules:
  *   R1  `.from(` outside lib/db — one DAL per table, and DALs are the only
  *       files allowed to reach the database. Non-database receivers such as
  *       `Array.from(` and `Buffer.from(` are excluded.
@@ -30,6 +30,11 @@
  *       service role bypasses RLS entirely, so "exactly one module" was a
  *       documented rule with nothing enforcing it — R7 only proves SOME reader
  *       imported `server-only`, which a second consumer would also do.
+ *   R11 createServerClient outside lib/supabase/server.ts + middleware.ts, or
+ *       ANY createBrowserClient import. Passing cookieOptions is what makes the
+ *       session httpOnly, it must be repeated at each call site, and a third
+ *       site that forgets it downgrades the cookie SILENTLY — no error, no test
+ *       failure. Pinning the call sites is what makes that impossible.
  *
  * This script opens exactly one dotfile — `.env.example`, the committed
  * template of NAMES — and for that file it prints only the matched variable
@@ -72,6 +77,9 @@ const CONNECTION_FILE = 'src/lib/openrouter/server.ts';
 /** The one module allowed to read the service-role key (SPEC v2.0 Block A). */
 const SERVICE_ROLE_FILE = 'src/lib/supabase/admin.ts';
 const SERVICE_ROLE_KEY_NAME = 'SUPABASE_SERVICE_ROLE_KEY';
+
+/** The only files allowed to construct a Supabase server client (SPEC v2.1). */
+const SERVER_CLIENT_FILES = ['src/lib/supabase/server.ts', 'src/middleware.ts'];
 
 /** The committed template of variable NAMES. The only dotfile this script reads. */
 const ENV_TEMPLATE = '.env.example';
@@ -390,6 +398,32 @@ scanLines(
   (line) => line.includes(SERVICE_ROLE_KEY_NAME),
 );
 
+// R11a. createServerClient is pinned to the two files that pass cookieOptions.
+scanLines(
+  `R11 createServerClient outside ${SERVER_CLIENT_FILES.join(' + ')} — it would miss cookieOptions`,
+  (abs) => isCode(abs) && !SERVER_CLIENT_FILES.includes(rel(abs)),
+  (line) => /createServerClient\s*\(/.test(line),
+);
+
+// R11b. Both pinned files must actually pass the shared options. Pinning the
+//       call sites is worthless if one of them stops using them.
+scanFiles(
+  'R11 a pinned createServerClient file does not pass AUTH_COOKIE_OPTIONS',
+  (abs) => SERVER_CLIENT_FILES.includes(rel(abs)),
+  (raw, stripped) =>
+    stripped.includes('cookieOptions: AUTH_COOKIE_OPTIONS')
+      ? null
+      : 'constructs a Supabase server client without the shared cookieOptions',
+);
+
+// R11c. createBrowserClient is banned outright: it writes the session through
+//       document.cookie, which can never be httpOnly (CLAUDE.md, SPEC v2.1).
+scanLines(
+  'R11 createBrowserClient is banned — it writes the session via document.cookie',
+  isCode,
+  (line) => /createBrowserClient/.test(line),
+);
+
 if (failures.length) {
   for (const { label, hits } of failures) {
     console.error(`\nFAIL: ${label}`);
@@ -401,9 +435,10 @@ if (failures.length) {
 
 const NL = String.fromCharCode(10);
 console.log(
-  'check passed (10 rules): .from( and .rpc( confined to lib/db; no security definer;' +
+  'check passed (11 rules): .from( and .rpc( confined to lib/db; no security definer;' +
     NL + '  NEXT_PUBLIC_ hygiene incl. .env.example; no openrouter.ai URL or connection' +
     NL + '  import outside the gates; every secret reader imports server-only;' +
     NL + '  next.config.* clean of secrets and env injection; no getSession() in src/;' +
-    NL + '  service-role key pinned to lib/supabase/admin.ts.',
+    NL + '  service-role key pinned to lib/supabase/admin.ts; createServerClient pinned to' +
+    NL + '  server.ts + middleware.ts with shared cookieOptions, no createBrowserClient.',
 );

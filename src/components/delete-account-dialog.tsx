@@ -4,19 +4,31 @@ import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { SETTINGS } from '@/lib/copy';
 
 /**
  * Danger zone (SPEC Block E /settings, US-6 steps 3–5).
  *
- * The confirm button stays disabled until the input matches `DELETE` EXACTLY —
- * no trimming, no case folding: a mismatch must leave the button disabled, and
- * "delete " passing would defeat the point of asking.
+ * A real modal Dialog, not an inline panel: a destructive, irreversible action
+ * should take the focus and be dismissable by Escape, and Radix gives the focus
+ * trap and the aria wiring that an inline `role="alertdialog"` only claimed.
  *
- * On success the browser leaves for /login?deleted=1. The session cookies were
- * already cleared server-side by the route, so `replace` (not `push`) is used —
- * the back button must not return to a member page whose session is gone.
+ * Confirm stays disabled until the input matches `DELETE` EXACTLY — no trimming,
+ * no case folding. "delete " passing would defeat the point of asking.
+ *
+ * On success the browser leaves for /login?notice=account_deleted. The session
+ * cookies were already cleared server-side, so `replace` (not `push`): the back
+ * button must not return to a member page whose session is gone.
  */
 export function DeleteAccountDialog() {
   const router = useRouter();
@@ -34,7 +46,7 @@ export function DeleteAccountDialog() {
     try {
       const res = await fetch('/api/account', { method: 'DELETE' });
       if (!res.ok) throw new Error(String(res.status));
-      router.replace('/login?deleted=1');
+      router.replace('/login?notice=account_deleted');
       router.refresh();
     } catch {
       // The server logs the cause; the user gets the SPEC copy and nothing else.
@@ -43,60 +55,58 @@ export function DeleteAccountDialog() {
     }
   }
 
-  if (!open) {
-    return (
-      <Button variant="danger" onClick={() => setOpen(true)}>
-        {SETTINGS.deleteAccount}
-      </Button>
-    );
-  }
-
   return (
-    <div
-      role="alertdialog"
-      aria-modal="false"
-      aria-labelledby={`${inputId}-title`}
-      className="border-destructive flex flex-col gap-3 rounded-md border p-4"
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Never let a dismissal interrupt a request that is already in flight.
+        if (pending) return;
+        setOpen(next);
+        if (!next) {
+          setConfirmation('');
+          setError(null);
+        }
+      }}
     >
-      <p id={`${inputId}-title`} className="text-sm font-medium">
-        {SETTINGS.deleteAccount}
-      </p>
-      <p className="text-muted-foreground text-sm">{SETTINGS.deleteDialogBody}</p>
+      <DialogTrigger asChild>
+        <Button variant="danger">{SETTINGS.deleteAccount}</Button>
+      </DialogTrigger>
 
-      <label htmlFor={inputId} className="sr-only">
-        {SETTINGS.deleteDialogBody}
-      </label>
-      <Input
-        id={inputId}
-        value={confirmation}
-        onChange={(e) => setConfirmation(e.target.value)}
-        placeholder={SETTINGS.deleteConfirmPlaceholder}
-        autoComplete="off"
-        disabled={pending}
-      />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{SETTINGS.deleteAccount}</DialogTitle>
+          <DialogDescription>{SETTINGS.deleteDialogBody}</DialogDescription>
+        </DialogHeader>
 
-      {error ? (
-        <p role="alert" className="text-destructive text-sm">
-          {error}
-        </p>
-      ) : null}
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor={inputId} className="text-sm font-medium">
+            {SETTINGS.deleteConfirmPlaceholder}
+          </label>
+          <Input
+            id={inputId}
+            value={confirmation}
+            onChange={(e) => setConfirmation(e.target.value)}
+            placeholder={SETTINGS.deleteConfirmPlaceholder}
+            autoComplete="off"
+            disabled={pending}
+          />
+        </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Button variant="danger" disabled={!canConfirm} aria-busy={pending} onClick={onDelete}>
-          {pending ? SETTINGS.deleting : SETTINGS.deleteAccount}
-        </Button>
-        <Button
-          variant="outline"
-          disabled={pending}
-          onClick={() => {
-            setOpen(false);
-            setConfirmation('');
-            setError(null);
-          }}
-        >
-          {SETTINGS.deleteCancel}
-        </Button>
-      </div>
-    </div>
+        {error ? (
+          <p role="alert" className="text-destructive text-sm">
+            {error}
+          </p>
+        ) : null}
+
+        <DialogFooter>
+          <Button variant="outline" disabled={pending} onClick={() => setOpen(false)}>
+            {SETTINGS.deleteCancel}
+          </Button>
+          <Button variant="danger" disabled={!canConfirm} aria-busy={pending} onClick={onDelete}>
+            {pending ? SETTINGS.deleting : SETTINGS.deleteConfirm}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -19,9 +19,16 @@ import type { CookieOptions } from '@supabase/ssr';
  *    because localhost is http and the cookie would simply never be set.
  *  - sameSite 'lax': keeps the cookie off cross-site requests, which is one of
  *    the two things making DELETE /api/account un-forgeable.
+ *  - maxAge 30 days, replacing the library's 400. Middleware rewrites the cookie
+ *    on every request, so this is a SLIDING 30-day inactivity window rather than
+ *    a hard expiry: an active job search keeps working, an abandoned session
+ *    stops being a credential. The access token inside still expires hourly and
+ *    rotates independently. 400 days of a resurrectable session is not
+ *    data-minimisation on an app holding CVs.
  */
 export const AUTH_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax',
+  maxAge: 60 * 60 * 24 * 30,
 };

@@ -1,6 +1,6 @@
 import { AuthForm } from '@/components/auth-form';
 import { signInAction } from '@/lib/auth/actions';
-import { AUTH, SETTINGS } from '@/lib/copy';
+import { AUTH } from '@/lib/copy';
 
 export const metadata = { title: 'Sign in — CV Insight' };
 
@@ -8,16 +8,11 @@ export const metadata = { title: 'Sign in — CV Insight' };
  * A member never reaches this page: src/middleware.ts redirects a signed-in
  * visitor to /scan before it renders.
  *
- * `?deleted=1` is set by the account-deletion flow, which cannot hand a toast
- * across a full sign-out and navigation. The notice carries the exact SPEC copy.
+ * Post-deletion messaging arrives as `?notice=account_deleted` and is shown by
+ * <FlashToast /> in the (auth) layout — one toast mechanism for the whole app
+ * (SPEC Block E), not a per-page notice.
  */
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ deleted?: string }>;
-}) {
-  const { deleted } = await searchParams;
-
+export default function LoginPage() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">{AUTH.signIn}</h1>
@@ -27,7 +22,6 @@ export default async function LoginPage({
         pendingLabel={AUTH.signingIn}
         altHref="/signup"
         altLabel={AUTH.toSignUp}
-        notice={deleted === '1' ? SETTINGS.deleted : undefined}
       />
     </div>
   );

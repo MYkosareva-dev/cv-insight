@@ -114,7 +114,7 @@ function signUpMessage(code: string | undefined): string {
 }
 
 /**
- * Three outcomes, never two (SPEC Block E). Collapsing them would tell a user
+ * Four outcomes (SPEC Block E), never collapsed. Collapsing them would tell a user
  * with a perfectly good password that it is wrong, when what actually happened
  * is that Supabase rate-limited us or was unreachable — the app reporting a
  * result it never obtained.
@@ -126,8 +126,12 @@ function signUpMessage(code: string | undefined): string {
 function signInMessage(code: string | undefined): string {
   switch (code) {
     case 'invalid_credentials':
-    case 'email_not_confirmed':
       return AUTH.badCredentials;
+    // FOURTH outcome. The credentials were RIGHT — saying "incorrect" here would
+    // be the app reporting something it did not observe, and it sends the user
+    // to re-check a password that was never the problem.
+    case 'email_not_confirmed':
+      return AUTH.emailNotConfirmed;
     case 'over_request_rate_limit':
     case 'over_email_send_rate_limit':
       return AUTH.rateLimited;

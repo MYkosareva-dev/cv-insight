@@ -64,9 +64,14 @@ export const AUTH = {
   rateLimited: 'Too many attempts — try again in a minute.',
   signInUnavailable: 'Sign-in is temporarily unavailable. Try again.',
   emailTaken: 'An account with this email already exists.',
-  /** Only reachable if email confirmation is re-enabled in the dashboard. */
-  checkEmail: 'Check your email to confirm this address, then sign in.',
-  signUpFailed: 'Could not create the account. Try again.',
+  /**
+   * Defensive — only reachable if the dashboard's Confirm-email toggle is ever
+   * re-enabled (SPEC Block F says it is off).
+   */
+  checkEmail: 'Check your email to confirm your account.',
+  /** Fourth sign-in outcome: the credentials were RIGHT. Never bucket as "incorrect". */
+  emailNotConfirmed: 'Confirm your email before signing in.',
+  signUpFailed: 'Sign-up failed. Try again.',
 } as const;
 
 export const SCAN = {
@@ -139,9 +144,34 @@ export const SETTINGS = {
   deleteConfirmPlaceholder: 'DELETE',
   deleteCancel: 'Cancel',
   deleting: 'Deleting…',
+  deleteConfirm: 'Delete account',
   deleted: 'Your account and all data were deleted.',
   deleteFailed: 'Deletion failed — contact support.',
 } as const;
+
+/**
+ * Flash notices (SPEC Block E, "Toast mechanism"). A Server Action cannot fire a
+ * client toast, so an action that redirects appends `?notice=<key>` and
+ * `<FlashToast />` shows the matching string ONCE, then strips the param.
+ *
+ * Keys are stable identifiers, NOT copy — the copy lives in the constants above
+ * so there is still one source per string. An unknown key shows nothing rather
+ * than echoing itself: the query string is user-controlled, and rendering it
+ * would be a self-XSS-shaped hole and a way to put arbitrary words in the app's
+ * own voice.
+ */
+export const NOTICES = {
+  account_deleted: SETTINGS.deleted,
+} as const;
+
+export type NoticeKey = keyof typeof NOTICES;
+
+export function noticeFor(key: string | null | undefined): string | null {
+  if (!key) return null;
+  return Object.prototype.hasOwnProperty.call(NOTICES, key)
+    ? NOTICES[key as NoticeKey]
+    : null;
+}
 
 /** Canonical API error codes (SPEC Block D). */
 export const ERROR_CODES = {

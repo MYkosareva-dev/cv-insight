@@ -24,28 +24,17 @@ export function AuthForm({
   pendingLabel,
   altHref,
   altLabel,
-  notice,
 }: {
   action: (state: AuthState, formData: FormData) => Promise<AuthState>;
   submitLabel: string;
   pendingLabel: string;
   altHref: string;
   altLabel: string;
-  notice?: string;
 }) {
   const [state, formAction] = useActionState(action, EMPTY_AUTH_STATE);
 
   return (
     <form action={formAction} className="flex flex-col gap-4" noValidate>
-      {notice ? (
-        <p
-          role="status"
-          className="border-border bg-muted text-muted-foreground rounded-md border px-3 py-2 text-sm"
-        >
-          {notice}
-        </p>
-      ) : null}
-
       <Field
         id="email"
         name="email"

@@ -9,6 +9,17 @@ Content below is pasted as returned. Annotations are ours.
 > in these docs. Where an example below conflicts with a rule, the rule wins and the
 > conflict is called out inline.
 
+> **ANNOTATION — `createBrowserClient` IS BANNED IN THIS PROJECT (added Phase 1).**
+> Several snippets below build a browser client. Do not copy them. `createBrowserClient`
+> stores the session through `document.cookie`, which can never be `httpOnly`, so using
+> it anywhere would make CLAUDE.md's httpOnly session rule unachievable for the whole
+> app — not just for that one component. All auth runs through Server Actions
+> (`lib/auth/actions.ts`), and `lib/supabase/client.ts` was deleted in Phase 1.
+> `scripts/check.mjs` R11 fails the build on any `createBrowserClient` reference and
+> pins `createServerClient` to `lib/supabase/server.ts` and `src/middleware.ts`, both of
+> which must pass the shared `cookieOptions`. Re-introducing a browser Supabase client
+> requires an owner amendment to CLAUDE.md.
+
 ---
 
 ## Install Supabase SSR package

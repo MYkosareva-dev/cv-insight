@@ -58,8 +58,11 @@ const EXPECTATIONS = [
   // Route handlers answer 401 JSON themselves; a redirect to HTML would be wrong.
   ['/api/account', BYPASSED],
   ['/api', BYPASSED],
-  // Public page — no getUser() round trip.
+  // Public page — no getUser() round trip. EXACT path only: /privacy has no
+  // subtree, and a prefix exclusion would put a future child outside the fence.
   ['/privacy', BYPASSED],
+  ['/privacy/export', RUNS],
+  ['/privacy/dpa', RUNS],
   // Real static assets.
   ['/favicon.ico', BYPASSED],
   ['/logo.png', BYPASSED],
@@ -84,7 +87,7 @@ describe('middleware matcher — the fence must cover every member route', () =>
 
   test('every exclusion is anchored to a path segment or the end of the string', () => {
     const pattern = matcher.source;
-    for (const bare of ['api|', 'privacy|']) {
+    for (const bare of ['api|', 'privacy|', 'privacy(?:/|$)|']) {
       assert.ok(
         !pattern.includes(bare),
         `"${bare.slice(0, -1)}" is excluded without a segment anchor — it would also match a prefix`,

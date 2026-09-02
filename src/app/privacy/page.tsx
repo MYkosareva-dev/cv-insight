@@ -41,7 +41,19 @@ export default function PrivacyPage() {
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium">Right to erasure</h2>
         <p className="text-muted-foreground text-sm">
-          Settings → Delete account and all data removes your account and every row you own.
+          Deleting your account removes your account and all data you created. Our authentication
+          provider (Supabase) retains security audit records of sign-in events for its own retention
+          period.
+        </p>
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="text-lg font-medium">Authentication audit records</h2>
+        <p className="text-muted-foreground text-sm">
+          Supabase records authentication events — sign-in, sign-out, account changes — in its own
+          audit log. Those entries include the account identifier and email address and are kept
+          under Supabase&apos;s retention policy, so they are not removed when you delete your
+          account. They are provider-side security logging and are not used by CV Insight.
         </p>
       </section>
 

@@ -90,7 +90,10 @@ export const config = {
   //                redirect to an HTML page.
   //  - `privacy` — a public static page; running getUser() on it would buy a
   //                pointless auth round trip and force the route dynamic
-  //                (SPEC Block F, Route protection).
+  //                (SPEC Block F). Excluded as an EXACT path, not a subtree:
+  //                `api` keeps `(?:/|$)` because it genuinely has children,
+  //                but /privacy has none, and a prefix exclusion would put a
+  //                future /privacy/export outside the fence.
   //  - static assets.
   // Dots are written [.] so a later edit cannot silently un-escape them into
   // "any character".
@@ -100,6 +103,6 @@ export const config = {
   // /applications/x.png skipped the fence entirely. The (app) layout caught
   // those, but a second net is not the boundary.
   matcher: [
-    '/((?!api(?:/|$)|privacy(?:/|$)|_next/static(?:/|$)|_next/image(?:/|$)|favicon[.]ico$|[^/]+[.](?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest)$).*)',
+    '/((?!api(?:/|$)|privacy$|_next/static(?:/|$)|_next/image(?:/|$)|favicon[.]ico$|[^/]+[.](?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest)$).*)',
   ],
 };

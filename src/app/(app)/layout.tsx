@@ -1,6 +1,9 @@
 import { redirect } from 'next/navigation';
+import { Suspense } from 'react';
 
 import { AppSidebar } from '@/components/app-sidebar';
+import { FlashToast } from '@/components/flash-toast';
+import { Toaster } from '@/components/ui/sonner';
 import { getUser } from '@/lib/supabase/server';
 
 /**
@@ -14,6 +17,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
+      <Suspense fallback={null}>
+        <FlashToast />
+      </Suspense>
+      <Toaster />
       <AppSidebar />
       <main className="w-full max-w-5xl flex-1 p-4 md:p-8">{children}</main>
     </div>
