@@ -1,5 +1,6 @@
 # CV Insight — Technical Specification
-> Version: 1.0 | Date: 2026-08-30 | Status: Production-ready
+> Version: 1.9 | Date: 2026-09-02 | Status: Production-ready
+> Amendment trail: v1.1 gate architecture · v1.2 fictional persona · v1.3 application notes · v1.4 HNSW index · v1.5 module-path cleanup · v1.6–1.9 phase-0 review rounds (B1a/B1b, middleware, check.mjs 7 rules, cost_known, errors.ts/requireApiUser.ts, Block A completeness)
 > Tier: M | Modules: M1 Auth, M2 Database, M3 API, M5 Legal & Privacy, M8 File upload, M12 Third-party integrations, M15 AI/LLM
 
 ## Module checklist
@@ -82,12 +83,15 @@ cv-insight/
 │   │   ├── auth/requireApiUser.ts # API-side gate twin: getUser() → throws UnauthorizedError (401)
 │   │   ├── retrieval.ts         # GATE (server-only): embeddings + getUser() first; ORCHESTRATES
 │   │   │                        # matching by calling lib/db/documents.ts (the .rpc lives in the DAL)
-│   │   ├── db/                  # one DAL per table — the ONLY files allowed to call .from()
+│   │   ├── db/                  # one DAL per table (+ types.ts) — the ONLY files calling .from()/.rpc(
 │   │   ├── prompts.ts           # literal prompt templates (Block F)
-│   │   ├── scoring.ts           # match score + coverage math
-│   │   ├── copy.ts              # user-facing strings (tests import the same constants)
+│   │   ├── scoring.ts           # match score + coverage math (B1/B1a/B1b anchored here)
+│   │   ├── copy.ts              # user-facing strings incl. the B1b em-dash constant
+│   │   ├── utils.ts             # shared helpers (cn, formatting)
 │   │   └── docx.ts              # resume export
-│   └── components/              # shadcn/ui-based, see Block E
+│   ├── app/not-found.tsx        # 404 page (RLS-absent rows render here, not 403)
+│   └── components/              # shadcn/ui-based (incl. components/ui/), see Block E
+├── tests/unit/                  # node:test — keywordPresent, matchScore branch (`npm test`)
 ├── scripts/check.mjs            # 7 rules — FAILs on: .from( AND .rpc( outside lib/db;
 │                                # "security definer" in supabase/; NEXT_PUBLIC_ on any secret name
 │                                # (incl. .env.example); openrouter.ai URL outside lib/openrouter/server.ts;
