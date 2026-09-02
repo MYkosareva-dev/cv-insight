@@ -42,6 +42,7 @@
 | **Prohibited** | `NEXT_PUBLIC_` prefix on any secret; any OpenRouter call from client code; service-role key anywhere client-accessible; LangChain/CrewAI or any agent framework (direct `fetch` only); analytics/telemetry/third-party cookies; LinkedIn scraping or auto-apply; DOCX/MD import (phase 2) | |
 
 > Decision: Next.js 16 + Tailwind v4 chosen as current stable majors; sprint imposes no version, so newest stable wins.
+> Decision: `README.md`, `tests/e2e/` and the Playwright dependency land in **Phase 7** (the test-and-docs phase); `docs/reviews/` and `docs/eval/` exist from Phase 0 so review reports and judge-calibration labels have a home the moment they are produced. Their absence before Phase 7 is scheduled, not a gap in the layout.
 > Decision: `SUPABASE_SERVICE_ROLE_KEY` exists server-side in `.env.local` and is used in exactly one place — `DELETE /api/account` (auth.admin.deleteUser). It never appears in client bundles or `NEXT_PUBLIC_` variables.
 > Decision: Money does not exist in this app (M4 = NO); the only monetary value is LLM cost tracking, stored as INTEGER micro-USD (`cost_usd_micro`), formatted only at display.
 
