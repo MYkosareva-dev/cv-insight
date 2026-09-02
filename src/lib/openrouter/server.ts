@@ -60,15 +60,39 @@ export type ConnectionResult<T> = {
   tokensIn: number;
   tokensOut: number;
   costUsdMicro: number;
+  /**
+   * True when the serving model had no entry in PRICE_USD_PER_MTOK, so
+   * `costUsdMicro` is 0 because the price is UNKNOWN, not because the call was
+   * free. /quality must render that as "—", never as $0.00 — DoD item 7 asks
+   * for a nonzero cost, and a silent zero would look like a passing check.
+   */
+  costUnknown: boolean;
   latencyMs: number;
 };
 
-/** $0.0431 → 43100. Stored as an integer; formatted only at display. */
-export function costUsdMicro(model: string, tokensIn: number, tokensOut: number): number {
+/**
+ * $0.0431 → 43100. Stored as an integer; formatted only at display.
+ *
+ * An unrecognised slug is never a silent 0: OpenRouter fallback routing can
+ * return a variant slug the price table does not list, and a zero-cost row
+ * would read as "this call was free" on /quality. The unknown price is shouted
+ * at the log AND carried on the return value so the caller can flag the row.
+ */
+export function costUsdMicro(
+  model: string,
+  tokensIn: number,
+  tokensOut: number,
+): { costUsdMicro: number; costUnknown: boolean } {
   const price = PRICE_USD_PER_MTOK[model];
-  if (!price) return 0;
+  if (!price) {
+    console.error(
+      `[openrouter] no price entry for model "${model}" — cost logged as 0 and ` +
+        'flagged unknown. Add it to PRICE_USD_PER_MTOK.',
+    );
+    return { costUsdMicro: 0, costUnknown: true };
+  }
   const usd = (tokensIn * price.in + tokensOut * price.out) / 1_000_000;
-  return Math.round(usd * 1_000_000);
+  return { costUsdMicro: Math.round(usd * 1_000_000), costUnknown: false };
 }
 
 const NOT_IMPLEMENTED = 'OpenRouter connection is a phase-0 stub — not implemented yet.';
