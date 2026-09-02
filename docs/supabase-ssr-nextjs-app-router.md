@@ -178,7 +178,11 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 > `document.cookie`. `createBrowserClient` from `@supabase/ssr` replaces all of it.
 > A hand-written `storage` adapter is exactly how session data ends up in the wrong
 > place — note that the *default* `supabase-js` `storage` is `localStorage`, which
-> CLAUDE.md forbids. Use `createBrowserClient` and pass no `storage` option at all.
+> CLAUDE.md forbids. The remedy here is NOT `createBrowserClient` either: that is banned
+> in this project (see above, and `scripts/check.mjs` R11c). This app has no browser
+> Supabase client at all — the session is written server-side by
+> `lib/supabase/server.ts` and `src/middleware.ts`, which is the only way the cookie can
+> be `httpOnly`.
 
 ---
 

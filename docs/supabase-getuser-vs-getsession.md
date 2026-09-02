@@ -37,8 +37,12 @@ This component uses the [`getUser()`](https://supabase.com/docs/reference/javasc
 
 > **ANNOTATION:** This is the behavior Authentication rule 2 depends on — a real round-trip to the Auth
 > server that validates the token. The cost is one network call per check. Accept it:
-> `lib/db/*` calls `getUser()` on **every** operation (the first of the three fences), and that is
-> deliberate, not an optimization target. Do not "cache" the user in a module-level
+> every place that makes an access decision pays it — `src/middleware.ts`, the `(app)`
+> layout, `lib/auth/requireApiUser.ts` and the two model-call gates — and that is
+> deliberate, not an optimization target. (The DALs in `lib/db/*` do NOT call it; they
+> run under the user's session and RLS scopes every statement to `auth.uid()`. See
+> `lib/supabase/server.ts` and the annotation at the end of this file.) Do not "cache"
+> the user in a module-level
 > variable — module scope is shared across requests on the server and would leak one
 > user's identity into another user's request.
 

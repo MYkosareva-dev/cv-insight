@@ -11,8 +11,7 @@ Content below is pasted as returned. Annotations are ours.
 > setup instructions in `README.md` and `.env.example` named a dashboard label
 > ("anon public") that this project's own key no longer matches, which is a documentation-drift
 > divergence and, worse, sent the operator to improvise next to the one key that must
-> never be in this repo. It was found by the security audit on `lab/agents` (finding
-> W3). CLAUDE.md "Secrets" is unchanged and unconditional: **this project uses only the
+> never be in this repo. CLAUDE.md "Secrets" is unchanged and unconditional: **this project uses only the
 > low-privilege key**, whichever of its two names the dashboard shows.
 
 ---
