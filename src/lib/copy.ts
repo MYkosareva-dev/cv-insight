@@ -137,15 +137,30 @@ export const SETTINGS = {
   title: 'Settings',
   emailLabel: 'Email',
   dangerZone: 'Danger zone',
-  deleteAccount: 'Delete account and all data',
+  deleteAccount: 'Delete account and data',
+  /**
+   * The dialog names what GOES and what STAYS (SPEC v2.5). Split across three
+   * constants only so the Privacy reference can be a real link and still keep
+   * every word in this file — read them in order, they are one sentence run.
+   *
+   * No "90 days" here, deliberately, and this is a DEVIATION from SPEC v2.5's
+   * dictated string: the same decision that made /privacy carry the fallback
+   * wording applies with more force at the moment of an irreversible action.
+   * Promising a retention period the purge is not yet performing would put the
+   * unproven claim back on the most consequential surface while /privacy
+   * declines to make it. check.mjs R12 covers both files, so the number returns
+   * here and there together, in the commit that adds the evidence.
+   */
   deleteDialogBody:
-    'This permanently deletes your career base, scans and resumes. Type DELETE to confirm.',
+    'This permanently deletes your career base, scans and resumes. Authentication audit records are kept separately and are not removed when you delete your account — see',
+  deleteDialogPrivacyLink: 'Privacy',
+  deleteDialogBodyEnd: '. Type DELETE to confirm.',
   deleteConfirmWord: 'DELETE',
   deleteConfirmPlaceholder: 'DELETE',
   deleteCancel: 'Cancel',
   deleting: 'Deleting…',
   deleteConfirm: 'Delete account',
-  deleted: 'Your account and all data were deleted.',
+  deleted: 'Your account and the data you created were deleted.',
   deleteFailed: 'Deletion failed — contact support.',
 } as const;
 

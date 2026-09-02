@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
 
@@ -75,7 +76,17 @@ export function DeleteAccountDialog() {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{SETTINGS.deleteAccount}</DialogTitle>
-          <DialogDescription>{SETTINGS.deleteDialogBody}</DialogDescription>
+          <DialogDescription>
+            {SETTINGS.deleteDialogBody}{' '}
+            <Link
+              href="/privacy"
+              target="_blank"
+              className="text-primary underline underline-offset-4"
+            >
+              {SETTINGS.deleteDialogPrivacyLink}
+            </Link>
+            {SETTINGS.deleteDialogBodyEnd}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-1.5">

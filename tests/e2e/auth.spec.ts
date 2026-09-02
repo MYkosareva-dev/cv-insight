@@ -21,8 +21,8 @@ const COPY = {
   invalidEmail: 'Enter a valid email address.',
   shortPassword: 'Password must be at least 8 characters.',
   emailTaken: 'An account with this email already exists.',
-  accountDeleted: 'Your account and all data were deleted.',
-  deleteAccount: 'Delete account and all data',
+  accountDeleted: 'Your account and the data you created were deleted.',
+  deleteAccount: 'Delete account and data',
 } as const;
 
 const password = 'phase-1-e2e-password';
@@ -304,6 +304,19 @@ test.describe('auth', () => {
 
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
+
+    // SPEC v2.5: the dialog names what GOES and what STAYS. This is the surface
+    // where an over-promise does the most damage — the user reads it once, at
+    // the moment the action becomes irreversible — so the audit-record carve-out
+    // and its link to /privacy are asserted, not assumed.
+    await expect(dialog).toContainText('career base, scans and resumes');
+    await expect(dialog).toContainText('are not removed when you delete your account');
+    await expect(dialog.getByRole('link', { name: 'Privacy' })).toHaveAttribute(
+      'href',
+      '/privacy',
+    );
+    // The 90-day figure may not appear until a purge run has succeeded (R12).
+    await expect(dialog).not.toContainText('90 days');
 
     // Confirm stays disabled until the word matches EXACTLY.
     const confirm = dialog.getByRole('button', { name: 'Delete account', exact: true });
