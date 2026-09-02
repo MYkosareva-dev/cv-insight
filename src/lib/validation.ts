@@ -5,10 +5,15 @@ import { AUTH } from '@/lib/copy';
 /**
  * Zod schemas shared by the client form and the server that receives it.
  *
- * Deliberately NOT `server-only`: the same schema has to run in both places.
- * On the client it drives the inline error under each field; on the server it
- * is the actual gate, because a Server Action is a public endpoint and nothing
- * stops a caller from invoking it without ever rendering the form.
+ * Deliberately NOT `server-only`: the SAME schema runs in both places, and both
+ * runs matter for different reasons.
+ *  - On the client (`components/auth-form.tsx`, on submit) it blocks the submit
+ *    and renders the inline error, which is what SPEC Block F means by "inline,
+ *    block submit".
+ *  - On the server (`lib/auth/actions.ts`) it is the actual GATE. A Server
+ *    Action is a public endpoint; nothing stops a caller from invoking it
+ *    without ever rendering the form, so the client parse is a convenience and
+ *    the server parse is the security boundary. Never drop the server one.
  *
  * Messages come from `lib/copy.ts`, so the string a test asserts on is the
  * string the field renders (SPEC Block F validation tables).
