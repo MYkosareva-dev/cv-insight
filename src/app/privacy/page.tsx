@@ -40,45 +40,44 @@ export default function PrivacyPage() {
       </section>
 
       {/*
-       * SINGLE SOURCE of the erasure + audit-record claim (SPEC v2.4). This
-       * paragraph is verbatim from SPEC and is the ONLY place the page may
-       * mention audit records, retention or erasure scope. Two sentences on the
-       * subject is how the page came to contradict itself once already: an
-       * earlier version claimed Supabase retained the records "for its own
-       * retention period" while a second section claimed we delete them at 90
-       * days. The first was simply false — auth.audit_log_entries lives in OUR
-       * Postgres and we are the controller. Before adding any sentence here,
-       * grep this file for "audit", "retention" and "provider": each must
-       * appear exactly once, in this block.
+       * SINGLE SOURCE of the erasure + audit-record claim (SPEC v2.5). This is
+       * the ONLY place the page may mention audit records, retention or erasure
+       * scope. Two sentences on the subject is how the page came to contradict
+       * itself once already: an earlier version claimed Supabase retained the
+       * records "for its own retention period" while a second section claimed we
+       * delete them at 90 days. The first was simply false - auth.audit_log_entries
+       * lives in OUR Postgres and we are the controller. Before adding any
+       * sentence here, grep the RENDERED page for "audit", "retention" and
+       * "provider": each must appear at most once, in this block.
        *
-       * The wording is also careful about SCOPE: auth.audit_log_entries has no
-       * foreign key to auth.users, so deleting an account fires NO cascade into
-       * it. "removes your account and the data you created in the app" is the
-       * true claim; "all data" / "every row" is not.
+       * The wording states the CONSEQUENCE, not the mechanism: a reader does not
+       * care that auth.audit_log_entries has no foreign key to auth.users, they
+       * care that deleting the account does not remove these rows. Scope is
+       * likewise exact - "the data you created in the app", never "all data".
        *
-       * EVIDENCE GATE (SPEC v2.4, CLAUDE.md "A configured mechanism is not a
-       * working one"): the "deleted automatically" half may only reach a
-       * deployment once a purge has actually SUCCEEDED —
-       *   select status, return_message, end_time from cron.job_run_details
-       *   where jobid = (select jobid from cron.job
-       *                  where jobname = 'purge-auth-audit-log')
-       *   order by end_time desc limit 3;
-       * must show `succeeded`. cron.schedule() returning a job id proves only
-       * that it is scheduled: the auth schema is owned by supabase_auth_admin,
-       * so without the grants in 002 the job fails nightly and leaves no
-       * user-visible trace. 002_audit_retention.sql is NOT applied yet, so
-       * until the owner confirms a succeeded run this page must not be reachable
-       * by anyone but the owner; if the run cannot be made to succeed, replace
-       * the clause after the semicolon with the SPEC fallback: "we are working
-       * on an automated retention schedule for them".
+       * This is the FALLBACK wording (SPEC v2.5). It makes no retention promise,
+       * because 002_audit_retention.sql is not applied and no purge run has ever
+       * succeeded. check.mjs R12 couples the strong claim to its proof: adding
+       * "90 days" here FAILs the build until docs/eval/audit-retention-evidence.md
+       * exists. The strong sentence, to be swapped in THE SAME COMMIT as that
+       * evidence file, is:
+       *
+       *   ...in our EU database for 90 days for security purposes; these are not
+       *   removed when you delete your account, and are deleted automatically
+       *   when they age out.
+       *
+       * The proof that earns it is a `succeeded` row in cron.job_run_details, not
+       * a row in cron.job: the auth schema is owned by supabase_auth_admin, so
+       * without the grants in 002 the job fails nightly and leaves no
+       * user-visible trace behind a page promising deletion.
        */}
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium">Right to erasure</h2>
         <p className="text-muted-foreground text-sm">
           Deleting your account removes your account and the data you created in the app.
           Separately, we keep authentication audit records (event type, your user id, email address
-          and IP address) in our EU database for 90 days for security purposes; these are not linked
-          to your account record and are deleted automatically when they age out.
+          and IP address) in our EU database for security purposes; these are not removed when you
+          delete your account. An automated retention schedule for them is being set up.
         </p>
       </section>
 
