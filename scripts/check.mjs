@@ -85,7 +85,9 @@ function stripComments(text) {
 }
 
 /**
- * Per-line rule. The matcher sees the comment-stripped line and returns either
+ * Per-line rule. The matcher sees the comment-stripped line, the file, and the
+ * whole comment-stripped file as lines plus this line's index — a method-chain
+ * rule has to look at the PREVIOUS line to find its receiver. It returns either
  * a boolean or a string. A string REPLACES the echoed source line in the
  * report — that is how R4 names a variable in .env.example without printing
  * the line it sits on.
@@ -97,7 +99,7 @@ function scanLines(label, predicate, matcher) {
     const raw = text.split(/\r?\n/);
     const stripped = stripComments(text).split(/\r?\n/);
     raw.forEach((line, i) => {
-      const verdict = matcher(stripped[i] ?? '', abs);
+      const verdict = matcher(stripped[i] ?? '', abs, stripped, i);
       if (!verdict) return;
       const shown = typeof verdict === 'string' ? verdict : line.trim().slice(0, 120);
       hits.push(`${rel(abs)}:${i + 1}: ${shown}`);
@@ -123,15 +125,37 @@ const isCode = (abs) => {
 };
 const isDal = (abs) => DAL_FILES.includes(rel(abs));
 
+/** Receivers that are never the database. Only `.from` has any. */
+const NON_DB_RECEIVERS = new Set(['Array', 'String']);
+
 /**
- * `.from(` / `.rpc(` on a receiver that is not Array/String. `Array.from(` is
- * Block E's idiom for skeleton rows and has nothing to do with the database;
- * excluding it now keeps the rule from being weakened later under deadline.
+ * `.from(` / `.rpc(`, matched with the receiver OPTIONAL and the known-safe
+ * receivers SUBTRACTED — never the other way round.
+ *
+ * Requiring a receiver on the same line failed open on exactly the formatting
+ * this repo uses: Prettier wraps a Supabase chain so `.from(` starts its own
+ * line, and five of the six DALs are already written that way. Copying such a
+ * block into a route handler would then have passed the one rule CLAUDE.md
+ * names as the enforcement of the DAL boundary.
+ *
+ * When the receiver is not on this line, it is read off the end of the
+ * previous non-blank line, so `Array\n  .from(…)` is still recognised as safe.
+ * With no receiver findable anywhere, the call FAILS: the boundary fails
+ * closed, and a false positive is a one-line rename, not a data leak.
  */
-function callsDbMethod(line, method) {
-  const re = new RegExp(`([A-Za-z0-9_$\\]\\)]+)\\s*\\.\\s*${method}\\s*\\(`, 'g');
+function callsDbMethod(line, method, lines, index) {
+  const re = new RegExp(`(?:([A-Za-z0-9_$\\]\\)]+)\\s*)?\\.\\s*${method}\\s*\\(`, 'g');
   for (const m of line.matchAll(re)) {
-    if (method === 'from' && (m[1] === 'Array' || m[1] === 'String')) continue;
+    let receiver = m[1];
+    if (!receiver) {
+      for (let i = index - 1; i >= 0; i--) {
+        const prev = (lines[i] ?? '').trimEnd();
+        if (prev.trim() === '') continue;
+        receiver = prev.match(/([A-Za-z0-9_$\]\)]+)\s*$/)?.[1];
+        break;
+      }
+    }
+    if (method === 'from' && receiver && NON_DB_RECEIVERS.has(receiver)) continue;
     return true;
   }
   return false;
@@ -141,7 +165,7 @@ function callsDbMethod(line, method) {
 scanLines(
   'R1 .from( outside lib/db — only a DAL may call the database',
   (abs) => isCode(abs) && !isDal(abs),
-  (line) => callsDbMethod(line, 'from'),
+  (line, _abs, lines, i) => callsDbMethod(line, 'from', lines, i),
 );
 
 // R2. .rpc( outside the listed DALs. lib/db/documents.ts owns match_documents;
@@ -149,7 +173,7 @@ scanLines(
 scanLines(
   'R2 .rpc( outside lib/db — match_documents lives in lib/db/documents.ts',
   (abs) => isCode(abs) && !isDal(abs),
-  (line) => callsDbMethod(line, 'rpc'),
+  (line, _abs, lines, i) => callsDbMethod(line, 'rpc', lines, i),
 );
 
 // R3. security definer anywhere in supabase/. Scanned whole-file: the two words
@@ -231,9 +255,14 @@ function envSecretsRead(text) {
     ...[...text.matchAll(/process\s*\.\s*env\s*\.\s*([A-Z][A-Z0-9_]*)/g)].map((m) => m[1]),
     ...[...text.matchAll(/process\s*\.\s*env\s*\[\s*['"]([A-Z][A-Z0-9_]*)['"]/g)].map((m) => m[1]),
   ];
+  // The explicit list first, so a secret that does not end in one of the
+  // suffixes below is still covered; the shape heuristic then catches the ones
+  // nobody has added to SECRET_NAMES yet.
   const isSecret = (n) =>
     !n.startsWith('NEXT_PUBLIC_') &&
-    (/(?:_KEY|_SECRET|_TOKEN)$/.test(n) || n.includes('SERVICE_ROLE'));
+    (SECRET_NAMES.includes(n) ||
+      /(?:_KEY|_SECRET|_TOKEN)$/.test(n) ||
+      n.includes('SERVICE_ROLE'));
   return [...new Set(names.filter(isSecret))];
 }
 
