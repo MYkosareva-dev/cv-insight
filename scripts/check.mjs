@@ -3,19 +3,29 @@
  * Repo invariants that a type-checker cannot see (SPEC v1.9 Block A, CLAUDE.md).
  * Runs as `npm run check`, and as `prebuild` so a build cannot skip it.
  *
- * Seven rules:
+ * Nine rules:
  *   R1  `.from(` outside lib/db — one DAL per table, and DALs are the only
- *       files allowed to reach the database. `Array.from(` is excluded: Block E
- *       builds its skeleton states with `Array.from({ length: 6 })`.
+ *       files allowed to reach the database. Non-database receivers such as
+ *       `Array.from(` and `Buffer.from(` are excluded.
  *   R2  `.rpc(` outside lib/db — match_documents is reachable only through
  *       lib/db/documents.ts, which the retrieval gate orchestrates.
  *   R3  `security definer` anywhere in supabase/ — match_documents must stay
  *       `security invoker` so RLS is the fence, not the function.
- *   R4  NEXT_PUBLIC_ on a secret name, in source AND in .env.example.
+ *   R4  NEXT_PUBLIC_ on a secret name, in code AND in .env.example. Prose under
+ *       docs/ is exempt: a review report has to be able to quote the forbidden
+ *       literal in order to warn about it.
  *   R5  an openrouter.ai URL outside the connection module — no hand-rolled
  *       model call can skip the gates.
  *   R6  importing the connection module from outside the two gates.
  *   R7  reading a secret from process.env without `import 'server-only'`.
+ *   R8  a secret anywhere in next.config.* — that file is the one place a
+ *       server secret can reach the client bundle with no NEXT_PUBLIC_ prefix
+ *       (via `env:` or `publicRuntimeConfig`), so R4 and R7 both miss it. It
+ *       also cannot satisfy `import 'server-only'`, which is why this is its
+ *       own rule rather than a widening of R7.
+ *   R9  `getSession(` anywhere in src/ — it does not validate the token, so
+ *       using it for any access decision is prohibited (CLAUDE.md auth rule 2).
+ *       No exemptions: the only valid server-side check is getUser().
  *
  * This script opens exactly one dotfile — `.env.example`, the committed
  * template of NAMES — and for that file it prints only the matched variable
@@ -139,8 +149,22 @@ const isCode = (abs) => {
 };
 const isDal = (abs) => DAL_FILES.includes(rel(abs));
 
-/** Receivers that are never the database. Only `.from` has any. */
-const NON_DB_RECEIVERS = new Set(['Array', 'String']);
+/**
+ * Receivers that are never the database. Only `.from` has any.
+ * `Buffer.from(await file.arrayBuffer())` is the Phase-2 PDF-upload idiom and
+ * `Uint8Array.from` shows up in docx export, so they are listed before they
+ * arrive rather than after someone hits a false FAIL mid-phase.
+ */
+const NON_DB_RECEIVERS = new Set([
+  'Array',
+  'Buffer',
+  'Date',
+  'Map',
+  'Object',
+  'Set',
+  'String',
+  'Uint8Array',
+]);
 
 /**
  * `.from(` / `.rpc(`, matched with the receiver OPTIONAL and the known-safe
@@ -204,7 +228,10 @@ scanFiles(
 // R4a. NEXT_PUBLIC_ on a secret name — in source and in the .env.example template.
 scanLines(
   'R4 NEXT_PUBLIC_ prefix on a secret — that ships the value to the browser',
-  (abs) => !rel(abs).startsWith('scripts/'),
+  // Prose under docs/ is exempt: a review report must be able to quote the
+  // forbidden literal in order to warn about it, and `check` runs as prebuild —
+  // so without this exemption writing the warning down breaks the deploy.
+  (abs) => !rel(abs).startsWith('scripts/') && !rel(abs).startsWith('docs/'),
   (line, abs) => {
     const hit = SECRET_NAMES.find((name) => line.includes(`NEXT_PUBLIC_${name}`));
     if (!hit) return false;
@@ -308,6 +335,43 @@ scanFiles(
   },
 );
 
+// R8. A secret in next.config.*. R7 does not cover it — that file is outside
+//     src/, and it could not satisfy `import 'server-only'` even if it were
+//     inside. It is also the ONE file that can copy a server secret into the
+//     client bundle with no NEXT_PUBLIC_ prefix, through `env: {…}` or the
+//     legacy `publicRuntimeConfig`, which makes it invisible to R4 as well.
+//     So: any secret name, any process.env read, and either config key is a
+//     FAIL here, unconditionally.
+scanFiles(
+  'R8 secret or env-injection key in next.config.* — that reaches the client bundle',
+  (abs) => /^next\.config\.(ts|js|mjs|cjs)$/.test(rel(abs)),
+  (raw, stripped) => {
+    const reasons = [];
+    const named = SECRET_NAMES.filter((n) => stripped.includes(n));
+    if (named.length) reasons.push(`names ${named.join(', ')}`);
+    const read = envSecretsRead(stripped);
+    if (read.length) reasons.push(`reads ${read.join(', ')} from process.env`);
+    // The injection keys themselves: even with a non-secret value today, they
+    // are the mechanism, and the next edit to them is the leak.
+    if (/(^|[^A-Za-z0-9_$])env\s*:/m.test(stripped)) reasons.push('has an `env:` block');
+    if (/publicRuntimeConfig/.test(stripped)) reasons.push('has publicRuntimeConfig');
+    return reasons.length ? reasons.join('; ') : null;
+  },
+);
+
+// R9. getSession() anywhere in src/. It does not validate the token, so using
+//     it for an access decision is prohibited (CLAUDE.md auth rule 2); the only
+//     valid server-side check is getUser(). No exemption list: the two places
+//     the tree mentions it are comments, which stripComments() already removes,
+//     so the rule costs nothing today and is in place before Phase 1 auth and
+//     the Phase 2 handlers — where a copy-paste from generic Supabase docs,
+//     which use getSession() freely, would otherwise land unnoticed.
+scanLines(
+  'R9 getSession( in src/ — it does not validate the token; use getUser()',
+  (abs) => rel(abs).startsWith('src/') && CODE_EXT.test(rel(abs)),
+  (line) => /\bgetSession\s*\(/.test(line),
+);
+
 if (failures.length) {
   for (const { label, hits } of failures) {
     console.error(`\nFAIL: ${label}`);
@@ -318,7 +382,8 @@ if (failures.length) {
 }
 
 console.log(
-  'check passed (7 rules): .from( and .rpc( confined to lib/db; no security definer;\n' +
+  'check passed (9 rules): .from( and .rpc( confined to lib/db; no security definer;\n' +
     '  NEXT_PUBLIC_ hygiene incl. .env.example; no openrouter.ai URL or connection import\n' +
-    "  outside the gates; every secret reader imports 'server-only'.",
+    "  outside the gates; every secret reader imports 'server-only'; next.config.* clean\n" +
+    '  of secrets and env injection; no getSession() in src/.',
 );
