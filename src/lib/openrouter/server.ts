@@ -74,10 +74,16 @@ export type ConnectionResult<T> = {
 /**
  * $0.0431 → 43100. Stored as an integer; formatted only at display.
  *
- * An unrecognised slug is never a silent 0: OpenRouter fallback routing can
- * return a variant slug the price table does not list, and a zero-cost row
- * would read as "this call was free" on /quality. The unknown price is shouted
- * at the log AND carried on the return value so the caller can flag the row.
+ * Two ways a 0 could lie, both closed:
+ *   - An unrecognised slug: OpenRouter fallback routing can return a variant
+ *     the price table does not list. The missing price is shouted at the log
+ *     AND carried back as costKnown=false, so /quality shows unknown pricing
+ *     rather than a free call.
+ *   - Sub-micro rounding: embeddings price at $0.02/Mtok, so a short embed
+ *     costs a fraction of one micro-dollar and Math.round would floor it to 0
+ *     with costKnown=true — the exact "this call was free" reading the flag
+ *     exists to prevent. Math.ceil instead: a priced call is at least 1
+ *     micro-USD. Over-reporting a rounding crumb is the honest direction.
  */
 export function costUsdMicro(
   model: string,
@@ -93,7 +99,9 @@ export function costUsdMicro(
     return { costUsdMicro: 0, costKnown: false };
   }
   const usd = (tokensIn * price.in + tokensOut * price.out) / 1_000_000;
-  return { costUsdMicro: Math.round(usd * 1_000_000), costKnown: true };
+  // ceil, not round — see the sub-micro note above. A zero here means the call
+  // genuinely consumed no tokens, never that it was too cheap to count.
+  return { costUsdMicro: Math.ceil(usd * 1_000_000), costKnown: true };
 }
 
 const NOT_IMPLEMENTED = 'OpenRouter connection is a phase-0 stub — not implemented yet.';
