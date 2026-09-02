@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { after } from 'next/server';
+
 import { createClient } from '@/lib/supabase/server';
 import type { LlmCall } from '@/lib/db/types';
 
@@ -43,17 +45,29 @@ export async function countCallsInLast24h(): Promise<number> {
 export type NewLlmCall = Omit<LlmCall, 'id' | 'created_at'>;
 
 /**
- * Fire-and-forget: a log-write failure must NEVER fail the user's request
- * (rule B8). Callers do not await this for correctness.
+ * Fire-and-forget from the user's point of view: the handler never awaits this
+ * and a log-write failure must NEVER fail the request (rule B8).
+ *
+ * Scheduled with `after()` rather than a detached promise. A bare
+ * `void (async () => …)()` is not tied to the request lifecycle: on Vercel the
+ * function can be frozen once the response is sent, so the insert may never run
+ * and `cookies()` — which createClient() needs — can throw outside request
+ * scope. Either way the catch would swallow it and B8 would quietly stop
+ * holding, with /quality as the only witness. `after()` keeps the work inside
+ * the request lifecycle while still running it after the response.
  */
 export function logLlmCall(row: NewLlmCall): void {
-  void (async () => {
+  after(async () => {
     try {
       const supabase = await createClient();
       const { error } = await supabase.from('llm_calls').insert(row);
       if (error) throw error;
     } catch (err) {
-      console.error('[llm_calls] log write failed', err);
+      // Metadata only — never log resume or vacancy content.
+      console.error(
+        `[llm_calls] log write failed for step=${row.step} model=${row.model}`,
+        err,
+      );
     }
-  })();
+  });
 }
