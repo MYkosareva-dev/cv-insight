@@ -344,6 +344,11 @@ begin
   end loop;
 end $$;
 
+-- > Decision: Supabase-linter hardening (extensions schema, SET search_path, `to authenticated`,
+-- `(select auth.uid())` wrapping) is DEFERRED to a future 002 migration. None is security-relevant
+-- under this RLS design (anon has no policies → denied; auth.uid() is null for anon); search_path
+-- has a real HNSW-inlining tradeoff; scale is tiny. Revisit only if the linter matters pre-deploy.
+
 -- Vector search over the caller's own base (SECURITY INVOKER: RLS applies; user filter is belt-and-braces)
 create or replace function match_documents(query_embedding vector(1536), match_count int default 5)
 returns table (id uuid, career_item_id uuid, content text, similarity float)
@@ -721,7 +726,7 @@ CAREER ITEMS: <items>{{retrievedChunksJson}}</items>
 3. Playwright suite green: `auth.spec.ts` (signup→login→logout; visitor redirect from `/scan`, `/applications/x`), `scan.spec.ts` (paste resume + vacancy → real AI response visible; happy path), `privacy.spec.ts` (user B gets 404 on user A's application id — cross-user privacy bonus; delete-account leaves 0 owned rows).
 4. Incognito check on the deployed URL: every member route redirects to `/login`; no data flash.
 5. `grep -r "NEXT_PUBLIC_OPENROUTER\|NEXT_PUBLIC_SERVICE" src/` returns nothing; `OPENROUTER_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` appear only in server files; `.env.local` is git-ignored (verified via `git check-ignore`).
-6. Every table in `001_init.sql` has RLS enabled + 4 owner policies (verified by the supabase-security subagent checklist and a failing-by-default anon query test).
+6. Every table in `001_init.sql` has RLS enabled + owner-scoped policies EXACTLY per the least-privilege matrix in Block C — no more, no fewer (career_items S/I/U/D · documents S/I/D · vacancies S/I/U · applications S/I/U · resume_versions S/I · llm_calls S/I). Verified by the supabase-security subagent checklist and a failing-by-default anon query test.
 7. `/quality` shows real rows for one full pipeline run: `parse_vacancy` + `embed` + `generate` + `judge`, with a nonzero integer `cost_usd_micro` and correct fallback flags.
 8. Repo contains: `CLAUDE.md` (AI rules pinned), `README.md` (what/why-AI-is-core, live URL, local run incl. env var names, screenshot with the AI feature, chosen optional tasks), `docs/` with ≥1 cited OpenRouter/Supabase vectors reference (source URL at top), ≥1 merged PR with an `ai-code-reviewer` report in `docs/reviews/`.
 
