@@ -55,19 +55,27 @@ export type NewLlmCall = Omit<LlmCall, 'id' | 'created_at'>;
  * scope. Either way the catch would swallow it and B8 would quietly stop
  * holding, with /quality as the only witness. `after()` keeps the work inside
  * the request lifecycle while still running it after the response.
+ *
+ * The `after()` REGISTRATION is inside the try as well, not just the insert:
+ * `after()` itself throws when called outside a request or prerender scope (a
+ * script, a worker, a test harness). Left uncaught, that would propagate into
+ * the caller and a log-write failure would fail the user's request — which B8
+ * forbids unconditionally, not merely on the paths that exist today.
  */
 export function logLlmCall(row: NewLlmCall): void {
-  after(async () => {
-    try {
-      const supabase = await createClient();
-      const { error } = await supabase.from('llm_calls').insert(row);
-      if (error) throw error;
-    } catch (err) {
-      // Metadata only — never log resume or vacancy content.
-      console.error(
-        `[llm_calls] log write failed for step=${row.step} model=${row.model}`,
-        err,
-      );
-    }
-  });
+  // Metadata only — never log resume or vacancy content.
+  const context = `step=${row.step} model=${row.model}`;
+  try {
+    after(async () => {
+      try {
+        const supabase = await createClient();
+        const { error } = await supabase.from('llm_calls').insert(row);
+        if (error) throw error;
+      } catch (err) {
+        console.error(`[llm_calls] log write failed for ${context}`, err);
+      }
+    });
+  } catch (err) {
+    console.error(`[llm_calls] could not schedule log write for ${context}`, err);
+  }
 }
