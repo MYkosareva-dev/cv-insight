@@ -37,7 +37,8 @@
 | Files | PDF text extraction via `unpdf` (server-side) | PDF only in MVP, ≤5 MB |
 | Resume export | `docx` npm package, server-side | .docx download only in MVP |
 | Validation | Zod | Every API input and every LLM JSON output |
-| E2E tests | Playwright | See Block H |
+| Unit tests | node:test (zero-dep, built-in) | `npm test` — pure functions (keywordPresent, matchScore branch); files in `tests/unit/` |
+| E2E tests | Playwright (Phase 7) | See Block H; files in `tests/e2e/` |
 | Deploy | Vercel | All secrets in Vercel dashboard only |
 | **Prohibited** | `NEXT_PUBLIC_` prefix on any secret; any OpenRouter call from client code; service-role key anywhere client-accessible; LangChain/CrewAI or any agent framework (direct `fetch` only); analytics/telemetry/third-party cookies; LinkedIn scraping or auto-apply; DOCX/MD import (phase 2) | |
 
@@ -77,6 +78,8 @@ cv-insight/
 │   │   ├── supabase/            # server client, browser client
 │   │   ├── openrouter/server.ts # CONNECTION only: speaks to both endpoints, no auth opinion
 │   │   ├── chat.ts              # GATE (server-only): completions — parse/generate/judge; getUser() first
+│   │   ├── errors.ts            # single shared UnauthorizedError (→401), imported by both gates
+│   │   ├── auth/requireApiUser.ts # API-side gate twin: getUser() → throws UnauthorizedError (401)
 │   │   ├── retrieval.ts         # GATE (server-only): embeddings + getUser() first; ORCHESTRATES
 │   │   │                        # matching by calling lib/db/documents.ts (the .rpc lives in the DAL)
 │   │   ├── db/                  # one DAL per table — the ONLY files allowed to call .from()
@@ -543,6 +546,7 @@ Application notes: ≤2,000 chars ("Notes are limited to 2000 characters."), inl
 | # | Rule | Failure behavior |
 |---|---|---|
 | B1 | **Match score** = `round(100 × (0.6 × S + 0.4 × K))`, where S = mean over MUST requirements of `clamp((bestSimilarity − 0.30)/0.55, 0, 1)`; K = share of vacancy keywords present in the resume text (case-insensitive, word-boundary — see B1a). Requirement counts as covered when bestSimilarity ≥ 0.60 | Score renders "—" only when parse produced 0 requirements TOTAL (edge N4); with ≥1 requirement but 0 MUST, S is dropped and score = `round(100 × K)` |
+| B1b | **Insufficient signal**: if S is undefined (0 MUST requirements) AND K = 0 (0 keywords extracted), the score has nothing to compute from — render "—" (like N4), NOT a hard 0. Implemented in the /scan result UI (Phase 3), not the scoring function | — |
 | B1a | **Keyword word-boundary**: apply a `\b` boundary only on the side(s) where the keyword itself starts/ends with a word character. A literal `\bC++\b` is unsatisfiable (`+` is not a word char), so "C++", "C#", ".NET" would never count and K would understate every score. `keywordPresent` verified: Docker ✓ in "used Docker", ✗ in "dockerfile"; C++ ✓, .NET ✓, C# ✓ | — |
 | B2 | **Grounding gate**: any judge grounding violation ⇒ `verdict='revise'` regardless of other scores (fail cannot be compensated) | Auto-revision (B3) |
 | B3 | **Auto-revision**: at most ONE regenerate per /generate call, with judge feedback appended to the prompt | Second bad judge → return version anyway, honest card |
