@@ -402,7 +402,10 @@ scanLines(
 scanLines(
   `R11 createServerClient outside ${SERVER_CLIENT_FILES.join(' + ')} — it would miss cookieOptions`,
   (abs) => isCode(abs) && !SERVER_CLIENT_FILES.includes(rel(abs)),
-  (line) => /createServerClient\s*\(/.test(line),
+  // Bare token, not `createServerClient(`: matching only the call site let
+  // `import { createServerClient as makeClient }` build an unguarded client and
+  // pass all rules. Verified. R11c already matched bare and was strictly stronger.
+  (line) => /createServerClient/.test(line),
 );
 
 // R11b. Both pinned files must actually pass the shared options. Pinning the
@@ -414,6 +417,20 @@ scanFiles(
     stripped.includes('cookieOptions: AUTH_COOKIE_OPTIONS')
       ? null
       : 'constructs a Supabase server client without the shared cookieOptions',
+);
+
+// R11d. Both pinned files must route every cookie write through cappedMaxAge().
+//       R11b checks `cookieOptions: AUTH_COOKIE_OPTIONS`, whose maxAge the library
+//       DISCARDS (cookies.js:325-329) — so on its own R11b enforces the inert half
+//       of the contract. Deleting cappedMaxAge( from one adapter would silently
+//       restore 400-day sessions with every rule and test still green.
+scanFiles(
+  'R11 a pinned createServerClient file does not call cappedMaxAge() in setAll',
+  (abs) => SERVER_CLIENT_FILES.includes(rel(abs)),
+  (raw, stripped) =>
+    stripped.includes('cappedMaxAge(')
+      ? null
+      : 'writes session cookies without clamping maxAge - the library default is 400 days',
 );
 
 // R11c. createBrowserClient is banned outright: it writes the session through
