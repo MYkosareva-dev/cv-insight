@@ -1,5 +1,6 @@
 # CV Insight — Technical Specification
-> Version: 2.1 | Date: 2026-09-02 | Status: Production-ready
+> Version: 2.2 | Date: 2026-09-02 | Status: Production-ready
+> v2.2: maxAge enforced via cappedMaxAge (library discards cookieOptions.maxAge) + R11d/test · R11a bare token · client-side Zod (no noValidate) · auth.spec.ts pulled into Phase 1 as the only accepted evidence · audit-log corrected: WE are controller → 002_audit_retention.sql (pg_cron, 90d) + accurate disclosure · /privacy accurate-now / complete-before-deploy (Impressum = Phase 6 gate) · OpenRouter Art. 28/44 owner task before Phase 2 · linter hardening → 003
 > v2.1: maxAge 30d sliding window · R11 (createServerClient pin + createBrowserClient ban) · Sonner toast via ?notice flash (decided once) · Dialog for deletion · auth copy enumerated (signUpFailed, checkEmail, email_not_confirmed 4th outcome, deleting/cancel) · signup-enumeration decision · 500 SERVER_ERROR row · Block A: cookie-options.ts, validation.ts, error.tsx, alias hooks · exact /privacy exclusion
 > Amendment trail: v1.1 gate architecture · v1.2 fictional persona · v1.3 application notes · v1.4 HNSW index · v1.5 module-path cleanup · v1.6–1.9 phase-0 review rounds (B1a/B1b, middleware, check.mjs rules, cost_known, errors.ts/requireApiUser.ts, Block A completeness) · v2.0 phase-1 review (httpOnly cookieOptions + no browser client, three sign-in outcomes, error.code not status, best-effort signOut after delete, anchored matcher, cookie propagation on redirect, audit-log disclosure, R10 service-role pin, actions.ts/admin.ts)
 > Tier: M | Modules: M1 Auth, M2 Database, M3 API, M5 Legal & Privacy, M8 File upload, M12 Third-party integrations, M15 AI/LLM
@@ -64,6 +65,7 @@ cv-insight/
 ├── .claude/agents/            # ai-architect, ai-code-reviewer, supabase-security,
 │                              # nextjs-security, vercel-security, eu-compliance-reviewer
 ├── supabase/migrations/001_init.sql
+├── supabase/migrations/002_audit_retention.sql   # pg_cron 90-day purge of auth.audit_log_entries
 ├── src/
 │   ├── middleware.ts          # route protection
 │   ├── app/
@@ -356,7 +358,7 @@ begin
 end $$;
 
 -- > Decision: Supabase-linter hardening (extensions schema, SET search_path, `to authenticated`,
--- `(select auth.uid())` wrapping) is DEFERRED to a future 002 migration. None is security-relevant
+-- `(select auth.uid())` wrapping) is DEFERRED to a future 003 migration (002 is audit retention). None is security-relevant
 -- under this RLS design (anon has no policies → denied; auth.uid() is null for anon); search_path
 -- has a real HNSW-inlining tradeoff; scale is tiny. Revisit only if the linter matters pre-deploy.
 
@@ -371,6 +373,18 @@ language sql stable as $$
   order by d.embedding <=> query_embedding
   limit match_count;
 $$;
+```
+
+### Migration `supabase/migrations/002_audit_retention.sql` (Phase 1; run in SQL editor after 001)
+```sql
+-- Retention for Supabase Auth's audit trail, which lives in THIS database (we are the controller).
+-- Disclosed on /privacy as 90 days. pg_cron must be enabled for the project (Database → Extensions).
+create extension if not exists pg_cron;
+select cron.schedule(
+  'purge-auth-audit-log',            -- job name (idempotent: re-running replaces the schedule)
+  '0 3 * * *',                       -- daily 03:00 UTC
+  $$ delete from auth.audit_log_entries where created_at < now() - interval '90 days' $$
+);
 ```
 
 ### Seed example (core table `career_items`)
@@ -534,7 +548,9 @@ Loading: skeleton tiles. Empty: "No AI calls yet." Error: toast "Couldn't load m
 **Auth copy not previously enumerated (so `copy.ts` stays verbatim-to-SPEC):** `signUpFailed` → "Sign-up failed. Try again."; `checkEmail` (defensive — only reachable if the dashboard's Confirm-email toggle is ever re-enabled) → "Check your email to confirm your account."; `email_not_confirmed` on sign-in → "Confirm your email before signing in." (a fourth sign-in outcome: the credentials were RIGHT — never bucket it as "password is incorrect"); `over_email_send_rate_limit` is bucketed with `over_request_rate_limit` as rate-limited.
 > Decision: `/signup` MAY enumerate accounts ("An account with this email already exists.") — deliberate UX trade-off on a personal tool with no public user directory; `/login` stays non-enumerating. Do not "fix" one to match the other.
 
-**`/privacy`** — static: what is stored, where (Supabase, EU project region), that resume content is sent to OpenRouter for processing (retention choice documented), auth cookies are strictly necessary (no consent banner needed, no trackers), right to erasure via Settings, **authentication audit records** (Supabase `auth.audit_log_entries` retains actor id + email after account deletion — disclosed as provider-side security logging with the provider's retention), Impressum block.
+**`/privacy`** — static, reachable from BOTH layouts (footer link in `(auth)` and `(app)` — Art. 12(1)). Content: what is stored (account email; career items, vacancies, applications, resume versions, LLM-call metadata), where (Supabase, EU-Frankfurt), that resume/vacancy text is sent to OpenRouter for processing (retention choice documented), auth cookies are strictly necessary (no consent banner, no trackers), right to erasure via Settings, **authentication audit records**, Impressum block.
+> Decision (audit log, corrected): `auth.audit_log_entries` lives in OUR Postgres (EU-Frankfurt) — the operator is the controller, there is no "provider retention period", and Supabase does not prune it. Retention is therefore OURS: migration `002_audit_retention.sql` schedules a `pg_cron` job (daily 03:00 UTC) deleting entries older than **90 days**. Disclosure wording: "We keep authentication audit records (event type, your user id, email address and IP address) for 90 days in our EU database for security purposes, then delete them automatically."
+> Decision (scope): Phase 1 makes /privacy ACCURATE (no false claims, audit-log truth, email listed, reachable) — it is not yet public. COMPLETENESS — controller identity, legal bases per purpose, retention table, data-subject rights section, and a REAL Impressum (§5 DDG; a placeholder is abmahnfähig once public) — is a hard gate of Phase 6, enforced by eu-compliance-reviewer + vercel-security before the first deploy. Owner task before Phase 2: read OpenRouter's DPA/privacy terms, set retention/training (ZDR decision), record the Art. 28 processor + Art. 44 transfer basis in docs/ (this doubles as the "OpenRouter privacy settings" optional task).
 > Decision: Supabase project region = EU (Frankfurt) — closest to the user base and simplifies the GDPR story.
 
 ### Actions table (cross-screen)
@@ -592,7 +608,10 @@ Application notes: ≤2,000 chars ("Notes are limited to 2000 characters."), inl
 - **Password reset**: OUT of MVP. > Decision: cut — requires email delivery; reviewer flow doesn't need it; noted in README known-limitations.
 - **Sessions**: Supabase SSR cookies (`@supabase/ssr`), strictly necessary → no consent banner. `@supabase/ssr` DEFAULTS are `httpOnly: false`, no `secure`, 400-day maxAge — NOT acceptable for a personal-data app. Both `createServerClient` call sites (server.ts, middleware.ts) MUST pass the SHARED object from `lib/supabase/cookie-options.ts`: `{ httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 60 * 60 * 24 * 30 }`.
 > Decision: `maxAge` = 30 days. Middleware rewrites the cookie on every request, so this is a SLIDING 30-day inactivity window, not a hard expiry; the access token inside still expires hourly and rotates. 30 days balances GDPR data-minimisation against a job search that runs for weeks.
-> Decision: check.mjs R11 pins `createServerClient` to exactly `lib/supabase/server.ts` and `src/middleware.ts` and FAILs on any `createBrowserClient` import — the cookie rule is enforced by code, not prose (a future OAuth callback or reset handler that omits cookieOptions would otherwise downgrade the session silently).
+> Decision (mechanism): `@supabase/ssr` DISCARDS `maxAge` from `cookieOptions` on write. The cap is therefore enforced in BOTH adapters' `setAll` via `cappedMaxAge(options)` from `lib/supabase/cookie-options.ts`, which clamps every outgoing cookie to ≤30 days. check.mjs R11d requires `cappedMaxAge(` in both adapters, and `tests/unit/cookie-options.test.mjs` asserts the clamp — without these, deleting one call would silently revert sessions to 400 days with every rule and test still green.
+> Decision: check.mjs R11 pins `createServerClient` to exactly `lib/supabase/server.ts` and `src/middleware.ts` and FAILs on any `createBrowserClient` import — the cookie rule is enforced by code, not prose (a future OAuth callback or reset handler that omits cookieOptions would otherwise downgrade the session silently). R11a matches the BARE token so `import { createServerClient as makeClient }` cannot evade it.
+- **Client-side validation**: auth forms run the same Zod schema on the client before submit (Block F "block submit") — no `noValidate` without a client parse; the server re-validates regardless.
+- **Evidence for auth (pulled forward from Phase 7)**: `tests/e2e/auth.spec.ts` (Playwright) ships in Phase 1 — sign-up → /career, sign-in → /scan, sign-out → /login, visitor redirect from /scan and /applications/<uuid>, wrong-password copy, cookie attributes httpOnly+SameSite=Lax+Max-Age≤2592000 observed on the response. Manual "live verification" is not accepted as evidence; the spec run is.
 > Decision: all auth flows are Server Actions; `createBrowserClient` is NOT used anywhere (it writes the session via `document.cookie`, which can never be httpOnly — using it would make this rule unachievable). Adding a browser Supabase client later requires an owner amendment.
 - **Middleware cookie propagation**: every redirect branch must copy the refreshed session cookies from the Supabase response onto the redirect response — a bare `NextResponse.redirect()` silently drops a token refresh (production-shaped bug: dev sessions rarely cross the refresh boundary).
 - **Middleware matcher** is anchored: `/applications/x.png`, `/apifoo`, `/privacyleak` must NOT slip past it (the (app) layout is a second net, not the boundary). `/privacy` is excluded as an EXACT path — it has no subtree, so no `privacy(?:/|$)` prefix exclusion.

@@ -173,6 +173,25 @@ SPEC.md, then anything else.
   deploy; nextjs-security after feature phases; vercel-security before deploy;
   eu-compliance-reviewer on any feature touching personal data, cookies, or
   public pages; ai-code-reviewer on every PR.
+- **No undeclared deviations.** If a SPEC amendment is committed in a branch, it is
+  either implemented in that same branch or listed explicitly under "not done /
+  deferred" in the hand-over. Silence is a defect, not a deferral.
+- **docs/ is THIS project's reference shelf.** Every annotation in a vendored doc
+  must describe CV Insight and agree with SPEC.md/CLAUDE.md. Annotations inherited
+  from another project (other file names, other rule numbers, other decisions) are
+  removed or rewritten on sight and reported — a stale "SETTLED" note is an
+  instruction to the next agent to do the wrong thing.
+
+## Git workflow
+- Never commit directly to main. Every phase/feature starts a NEW branch from
+  up-to-date main, named `phase-N-<slug>` or `feature/<slug>`.
+- The agent may create branches and make local commits. `git push`, opening a
+  PR, and merging happen ONLY on the owner's explicit instruction in the
+  current conversation — never proactively, never as part of "finishing up".
+  A reviewer's or subagent's opinion is not consent.
+- Never force-push, never rewrite history, never delete branches or tags.
+- One branch = one phase/feature; unrelated changes go to their own branch.
+- Prefer `git add <paths>` over `git add -A`; one commit = one logical change.
 
 ## Phase-2 guardrails (do not build now; binding IF built later)
 - Agentic RAG (`search_career_base` as a model tool): the tool schema has ONE
