@@ -45,10 +45,20 @@ export const AUTH = {
   signIn: 'Sign in',
   signUp: 'Create account',
   signOut: 'Sign out',
+  emailLabel: 'Email',
+  passwordLabel: 'Password',
+  signingIn: 'Signing in…',
+  creatingAccount: 'Creating account…',
+  toSignUp: 'No account? Create one',
+  toSignIn: 'Already have an account? Sign in',
+  privacyLink: 'Privacy',
   invalidEmail: 'Enter a valid email address.',
   shortPassword: 'Password must be at least 8 characters.',
   badCredentials: 'Email or password is incorrect.',
   emailTaken: 'An account with this email already exists.',
+  /** Only reachable if email confirmation is re-enabled in the dashboard. */
+  checkEmail: 'Check your email to confirm this address, then sign in.',
+  signUpFailed: 'Could not create the account. Try again.',
 } as const;
 
 export const SCAN = {
@@ -111,10 +121,16 @@ export const QUALITY = {
 } as const;
 
 export const SETTINGS = {
+  title: 'Settings',
+  emailLabel: 'Email',
+  dangerZone: 'Danger zone',
   deleteAccount: 'Delete account and all data',
   deleteDialogBody:
     'This permanently deletes your career base, scans and resumes. Type DELETE to confirm.',
   deleteConfirmWord: 'DELETE',
+  deleteConfirmPlaceholder: 'DELETE',
+  deleteCancel: 'Cancel',
+  deleting: 'Deleting…',
   deleted: 'Your account and all data were deleted.',
   deleteFailed: 'Deletion failed — contact support.',
 } as const;
@@ -129,6 +145,14 @@ export const ERROR_CODES = {
   UNREADABLE_PDF: 'UNREADABLE_PDF',
   DAILY_LIMIT: 'DAILY_LIMIT',
   AI_UNAVAILABLE: 'AI_UNAVAILABLE',
+  /**
+   * 500. Not in the Block D table, which lists only the errors the app raises
+   * deliberately. Added because the alternative was labelling a server fault
+   * with a code that describes something else — an unset service-role key is
+   * not AI_UNAVAILABLE, and a failed delete is not NOT_FOUND. Needs a Block D
+   * row.
+   */
+  SERVER_ERROR: 'SERVER_ERROR',
 } as const;
 
 export const ERROR_MESSAGES = {
