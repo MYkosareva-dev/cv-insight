@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Repo invariants that a type-checker cannot see (SPEC Block A, CLAUDE.md).
- * Exits non-zero on the first category that fails.
+ * Runs as `npm run check`, and as `prebuild` so a build cannot skip it.
  *
+ * The three SPEC-mandated FAIL rules:
  *   1. `.from(` outside the listed DALs — one DAL per table, and DALs are the
  *      only files allowed to reach the database.
  *   2. `security definer` anywhere in supabase/ — match_documents must stay
@@ -10,8 +11,14 @@
  *   3. NEXT_PUBLIC_ on a secret name — a secret behind that prefix is shipped
  *      to the browser.
  *
- * This script never reads .env* files. It reads variable NAMES out of source
- * and never prints a value.
+ * Plus four that close the ways a later phase could walk around them:
+ *   4. importing the OpenRouter connection from outside the two gates,
+ *   5. `.rpc(` outside the DALs and the retrieval gate,
+ *   6. a literal openrouter.ai URL outside the connection module,
+ *   7. reading a secret from process.env without importing 'server-only'.
+ *
+ * This script never opens .env* — it skips those names during the walk — and
+ * never prints a value.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -29,6 +36,16 @@ const DAL_FILES = [
   'src/lib/db/llmCalls.ts',
 ];
 
+/**
+ * `match_documents` is reachable only through the retrieval gate, which SPEC
+ * Block A names as its home ("retrieval.ts — GATE: embeddings + match_documents").
+ * So the RPC allowlist is the DALs plus that one gate, not lib/db alone.
+ */
+const RPC_ALLOWED = [...DAL_FILES, 'src/lib/retrieval.ts'];
+
+/** The connection module — the only file allowed to name the OpenRouter host. */
+const CONNECTION_FILE = 'src/lib/openrouter/server.ts';
+
 /** Server-only secrets. None of these may ever appear behind NEXT_PUBLIC_. */
 const SECRET_NAMES = ['OPENROUTER_API_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
 
@@ -37,6 +54,7 @@ const ALLOWED_PUBLIC = ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_K
 
 const SKIP_DIRS = new Set(['node_modules', '.next', '.git', 'out', '.vercel', 'test-results']);
 const SOURCE_EXT = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.sql', '.md']);
+const CODE_EXT = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir)) {
@@ -57,50 +75,71 @@ const rel = (abs) => path.relative(ROOT, abs).split(path.sep).join('/');
 const files = walk(ROOT);
 const failures = [];
 
-function scan(label, predicate, matcher) {
+/** Strip block and line comments, so prose about a rule never trips it. */
+function stripComments(text) {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+/** Per-line rule. The matcher sees the comment-stripped line. */
+function scanLines(label, predicate, matcher) {
   const hits = [];
   for (const abs of files.filter(predicate)) {
-    const lines = readFileSync(abs, 'utf8').split(/\r?\n/);
-    lines.forEach((line, i) => {
-      if (matcher(line, abs)) hits.push(`${rel(abs)}:${i + 1}: ${line.trim().slice(0, 120)}`);
+    const raw = readFileSync(abs, 'utf8').split(/\r?\n/);
+    const stripped = stripComments(readFileSync(abs, 'utf8')).split(/\r?\n/);
+    raw.forEach((line, i) => {
+      if (matcher(stripped[i] ?? '', abs)) {
+        hits.push(`${rel(abs)}:${i + 1}: ${line.trim().slice(0, 120)}`);
+      }
     });
   }
   if (hits.length) failures.push({ label, hits });
 }
 
-// 1. .from( outside the listed DALs. Comments and this script's own list don't count.
-scan(
+/** Whole-file rule, for anything a per-line scan would miss across newlines. */
+function scanFiles(label, predicate, matcher) {
+  const hits = [];
+  for (const abs of files.filter(predicate)) {
+    const raw = readFileSync(abs, 'utf8');
+    const reason = matcher(raw, stripComments(raw), abs);
+    if (reason) hits.push(`${rel(abs)}: ${reason}`);
+  }
+  if (hits.length) failures.push({ label, hits });
+}
+
+const isCode = (abs) => {
+  const r = rel(abs);
+  return (r.startsWith('src/') || r.startsWith('tests/')) && CODE_EXT.test(r);
+};
+
+// 1. .from( outside the listed DALs.
+scanLines(
   '.from( outside lib/db — only a DAL may call the database',
-  (abs) => {
-    const r = rel(abs);
-    return (
-      (r.startsWith('src/') || r.startsWith('tests/')) &&
-      !DAL_FILES.includes(r) &&
-      /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(r)
-    );
-  },
-  (line) => {
-    const code = line.replace(/\/\/.*$/, '').replace(/\/\*.*?\*\//g, '');
-    return /\.from\s*\(/.test(code);
-  },
+  (abs) => isCode(abs) && !DAL_FILES.includes(rel(abs)),
+  (line) => /\.from\s*\(/.test(line),
 );
 
-// 2. security definer anywhere in supabase/.
-scan(
+// 2. security definer anywhere in supabase/. Scanned whole-file: the two words
+//    can be split across a newline, which a per-line scan would miss.
+scanFiles(
   'security definer in supabase/ — match_documents must stay security invoker',
   (abs) => rel(abs).startsWith('supabase/'),
-  (line) => /security\s+definer/i.test(line.replace(/--.*$/, '')),
+  (raw) => {
+    const sql = raw.replace(/--.*$/gm, '');
+    return /security\s+definer/i.test(sql) ? 'contains "security definer"' : null;
+  },
 );
 
 // 3. NEXT_PUBLIC_ on a secret name, in source or in .env.example (names only).
-scan(
+scanLines(
   'NEXT_PUBLIC_ prefix on a secret — that ships the value to the browser',
   (abs) => !rel(abs).startsWith('scripts/'),
   (line) => SECRET_NAMES.some((name) => line.includes(`NEXT_PUBLIC_${name}`)),
 );
 
 // 3b. Any NEXT_PUBLIC_ variable that is not one of the two allowed ones.
-scan(
+scanLines(
   'unknown NEXT_PUBLIC_ variable — only the Supabase URL and anon key may reach the browser',
   (abs) => {
     const r = rel(abs);
@@ -112,19 +151,64 @@ scan(
   },
 );
 
-// 4. The connection module is reachable only through the two gates.
-scan(
+// 4. The connection module is reachable only through the two gates. Covers
+//    `from '…'`, bare side-effect imports and `await import('…')`.
+scanLines(
   'direct import of lib/openrouter/server — every model call goes through a gate',
   (abs) => {
     const r = rel(abs);
     return (
-      r.startsWith('src/') &&
+      isCode(abs) &&
       r !== 'src/lib/chat.ts' &&
       r !== 'src/lib/retrieval.ts' &&
       !r.startsWith('src/lib/openrouter/')
     );
   },
-  (line) => /from\s+['"](@\/lib\/openrouter|.*\/openrouter\/server)/.test(line),
+  (line) =>
+    /(?:from|import|require)\s*\(?\s*['"](?:@\/lib\/openrouter[^'"]*|[^'"]*\/openrouter\/server)['"]/.test(
+      line,
+    ),
+);
+
+// 5. .rpc( outside the DALs and the retrieval gate. Without this rule any file
+//    could call supabase.rpc('match_documents', …) and bypass the gate.
+scanLines(
+  '.rpc( outside lib/db and the retrieval gate — match_documents goes through the gate',
+  (abs) => isCode(abs) && !RPC_ALLOWED.includes(rel(abs)),
+  (line) => /\.rpc\s*\(/.test(line),
+);
+
+// 6. A literal openrouter.ai URL outside the connection module. Rule 4 guards
+//    the MODULE; this guards the ENDPOINT, so a route handler cannot hand-roll
+//    its own fetch and skip both gates.
+scanLines(
+  'openrouter.ai URL outside the connection module — no hand-rolled model calls',
+  (abs) => isCode(abs) && rel(abs) !== CONNECTION_FILE,
+  (line) => line.includes('openrouter.ai'),
+);
+
+/** Env names that are secrets by shape. NEXT_PUBLIC_* is public by definition. */
+function secretNamesIn(text) {
+  const names = text.match(/\b[A-Z][A-Z0-9_]{2,}\b/g) ?? [];
+  const isSecret = (n) =>
+    !n.startsWith('NEXT_PUBLIC_') &&
+    (/(?:_KEY|_SECRET|_TOKEN)$/.test(n) || n.includes('SERVICE_ROLE'));
+  return [...new Set(names.filter(isSecret))];
+}
+
+// 7. Reading a secret without `import 'server-only'`. That import is the actual
+//    mechanism keeping a secret out of a client bundle, and nothing verified it
+//    was present.
+scanFiles(
+  "reads a secret from process.env without importing 'server-only'",
+  isCode,
+  (raw, stripped) => {
+    if (!/process\s*\.\s*env/.test(stripped)) return null;
+    const found = secretNamesIn(stripped);
+    if (found.length === 0) return null;
+    if (/^\s*import\s+['"]server-only['"];?\s*$/m.test(stripped)) return null;
+    return `reads ${found.join(', ')} without import 'server-only'`;
+  },
 );
 
 if (failures.length) {
@@ -136,4 +220,7 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('check passed: DAL boundary, security invoker, NEXT_PUBLIC_ hygiene, gate chokepoint.');
+console.log(
+  'check passed: DAL boundary, RPC boundary, security invoker, NEXT_PUBLIC_ hygiene,\n' +
+    '              gate chokepoint, endpoint chokepoint, server-only on secrets.',
+);
