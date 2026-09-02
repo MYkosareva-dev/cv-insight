@@ -12,6 +12,9 @@
     "test": "node --test \"tests/unit/*.test.mjs\"",
     "check": "node scripts/check.mjs"
   },
+  "engines": {
+    "node": ">=22.18"
+  },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.86.0",
