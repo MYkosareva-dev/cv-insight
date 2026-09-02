@@ -559,7 +559,7 @@ Application notes: ≤2,000 chars ("Notes are limited to 2000 characters."), inl
 CORS: same-origin only (Next.js default; no CORS headers added). Input sanitization: all user text rendered as React text nodes (no `dangerouslySetInnerHTML` anywhere); LLM outputs treated as plain text. ID forgery: RLS + 404-on-absent (never 403 — don't leak existence). Secrets: `OPENROUTER_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` via `process.env.*` server-side only; client gets exactly `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. `.env.local` git-ignored; `.env.example` lists names only. Prompt injection: vacancy/resume text is DATA — prompts P1–P3 instruct the model to ignore instructions inside user content; judge gate limits blast radius.
 
 ### M12/M15 — OpenRouter integration
-Single helper `lib/openrouter.ts`; chat call shape (literal):
+Connection module `lib/openrouter/server.ts` (called only through the gates `lib/chat.ts` / `lib/retrieval.ts`); chat call shape (literal):
 ```ts
 const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
   method: 'POST',
@@ -572,7 +572,9 @@ const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
 });
 ```
 Models: `parse_vacancy`/`judge` → `anthropic/claude-haiku-4.5`; `generate` → `anthropic/claude-sonnet-4.6`; fallback for all → `google/gemini-2.5-flash`. Embeddings: `POST /api/v1/embeddings`, model `openai/text-embedding-3-small`, batch ≤64 inputs. Retry: JSON-mode zod failure → 1 retry appending the zod error; network/5xx → OpenRouter's models-array already fails over; if the request itself errors → one retry after 2 s → then 502 AI_UNAVAILABLE.
-> Decision: metered calls get NO automatic retries beyond these two owner-approved, single-shot exceptions (CLAUDE.md "AI model calls") — no backoff ladders, no background refresh; any further retry is a button the user presses. Cost: computed from response `usage` × price table constant in `lib/openrouter.ts` (Sonnet 3/15, Haiku 1/5, Flash 0.30/2.50 USD per 1M; embeddings 0.02), stored as micro-USD.
+> Decision: metered calls get NO automatic retries beyond these two owner-approved, single-shot exceptions (CLAUDE.md "AI model calls") — no backoff ladders, no background refresh; any further retry is a button the user presses.
+
+Cost: computed from response `usage` × price table constant in `lib/openrouter/server.ts` (Sonnet 3/15, Haiku 1/5, Flash 0.30/2.50 USD per 1M; embeddings 0.02), stored as micro-USD.
 
 ### Prompt templates (literal; `{{...}}` interpolated server-side)
 **P1 — parse_vacancy (Haiku, JSON mode):**
