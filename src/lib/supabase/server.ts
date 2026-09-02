@@ -39,7 +39,13 @@ export async function createClient() {
 }
 
 /**
- * The verified current user, or null. Every gate and every DAL calls this.
+ * The verified current user, or null.
+ *
+ * Called by the two model-call gates (`lib/chat.ts`, `lib/retrieval.ts`), by
+ * `lib/auth/requireApiUser.ts`, by `src/middleware.ts` and by the member
+ * layout. The DALs do NOT call it: they run under the user's session and rely
+ * on RLS to scope every statement to `auth.uid()`. Do not read DAL-level
+ * authorization into their absence of a check — the fence is in the database.
  */
 export async function getUser() {
   const supabase = await createClient();

@@ -80,6 +80,13 @@ export type MatchDocumentsRow = {
  * Errors are thrown, never swallowed into an empty array: the caller has to be
  * able to tell "found nothing" apart from "could not search" (CLAUDE.md,
  * Retrieval — three outcomes, never two).
+ *
+ * CALL THIS THROUGH `lib/retrieval.ts`. That gate verifies the user, embeds the
+ * query and maps the result onto the three-outcome `MatchOutcome`. Importing
+ * this function directly gets you a raw row array and a THROW — and a thrown
+ * error that reaches a scan as "no rows" is the exact failure the three-outcome
+ * rule exists to prevent: a requirement reported as a "gap" because the search
+ * never ran. A direct caller owns that mapping itself.
  */
 export async function matchDocuments(
   queryEmbedding: number[],
