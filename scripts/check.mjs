@@ -3,7 +3,7 @@
  * Repo invariants that a type-checker cannot see (SPEC v1.9 Block A, CLAUDE.md).
  * Runs as `npm run check`, and as `prebuild` so a build cannot skip it.
  *
- * Eleven rules:
+ * Twelve rules:
  *   R1  `.from(` outside lib/db — one DAL per table, and DALs are the only
  *       files allowed to reach the database. Non-database receivers such as
  *       `Array.from(` and `Buffer.from(` are excluded.
@@ -450,26 +450,37 @@ scanLines(
 );
 
 // R12. The 90-day audit-retention claim may not ship ahead of its evidence.
-//      Scoped to the two surfaces that can make it: /privacy and the deletion
-//      dialog copy. Matched on the comment-STRIPPED text, so the block comment
-//      recording the strong sentence (and this rule's own prose) never trips it —
-//      what a reader sees is what is judged.
-const RETENTION_CLAIM_FILES = ['src/app/privacy/page.tsx', 'src/lib/copy.ts'];
+//      Scans ALL of src/ plus README.md rather than an allow-list of the two files
+//      that carry the claim today: an allow-list fails OPEN the moment the sentence
+//      is inlined in a component or lifted into a <PrivacySection>, which is exactly
+//      the edit a later phase makes without thinking about this rule. Every other
+//      rule here scans broadly and exempts narrowly; this one now matches.
+//      tests/ is OUT of scope, unlike the other code rules: a fixture asserting that
+//      the claim is gated has to contain the claim, and nothing under tests/ can
+//      render to a user. The surfaces this rule protects are the ones that ship.
+//      Matched on comment-STRIPPED text, so the block comment archiving the strong
+//      sentence (and this rule's own prose) never trips it — what a reader sees is
+//      what is judged.
+//      The evidence file must CONTAIN 'succeeded': `touch`ing an empty file would
+//      otherwise unlock the strongest privacy claim in the app, which would make this
+//      rule the same species of paper mechanism it exists to prevent.
 const RETENTION_EVIDENCE = 'docs/eval/audit-retention-evidence.md';
+const RETENTION_NOUN = 'audit\\s+(?:records|logs?|trail|entries)';
 scanFiles(
   `R12 the 90-day audit-retention claim ships without ${RETENTION_EVIDENCE}`,
-  (abs) => RETENTION_CLAIM_FILES.includes(rel(abs)),
+  (abs) => (rel(abs).startsWith('src/') && CODE_EXT.test(rel(abs))) || rel(abs) === 'README.md',
   (raw, stripped) => {
-    // "audit records" and "90 days" within one sentence-ish window, either order.
+    // The noun and the period within one sentence-ish window, either order.
     const claim =
-      /audit records[\s\S]{0,300}?90 days/i.test(stripped) ||
-      /90 days[\s\S]{0,300}?audit records/i.test(stripped);
+      new RegExp(`${RETENTION_NOUN}[\\s\\S]{0,300}?90 days`, 'i').test(stripped) ||
+      new RegExp(`90 days[\\s\\S]{0,300}?${RETENTION_NOUN}`, 'i').test(stripped);
     if (!claim) return null;
-    if (existsSync(path.join(ROOT, RETENTION_EVIDENCE))) return null;
+    const evidence = path.join(ROOT, RETENTION_EVIDENCE);
+    if (existsSync(evidence) && /succeeded/i.test(readFileSync(evidence, 'utf8'))) return null;
     return (
       'promises a 90-day audit-record retention that nothing has been shown to perform - ' +
       `either use the SPEC fallback wording or add ${RETENTION_EVIDENCE} ` +
-      "with a 'succeeded' row from cron.job_run_details, in this same commit"
+      "containing a 'succeeded' row from cron.job_run_details, in this same commit"
     );
   },
 );
