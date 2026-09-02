@@ -51,7 +51,8 @@
 ```
 cv-insight/
 ├── CLAUDE.md
-├── README.md
+├── README.md                    # Phase 0: stub (title + one-liner + pointer to SPEC.md);
+│                                # full README per Block H item 8 lands in Phase 7
 ├── SPEC.md
 ├── .env.local              # git-ignored; see Block F security
 ├── .env.example            # names only, no values
