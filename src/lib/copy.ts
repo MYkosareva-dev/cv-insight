@@ -202,8 +202,8 @@ export const ERROR_CODES = {
    * 500. Not in the Block D table, which lists only the errors the app raises
    * deliberately. Added because the alternative was labelling a server fault
    * with a code that describes something else — an unset service-role key is
-   * not AI_UNAVAILABLE, and a failed delete is not NOT_FOUND. Needs a Block D
-   * row.
+   * not AI_UNAVAILABLE, and a failed delete is not NOT_FOUND. SPEC Block D
+   * carries the 500 row since v2.1.
    */
   SERVER_ERROR: 'SERVER_ERROR',
 } as const;
