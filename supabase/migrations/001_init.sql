@@ -86,6 +86,9 @@ create table llm_calls (
   tokens_in int not null default 0,
   tokens_out int not null default 0,
   cost_usd_micro int not null default 0,   -- INTEGER micro-dollars: $0.0431 → 43100
+  cost_known boolean not null default true, -- false when the served model has no price entry:
+                                            -- row is still written, cost_usd_micro=0, and /quality
+                                            -- surfaces "N calls with unknown pricing" (never a silent 0)
   latency_ms int not null default 0,
   created_at timestamptz not null default now()
 );

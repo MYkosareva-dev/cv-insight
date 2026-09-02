@@ -105,6 +105,12 @@ export type LlmCall = {
   tokens_in: number;
   tokens_out: number;
   cost_usd_micro: number;
+  /**
+   * false when the serving model had no entry in the price table: the row is
+   * still written with cost_usd_micro = 0, and /quality surfaces it as unknown
+   * pricing rather than as a free call.
+   */
+  cost_known: boolean;
   latency_ms: number;
   created_at: string;
 };

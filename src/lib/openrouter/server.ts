@@ -61,12 +61,13 @@ export type ConnectionResult<T> = {
   tokensOut: number;
   costUsdMicro: number;
   /**
-   * True when the serving model had no entry in PRICE_USD_PER_MTOK, so
+   * false when the serving model had no entry in PRICE_USD_PER_MTOK, so
    * `costUsdMicro` is 0 because the price is UNKNOWN, not because the call was
-   * free. /quality must render that as "—", never as $0.00 — DoD item 7 asks
-   * for a nonzero cost, and a silent zero would look like a passing check.
+   * free. Written straight to `llm_calls.cost_known`, so /quality reads it off
+   * the stored row rather than re-deriving it from the price table — which it
+   * could not do anyway, since a page may not import this module.
    */
-  costUnknown: boolean;
+  costKnown: boolean;
   latencyMs: number;
 };
 
@@ -82,17 +83,17 @@ export function costUsdMicro(
   model: string,
   tokensIn: number,
   tokensOut: number,
-): { costUsdMicro: number; costUnknown: boolean } {
+): { costUsdMicro: number; costKnown: boolean } {
   const price = PRICE_USD_PER_MTOK[model];
   if (!price) {
     console.error(
-      `[openrouter] no price entry for model "${model}" — cost logged as 0 and ` +
-        'flagged unknown. Add it to PRICE_USD_PER_MTOK.',
+      `[openrouter] no price entry for model "${model}" — llm_calls row written ` +
+        'with cost_usd_micro=0 and cost_known=false. Add it to PRICE_USD_PER_MTOK.',
     );
-    return { costUsdMicro: 0, costUnknown: true };
+    return { costUsdMicro: 0, costKnown: false };
   }
   const usd = (tokensIn * price.in + tokensOut * price.out) / 1_000_000;
-  return { costUsdMicro: Math.round(usd * 1_000_000), costUnknown: false };
+  return { costUsdMicro: Math.round(usd * 1_000_000), costKnown: true };
 }
 
 const NOT_IMPLEMENTED = 'OpenRouter connection is a phase-0 stub — not implemented yet.';
