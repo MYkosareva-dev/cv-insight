@@ -1,7 +1,12 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-/** Public routes — everything else under the matcher requires a session. */
+/**
+ * Public routes — everything else under the matcher requires a session.
+ * `/privacy` is also excluded from the matcher below, so this entry is
+ * belt-and-braces: if the matcher is ever widened, the public page must still
+ * not redirect.
+ */
 const PUBLIC_PATHS = ['/login', '/signup', '/privacy'];
 /** Signed-in users are bounced away from these. */
 const AUTH_PATHS = ['/login', '/signup'];
@@ -62,7 +67,17 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except static assets and API routes. Route handlers do their own
-  // getUser() check and must answer 401 JSON, not a redirect to an HTML page.
-  matcher: ['/((?!api|_next/static|_next/image|favicon[.]ico|.*[.](?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  // Excluded, deliberately:
+  //  - `api`     — route handlers verify the session themselves via
+  //                lib/auth/requireApiUser() and must answer 401 JSON, never a
+  //                redirect to an HTML page.
+  //  - `privacy` — a public static page; running getUser() on it would buy a
+  //                pointless auth round trip and force the route dynamic
+  //                (SPEC Block F, Route protection).
+  //  - static assets.
+  // Dots are written [.] so a later edit cannot silently un-escape them into
+  // "any character".
+  matcher: [
+    '/((?!api|privacy|_next/static|_next/image|favicon[.]ico|.*[.](?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 };
