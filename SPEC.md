@@ -42,7 +42,6 @@
 | **Prohibited** | `NEXT_PUBLIC_` prefix on any secret; any OpenRouter call from client code; service-role key anywhere client-accessible; LangChain/CrewAI or any agent framework (direct `fetch` only); analytics/telemetry/third-party cookies; LinkedIn scraping or auto-apply; DOCX/MD import (phase 2) | |
 
 > Decision: Next.js 16 + Tailwind v4 chosen as current stable majors; sprint imposes no version, so newest stable wins.
-> Decision: `README.md`, `tests/e2e/` and the Playwright dependency land in **Phase 7** (the test-and-docs phase); `docs/reviews/` and `docs/eval/` exist from Phase 0 so review reports and judge-calibration labels have a home the moment they are produced. Their absence before Phase 7 is scheduled, not a gap in the layout.
 > Decision: `SUPABASE_SERVICE_ROLE_KEY` exists server-side in `.env.local` and is used in exactly one place — `DELETE /api/account` (auth.admin.deleteUser). It never appears in client bundles or `NEXT_PUBLIC_` variables.
 > Decision: Money does not exist in this app (M4 = NO); the only monetary value is LLM cost tracking, stored as INTEGER micro-USD (`cost_usd_micro`), formatted only at display.
 
@@ -78,16 +77,20 @@ cv-insight/
 │   │   ├── supabase/            # server client, browser client
 │   │   ├── openrouter/server.ts # CONNECTION only: speaks to both endpoints, no auth opinion
 │   │   ├── chat.ts              # GATE (server-only): completions — parse/generate/judge; getUser() first
-│   │   ├── retrieval.ts         # GATE (server-only): embeddings + match_documents; getUser() first
+│   │   ├── retrieval.ts         # GATE (server-only): embeddings + getUser() first; ORCHESTRATES
+│   │   │                        # matching by calling lib/db/documents.ts (the .rpc lives in the DAL)
 │   │   ├── db/                  # one DAL per table — the ONLY files allowed to call .from()
 │   │   ├── prompts.ts           # literal prompt templates (Block F)
 │   │   ├── scoring.ts           # match score + coverage math
 │   │   ├── copy.ts              # user-facing strings (tests import the same constants)
 │   │   └── docx.ts              # resume export
 │   └── components/              # shadcn/ui-based, see Block E
-├── scripts/check.mjs            # FAILs on: .from( outside lib/db, "security definer" in supabase/,
-│                                # NEXT_PUBLIC_ on any secret name
-└── tests/e2e/                   # Playwright: auth.spec.ts, scan.spec.ts, privacy.spec.ts
+├── scripts/check.mjs            # 7 rules — FAILs on: .from( AND .rpc( outside lib/db;
+│                                # "security definer" in supabase/; NEXT_PUBLIC_ on any secret name
+│                                # (incl. .env.example); openrouter.ai URL outside lib/openrouter/server.ts;
+│                                # a secret read without a 'server-only' import; OpenRouter fetch outside
+│                                # the connection. Wired as prebuild. Rule 1 excludes Array.from(.
+└── tests/e2e/                   # Playwright (Phase 7): auth.spec.ts, scan.spec.ts, privacy.spec.ts
 ```
 
 ### Roles table
@@ -294,6 +297,9 @@ create table llm_calls (
   tokens_in int not null default 0,
   tokens_out int not null default 0,
   cost_usd_micro int not null default 0,   -- INTEGER micro-dollars: $0.0431 → 43100
+  cost_known boolean not null default true, -- false when the served model has no price entry:
+                                            -- row is still written, cost_usd_micro=0, and /quality
+                                            -- surfaces "N calls with unknown pricing" (never a silent 0)
   latency_ms int not null default 0,
   created_at timestamptz not null default now()
 );
