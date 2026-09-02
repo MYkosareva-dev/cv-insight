@@ -535,7 +535,8 @@ Application notes: ≤2,000 chars ("Notes are limited to 2000 characters."), inl
 ### Business rules
 | # | Rule | Failure behavior |
 |---|---|---|
-| B1 | **Match score** = `round(100 × (0.6 × S + 0.4 × K))`, where S = mean over MUST requirements of `clamp((bestSimilarity − 0.30)/0.55, 0, 1)`; K = share of vacancy keywords present in the resume text (case-insensitive, word-boundary). Requirement counts as covered when bestSimilarity ≥ 0.60 | Score renders "—" if parse produced 0 requirements (edge N4) |
+| B1 | **Match score** = `round(100 × (0.6 × S + 0.4 × K))`, where S = mean over MUST requirements of `clamp((bestSimilarity − 0.30)/0.55, 0, 1)`; K = share of vacancy keywords present in the resume text (case-insensitive, word-boundary — see B1a). Requirement counts as covered when bestSimilarity ≥ 0.60 | Score renders "—" only when parse produced 0 requirements TOTAL (edge N4); with ≥1 requirement but 0 MUST, S is dropped and score = `round(100 × K)` |
+| B1a | **Keyword word-boundary**: apply a `\b` boundary only on the side(s) where the keyword itself starts/ends with a word character. A literal `\bC++\b` is unsatisfiable (`+` is not a word char), so "C++", "C#", ".NET" would never count and K would understate every score. `keywordPresent` verified: Docker ✓ in "used Docker", ✗ in "dockerfile"; C++ ✓, .NET ✓, C# ✓ | — |
 | B2 | **Grounding gate**: any judge grounding violation ⇒ `verdict='revise'` regardless of other scores (fail cannot be compensated) | Auto-revision (B3) |
 | B3 | **Auto-revision**: at most ONE regenerate per /generate call, with judge feedback appended to the prompt | Second bad judge → return version anyway, honest card |
 | B4 | **Honest keywords**: generator may use a vacancy keyword only if supported by retrieved chunks; missing-but-unsupported keywords go to `missingHonest`, never into the text | Judge checks (keywordCoverage) |
@@ -552,7 +553,9 @@ Application notes: ≤2,000 chars ("Notes are limited to 2000 characters."), inl
 - **Logout**: `signOut()` → `/login`.
 - **Password reset**: OUT of MVP. > Decision: cut — requires email delivery; reviewer flow doesn't need it; noted in README known-limitations.
 - **Sessions**: Supabase SSR cookies (`@supabase/ssr`), httpOnly, strictly necessary → no consent banner.
-- **Route protection**: `src/middleware.ts` — no session on member route → redirect `/login`; session on /login|/signup → redirect `/scan`.
+- **Route protection**: `src/middleware.ts` — no session on member route → redirect `/login`; session on /login|/signup → redirect `/scan`. `/privacy` is EXCLUDED from the middleware matcher (public page — no getUser() round trip).
+> Decision: keep the filename `middleware.ts`. Next 16 deprecates it in favour of `proxy.ts` and prints a build warning, but `middleware.ts` is still read and wired (build output shows `ƒ Proxy (Middleware)`). SPEC and CLAUDE.md name `middleware.ts`; revisit only if a future Next removes it, not silently.
+> Decision: `src/app/api/` does not exist until Phase 2 — the first route handlers (career import/items) land there then; scan/generate/etc. follow in Phases 3–4. Its absence in the Phase 0 scaffold is intended, not a gap.
 - **Rate limiting**: Supabase Auth built-in limits + B7 for AI endpoints. No custom limiter in MVP.
 
 ### Security (M2/M3)
