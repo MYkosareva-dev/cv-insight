@@ -204,6 +204,9 @@ SPEC.md, then anything else.
   something happens automatically needs evidence of it having happened at least
   once (a succeeded run, a fixture that fired), and a user-facing promise may not
   ship ahead of that evidence.
+- Never terminate processes by image name (`taskkill /IM`, `killall`, `pkill -f
+  node`). Stop only the processes this session started, by their own PID or through
+  the runner that started them. The machine runs other work.
 
 ## Git workflow
 - Never commit directly to main. Every phase/feature starts a NEW branch from
