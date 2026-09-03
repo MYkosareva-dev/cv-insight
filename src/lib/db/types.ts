@@ -79,7 +79,48 @@ export type CoverageEntry = {
   /** Denormalized on write: the detail page never joins live (edge case D4). */
   careerItemId: string | null;
   careerItemTitle: string | null;
+  /**
+   * The best similarity the search actually returned. `0` with a null item is a
+   * requirement that WAS searched and matched nothing (edge case D7) — a
+   * measured zero. A search that could not run produces no entry at all: the
+   * whole scan fails with AI_UNAVAILABLE and `coverage` stays null, because
+   * "we could not look" must never render as "we looked and found nothing"
+   * (CLAUDE.md, Retrieval).
+   */
   similarity: number;
+};
+
+/**
+ * One row of the Block E keywords table: how often a vacancy keyword appears in
+ * the vacancy, and in the resume SOURCE the scan actually scored (rule B1a
+ * boundaries, `keywordCount` in lib/scoring.ts).
+ */
+export type KeywordRow = {
+  keyword: string;
+  inResume: number;
+  inVacancy: number;
+};
+
+/**
+ * What `applications.coverage` stores (SPEC v2.12).
+ *
+ * Block D's 200 response has `coverage` and `keywords` as siblings and the
+ * column comment in Block C says "CoverageMap JSON", so both halves of the map
+ * live in the one jsonb column — no migration, since the column is already
+ * jsonb.
+ *
+ * The keyword COUNTS are stored rather than recomputed at render. For a pasted
+ * or uploaded resume they could be recomputed from `source_resume_text`, but a
+ * career-base scan has no such column (it is null by design) and would have to
+ * count against the LIVE base — putting a freshly measured number beside a
+ * stored score that came from a different moment of the same base. The screen
+ * would then carry two measurements from two times, with the recomputed one not
+ * being the number that produced the ring. Same argument as edge case D4, which
+ * denormalizes the career-item title for exactly this reason.
+ */
+export type CoverageMap = {
+  entries: CoverageEntry[];
+  keywords: KeywordRow[];
 };
 
 export type ApplicationStatus = 'draft' | 'applied' | 'interview' | 'offer' | 'rejected';
@@ -90,8 +131,14 @@ export type Application = {
   vacancy_id: string;
   resume_source: 'career_base' | 'resume_version' | 'paste' | 'file';
   source_resume_text: string | null;
+  /**
+   * null means the analysis NEVER RAN (the AI step failed, or the daily cap
+   * refused it) — the row is a draft. It is not "scored zero" and not "no
+   * requirements found": those are a number and an empty `coverage.entries`
+   * respectively. The result screen has to tell all three apart.
+   */
   match_score: number | null;
-  coverage: CoverageEntry[] | null;
+  coverage: CoverageMap | null;
   status: ApplicationStatus;
   notes: string | null;
   created_at: string;
