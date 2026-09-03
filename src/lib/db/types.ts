@@ -115,6 +115,25 @@ export type CoverageEntry = {
    * another.
    */
   missingTerm?: string | null;
+  /**
+   * The line of the SCORED TEXT that matched, for a coverage map whose corpus is
+   * not the career base (SPEC v2.16).
+   *
+   * `/api/applications/[id]/rescore` measures the requirements against the
+   * resume in the editor, so there is no career item to name and
+   * `careerItemTitle` is null — but the "Best match" cell still has to answer
+   * "matched against what?", and leaving it blank would render as a gap beside a
+   * status that says Covered. This carries the answer for that path: the user's
+   * own edited line, echoed back to the browser it came from in the same
+   * request.
+   *
+   * Absent on every scan-written row, and never a career-base chunk: retrieved
+   * chunks are data for a model call and are never echoed to the client
+   * (CLAUDE.md, Retrieval). A re-score is not stored, so this field reaches the
+   * database on no path at all — it is part of the shape because both screens
+   * render the same coverage table.
+   */
+  matchedText?: string | null;
 };
 
 /**

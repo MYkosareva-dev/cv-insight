@@ -132,6 +132,30 @@ CAREER ITEMS: <items>{{retrievedChunksJson}}</items>`;
 export const REVISION_FEEDBACK_PREFIX = 'A reviewer found these issues — fix all of them:';
 
 /**
+ * P2's `{{revisionFeedbackBlock}}` — empty on the first pass, the reviewer's
+ * SPECIFIC findings on the revision (rule B3).
+ *
+ * EMPTY IN, EMPTY OUT, and that is a rule rather than a convenience: a second
+ * Sonnet call carrying the prefix with nothing after it is a generic "try
+ * again", which is a metered call bought with no information. The pipeline
+ * checks for findings before it decides to revise at all, and this function
+ * cannot manufacture one.
+ *
+ * THE JUDGE'S OUTPUT ENTERS P2 AS INSTRUCTIONS, and the user's never does. That
+ * asymmetry is deliberate and worth stating where the interpolation happens: the
+ * vacancy, the resume and the career items are wrapped in tagged blocks the
+ * prompt marks as DATA (edge case S1), while this text is the app's own reviewer
+ * speaking to the app's own writer — both server-side, both schema-validated,
+ * neither reachable from a request body. The blast radius is a worse resume, and
+ * the grounding gate reads the result either way.
+ */
+export function revisionFeedbackBlock(findings: string[]): string {
+  const lines = findings.map((line) => line.trim()).filter((line) => line.length > 0);
+  if (lines.length === 0) return '';
+  return [REVISION_FEEDBACK_PREFIX, ...lines.map((line) => `- ${line}`)].join('\n');
+}
+
+/**
  * P4 — import_resume (Haiku, JSON mode). SPEC v2.10.
  *
  * Block F enumerated P1–P3 only, but Block D endpoint 1 and the `import_resume`

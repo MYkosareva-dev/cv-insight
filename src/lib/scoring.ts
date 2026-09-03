@@ -93,6 +93,38 @@ export function isCovered(bestSimilarity: number): boolean {
 }
 
 /**
+ * Cosine similarity between two embedding vectors, on the same scale
+ * `match_documents` returns (`1 - (a <=> b)` is cosine similarity in pgvector).
+ *
+ * It exists because ONE of the two corpora this app scores against does not live
+ * in Postgres. `/api/applications/[id]/rescore` measures the requirements
+ * against the resume in the EDITOR — text that has never been stored, and must
+ * not be, since a re-score is a live reading of an unsaved draft. So the
+ * comparison happens here, on vectors the retrieval gate just returned, using
+ * the same arithmetic the database would have used. Rule B1's thresholds are
+ * calibrated against that scale and would mean nothing on another one.
+ *
+ * Returns 0 for a zero-length or mismatched pair rather than NaN: a NaN would
+ * flow into `normalizeSimilarity` and out the other side as a score, and a
+ * number nobody measured must never render as one.
+ */
+export function cosineSimilarity(a: readonly number[], b: readonly number[]): number {
+  if (a.length === 0 || a.length !== b.length) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i]!;
+    const y = b[i]!;
+    dot += x * y;
+    normA += x * x;
+    normB += y * y;
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+/**
  * Case-insensitive, word-boundary presence of a keyword in the resume text
  * (rule B1). The boundary is applied only on the sides where the keyword
  * actually starts/ends with a word character: `\bC\+\+\b` can never match,

@@ -459,6 +459,117 @@ export const patchApplicationSchema = z
 
 export type PatchApplication = z.infer<typeof patchApplicationSchema>;
 
+// ---------------------------------------------------------------------------
+// Phase 4 — generation, judging, re-scoring and export
+// ---------------------------------------------------------------------------
+
+/**
+ * `resume_versions.content` — the column's own CHECK, as the bound every editor
+ * surface enforces (Block C). Edge case L3 keeps a generated resume under it via
+ * `max_tokens`; this is what keeps an EDITED one under it, and it answers with
+ * copy rather than with a Postgres constraint error mapped to a 500.
+ */
+export const MIN_RESUME_CHARS = 100;
+export const MAX_RESUME_CHARS = 15_000;
+
+/**
+ * The body of `/rescore`, `/judge` and `/export` — the editor's current text.
+ *
+ * The same schema for all three because it is the same input and the same
+ * failure: US-5's error path is one sentence ("Resume text is empty") for both
+ * metered buttons, and export writing a blank document would be worse than
+ * refusing. A resume shorter than the scan's own source bound is not something
+ * the app can score, judge or export honestly.
+ */
+export const resumeContentSchema = z.object({
+  content: z
+    .string()
+    .trim()
+    .min(MIN_RESUME_CHARS, RESULT.emptyEditor)
+    .max(MAX_RESUME_CHARS, RESULT.resumeTooLong),
+});
+
+export type ResumeContent = z.infer<typeof resumeContentSchema>;
+
+/**
+ * P3's output shape (prompt in `lib/prompts.ts`), validated before anything is
+ * stored, acted on, or rendered.
+ *
+ * The BOUNDS are generous and the SHAPE is strict, the same split
+ * `parsedVacancySchema` makes: a judge whose `evidence` sentence runs long is
+ * still a usable review, while a missing `grounding` object is not a review at
+ * all. Scores are integers 1–5 because P3 defines them that way and
+ * `judgeIssueCounts` compares them against a threshold — a 4.5 would sit either
+ * side of "<= 2" depending on nothing.
+ *
+ * `verdict` is accepted and then IGNORED. `lib/judge.ts` recomputes it from the
+ * report's own evidence, because P3's rule ("revise if grounding fails OR any
+ * criterion <= 2") is arithmetic this app can do itself, and a model that
+ * mislabels its own verdict does not do so selectively. Keeping the field in the
+ * schema rather than stripping it means a model that omits it still parses.
+ */
+const judgeScore = z.coerce.number().int().min(1).max(5);
+
+export const judgeReportSchema = z.object({
+  /**
+   * The four criteria are REQUIRED, unlike `parsedVacancySchema`'s optional
+   * arrays, and the line between the two cases is what the omission MEANS. A
+   * parse with no `keywords` key is a usable parse of a posting with no keywords;
+   * a review with no `relevance` object is a measurement nobody took, and
+   * defaulting it to a passing 3 would print a score on the judge card for a
+   * question the reviewer never answered. That is the one thing this repo's
+   * three-state discipline refuses everywhere else. The single repair retry
+   * exists for exactly this, and a whole missing criterion is not the formatting
+   * nit that lesson (backlog `n-1`) was about.
+   *
+   * The ARRAYS inside them stay optional, because that IS the nit class: a model
+   * with nothing to report often omits `violations` rather than emitting `[]`.
+   */
+  grounding: z.object({
+    verdict: z.enum(['pass', 'fail']),
+    violations: z
+      .array(z.object({ claim: z.string().max(2_000), issue: z.string().max(2_000) }))
+      .max(50)
+      .nullish()
+      .transform((v) => v ?? []),
+  }),
+  keywordCoverage: z.object({
+    score: judgeScore,
+    missingHonest: z
+      .array(z.string().max(200))
+      .max(100)
+      .nullish()
+      .transform((v) => v ?? []),
+  }),
+  relevance: z.object({
+    score: judgeScore,
+    evidence: z
+      .string()
+      .max(4_000)
+      .nullish()
+      .transform((v) => v ?? ''),
+  }),
+  atsFormat: z.object({
+    score: judgeScore,
+    issues: z
+      .array(z.string().max(1_000))
+      .max(50)
+      .nullish()
+      .transform((v) => v ?? []),
+  }),
+  verdict: z
+    .enum(['approve', 'revise'])
+    .nullish()
+    .transform((v) => v ?? 'revise'),
+  feedbackForGenerator: z
+    .array(z.string().max(2_000))
+    .max(50)
+    .nullish()
+    .transform((v) => v ?? []),
+});
+
+export type JudgeReportInput = z.infer<typeof judgeReportSchema>;
+
 
 /** Which fields of a career item can carry an inline message (Block F). */
 export type ItemFieldErrors = Partial<Record<'title' | 'content', string>>;

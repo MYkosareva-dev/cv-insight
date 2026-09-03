@@ -58,6 +58,22 @@ export class NotFoundError extends ApiError {
   }
 }
 
+/**
+ * 409 ALREADY_RUNNING — a generate for this application is already in flight
+ * (SPEC Block D #5).
+ *
+ * A duplicate here is not a duplicate row, it is a duplicate SPEND: a second
+ * pipeline for the same application costs up to eight more chat requests and
+ * inserts a second pair of `resume_versions` rows the user never asked for. It
+ * is 409 and not 429, because nothing about the user's daily budget is wrong —
+ * the request is simply arriving while its predecessor is still running.
+ */
+export class AlreadyRunningError extends ApiError {
+  constructor(message: string) {
+    super(ERROR_CODES.ALREADY_RUNNING, 409, message);
+  }
+}
+
 /** 413 FILE_TOO_LARGE — upload over 5 MB, refused before any parsing (edge case L5). */
 export class FileTooLargeError extends ApiError {
   constructor(message: string) {

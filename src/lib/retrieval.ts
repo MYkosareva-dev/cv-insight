@@ -127,13 +127,26 @@ function logEmbedCall(
   userId: string,
   step: EmbedStep,
   result: ConnectionResult<number[][]> | null,
-  err?: unknown,
+  err: unknown,
+  applicationId: string | null,
 ): void {
   logLlmCall({
     user_id: userId,
-    // Indexing is not tied to an application; a re-score is, and passes it via
-    // the caller in a later phase.
-    application_id: null,
+    /**
+     * The run this embedding belongs to, when there is one (SPEC v2.16, closing
+     * backlog `p3-8`). Indexing a career item belongs to no application and
+     * passes null; a scan, a generate and a re-score all pass theirs, so a
+     * pipeline run's EMBEDDING spend is attributable to it and DoD item 7's
+     * "one full pipeline run" is one set of linked rows rather than one linked
+     * row plus orphans.
+     *
+     * An application id is not a user id, so this does not weaken the rule at
+     * the top of this file: the identity still comes only from the session, and
+     * `llm_calls`' insert policy still refuses a row for anyone else. A wrong
+     * application id here mislabels a log line; it cannot reach another
+     * account's data, because the FK and RLS both scope it to the caller.
+     */
+    application_id: applicationId,
     step,
     model: result?.model ?? (err instanceof OpenRouterError ? err.attemptedModel : 'unknown'),
     fallback_used: false,
@@ -156,22 +169,28 @@ function logEmbedCall(
 export async function embedTexts(
   texts: string[],
   step: EmbedStep = 'embed',
+  applicationId: string | null = null,
 ): Promise<number[][]> {
   const user = await requireUser();
-  return embedFor(user.id, texts, step);
+  return embedFor(user.id, texts, step, applicationId);
 }
 
 /** The batching core, for callers inside this module that already have the user. */
-async function embedFor(userId: string, texts: string[], step: EmbedStep): Promise<number[][]> {
+async function embedFor(
+  userId: string,
+  texts: string[],
+  step: EmbedStep,
+  applicationId: string | null = null,
+): Promise<number[][]> {
   const vectors: number[][] = [];
   for (let i = 0; i < texts.length; i += EMBEDDING_BATCH_SIZE) {
     const batch = texts.slice(i, i + EMBEDDING_BATCH_SIZE);
     try {
       const result = await createEmbeddings({ step, inputs: batch });
-      logEmbedCall(userId, step, result);
+      logEmbedCall(userId, step, result, null, applicationId);
       vectors.push(...result.data);
     } catch (err) {
-      logEmbedCall(userId, step, null, err);
+      logEmbedCall(userId, step, null, err, applicationId);
       throw new AiUnavailableError(ERROR_MESSAGES.AI_UNAVAILABLE);
     }
   }
@@ -560,12 +579,13 @@ export async function matchDocuments(
   queryText: string,
   matchCount = 5,
   step: EmbedStep = 'embed',
+  applicationId: string | null = null,
 ): Promise<MatchOutcome> {
   const user = await requireUser();
 
   let rows;
   try {
-    const [queryEmbedding] = await embedFor(user.id, [queryText], step);
+    const [queryEmbedding] = await embedFor(user.id, [queryText], step, applicationId);
     if (!queryEmbedding) return { status: 'could_not_search', error: 'query was not embedded' };
     rows = await matchDocumentsRpc(queryEmbedding, matchCount);
   } catch (err) {
@@ -610,12 +630,13 @@ export async function matchDocumentsForTexts(
   queryTexts: string[],
   matchCount = 5,
   step: EmbedStep = 'embed',
+  applicationId: string | null = null,
 ): Promise<BatchMatchOutcome> {
   const user = await requireUser();
   if (queryTexts.length === 0) return { status: 'searched', outcomes: [] };
 
   try {
-    const vectors = await embedFor(user.id, queryTexts, step);
+    const vectors = await embedFor(user.id, queryTexts, step, applicationId);
     if (vectors.length !== queryTexts.length) {
       // Fewer vectors than queries would silently mis-align the results with the
       // requirements they belong to, which is worse than not searching.

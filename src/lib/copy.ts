@@ -138,6 +138,15 @@ export const RESUME_PASTE_PLACEHOLDER = 'Paste your resume text here.';
  */
 export const VACANCY_LENGTH = 'Vacancy text must be between 100 and 20000 characters.';
 
+/**
+ * Edge case D7's remedy, said once. A base with items but zero index entries
+ * matches nothing, and both the scan screen (before a scan) and the generate
+ * button (before a tailored resume) have to name the same fix — a second copy of
+ * the words is a second place for them to drift.
+ */
+const baseNotIndexedCopy =
+  'Your career base is not searchable yet — open an item and save it to rebuild the search index.';
+
 /** PDF upload ceiling, in bytes (Block F / edge case L5). 413 before any parsing. */
 export const MAX_PDF_BYTES = 5 * 1024 * 1024;
 
@@ -198,10 +207,18 @@ export const SCAN = {
     'This resume is very long — only its first 15,000 characters were used for the match.',
   /**
    * `resumeSource: 'resume_version'` is a valid value of the Block C CHECK
-   * constraint whose rows do not exist yet (`resume_versions` lands in Phase 4),
-   * so the endpoint refuses it with words instead of a Zod shape error.
+   * constraint that this app does not offer as a scan source. The endpoint
+   * refuses it with words instead of a Zod shape error.
+   *
+   * REWORDED IN v2.16, because the sentence it replaced ("Saved resume versions
+   * arrive with the tailored-resume editor") named a milestone that has now
+   * arrived: `resume_versions` has rows from Phase 4 onward, and copy promising
+   * a thing that has shipped while the source is still refused is copy saying
+   * the opposite of the truth. The tab is still not built — deferred, and
+   * declared as deferred — so what the string says now is what the app does.
    */
-  savedVersionUnavailable: 'Saved resume versions arrive with the tailored-resume editor.',
+  savedVersionUnavailable:
+    'Scanning a saved tailored resume is not available — paste its text instead.',
   /**
    * The re-run is for a draft whose analysis never completed. Re-analysing a
    * finished scan would replace the numbers that run measured while its date
@@ -215,8 +232,7 @@ export const SCAN = {
    * and "Using all N items of your base" would then be the app promising a
    * search it cannot perform.
    */
-  baseNotIndexed:
-    'Your career base is not searchable yet — open an item and save it to rebuild the search index.',
+  baseNotIndexed: baseNotIndexedCopy,
 } as const;
 
 export const CAREER = {
@@ -439,10 +455,10 @@ export const RESULT = {
    */
   baseIsSource: 'Your career base is the source — every base match is already in scope.',
   /**
-   * NOT `addToResume`. That string is US-3 step 4's promise to insert a bullet
-   * into the tailored-resume editor, and the editor is Phase 4 — a button
-   * labelled for an action the app does not perform is copy describing a state
-   * the user is not in. This label says what the button does today.
+   * v2.12 shipped `copyBullet` because the editor `addToResume` names did not
+   * exist yet. It does now, so the button performs US-3 step 4 and wears the
+   * label for it — the two constants are kept apart rather than merged, since
+   * they name two different actions and only one of them is still wired.
    */
   copyBullet: 'Copy to clipboard',
   copied: 'Copied to your clipboard.',
@@ -479,6 +495,119 @@ export const RESULT = {
   addToResume: 'Add to resume',
   qualityCheckFailed: 'Quality check failed — try again.',
   exportFailed: 'Export failed — try again.',
+
+  // --- Phase 4: the tailored-resume tab, the judge card, re-score, export ---
+  tabResume: 'Tailored resume',
+  editorLabel: 'Tailored resume',
+  /**
+   * US-3 step 4 inserts into the editor, and there is no editor until a version
+   * exists. The button is DISABLED with this hint rather than quietly appending
+   * to a panel the same screen says is empty, and rather than wearing a second
+   * label for a second action — one button, one promise, and an honest reason
+   * when it cannot be kept yet.
+   */
+  addToResumeDisabled: 'Generate a tailored resume first, then add this to it.',
+  addedToResume: 'Added to your tailored resume.',
+  /**
+   * The bullet [Add to resume] actually inserts. US-3 step 3's "ready-to-insert
+   * bullet phrased for this vacancy" is NOT what this is: phrasing one needs
+   * either a second metered call or the retrieved chunk's text, and chunks never
+   * reach the client (CLAUDE.md, Retrieval). So the inserted line states the
+   * requirement and names the career item that covers it — both of which the
+   * screen already holds — and the user edits it into their own words. Declared
+   * rather than dressed up as the feature.
+   */
+  insertedBullet: (requirement: string, item: string | null) =>
+    item ? `- ${requirement} (from: ${item})` : `- ${requirement}`,
+
+  /**
+   * A resume can only be tailored to a posting the app has PARSED: with no
+   * requirements there is nothing to write against, and the generator would be
+   * asked to tailor to nothing. Distinct from `notAnalysed`, which describes the
+   * scan; this names what the BUTTON cannot do and points at the remedy on the
+   * same screen.
+   */
+  generateNeedsAnalysis: 'Run the analysis first — there is nothing to tailor to yet.',
+  /**
+   * Edge case D7 on the generation path. The retrieval found no career chunks,
+   * so every claim in a generated resume would be ungrounded by construction and
+   * the reviewer would reject all of them — a Sonnet call spent to produce
+   * something the app is about to refuse. Refused before the spend instead, with
+   * the same remedy `SCAN.baseNotIndexed` names.
+   */
+  generateNeedsBase: baseNotIndexedCopy,
+
+  generating: 'Generating…',
+  /** US-4 step 1: the progress text cycles while the pipeline runs. */
+  generateSteps: ['Retrieving your experience…', 'Writing…', 'Quality check…'] as const,
+  rescoring: 'Re-scoring…',
+  checkingQuality: 'Checking quality…',
+  exporting: 'Preparing…',
+
+  // --- the judge card (US-4 step 3, prompt P3's four criteria) ---
+  judgeHeading: 'Quality check',
+  criterionGrounding: 'Grounding',
+  criterionKeywords: 'Keyword coverage',
+  criterionRelevance: 'Relevance',
+  criterionAts: 'ATS format',
+  groundingPassed: 'Passed',
+  groundingFailed: 'Failed',
+  criterionScore: (score: number) => `${score}/5`,
+  /**
+   * The judge's own words for a criterion, shown under it. Kept as a labelled
+   * list rather than free prose so a reader can tell the app's copy from the
+   * model's output — the model wrote the text after the colon, and nothing after
+   * it is ever treated as an instruction.
+   */
+  violationsHeading: 'Unsupported claims',
+  missingHonestHeading: 'Supported by your base, missing from the resume',
+  atsIssuesHeading: 'Formatting issues',
+  /**
+   * The version was generated and the quality check did NOT run — the daily cap
+   * refused it, or the model was unavailable. Distinct from a judge that ran and
+   * approved: one is a measurement, the other is its absence, and the card must
+   * not show four green rows for a review nobody performed.
+   */
+  judgeNotRun:
+    'Your resume was saved, but the quality check did not run. Use [Check quality] to review it.',
+  /**
+   * Rule B3's revision was EARNED and could not be written: the reviewer refused
+   * the draft and listed nothing to fix. Regenerating against that would be a
+   * paid call carrying no information — a generic "try again" — so it does not
+   * happen, and the card says so rather than showing a bare "revise".
+   */
+  reviseWithoutFindings:
+    'The reviewer flagged this draft without saying what to change, so it was not rewritten.',
+  /**
+   * The revision ran and did NOT beat the original, so the editor opens with the
+   * first draft (Block D #5: "return the best version anyway"). Without this the
+   * "Auto-revised once" badge would sit above the pre-revision text with nothing
+   * explaining which of the two the reader is looking at.
+   */
+  revisionNotBetter: 'The rewrite did not improve on the first draft, so this is the first draft.',
+  versionsHeading: 'Versions',
+  versionLabel: { ai: 'AI draft', ai_revision: 'AI revision', user: 'Your edit' },
+
+  // --- re-score (US-5 step 2) ---
+  /**
+   * A re-score measures the text in the EDITOR, which is not saved anywhere. The
+   * ring is showing a live reading of an unsaved draft, and saying so is what
+   * keeps it from reading as the stored scan result — the number the scan
+   * measured is still the one on the row, and it comes back on reload.
+   */
+  rescoredLabel: 'Live score for the text in the editor — not saved.',
+  rescoredRevert: 'Show the original scan',
+  rescoreFailed: 'Could not re-score — try again.',
+  /**
+   * A re-score matches the requirements against the resume in the EDITOR, not
+   * against the career base, so the "Best match" column names the user's own
+   * line. The scan's explainer describes a different measurement and would be
+   * wrong here.
+   */
+  rescoredExplainer:
+    'Must-have requirements are matched against the resume in the editor (60%); vacancy keywords are counted in the same text (40%).',
+  resumeTooLong: 'A resume is limited to 15000 characters.',
+  savedUserVersion: 'Your edited version was saved.',
 } as const;
 
 export const APPLICATIONS = {
@@ -614,6 +743,15 @@ export const ERROR_CODES = {
 
 export const ERROR_MESSAGES = {
   DAILY_LIMIT: 'Daily AI limit reached (50 calls). Try again tomorrow.',
+  /**
+   * 409 for a second generate while the first is still running (Block D #5).
+   *
+   * It names WAITING as the remedy, because that is the true one: the first run
+   * is still going and will save its version. Offering "try again" would invite
+   * the duplicate spend the lock exists to refuse.
+   */
+  ALREADY_RUNNING:
+    'A tailored resume is already being generated for this application — wait for it to finish.',
   VACANCY_LENGTH,
   /**
    * The 502 body for any step (SPEC v2.10). Deliberately NOT `SCAN.aiUnavailable`,

@@ -46,6 +46,28 @@ export async function getCareerItem(id: string): Promise<CareerItem | null> {
   return (data as CareerItem | null) ?? null;
 }
 
+/**
+ * The items behind a set of retrieved chunks (SPEC v2.16, the generation path).
+ *
+ * One query rather than one per id, and NOT `listCareerItems()` filtered in
+ * memory: a base at rule B9's cap is 200 items of up to 4,000 characters, so
+ * reading all of them to keep eight would pull most of a megabyte of the user's
+ * own resume text through the process to throw it away.
+ *
+ * RLS scopes it to the caller either way, so an id belonging to another account
+ * simply does not come back — which is why the caller may pass ids straight from
+ * a `documents` match without checking them first. Order is NOT preserved by
+ * Postgres and the caller re-orders by relevance; returning them in an arbitrary
+ * order and saying so is better than a sort that looks meaningful and is not.
+ */
+export async function listCareerItemsByIds(ids: string[]): Promise<CareerItem[]> {
+  if (ids.length === 0) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase.from('career_items').select('*').in('id', ids);
+  if (error) throw error;
+  return (data ?? []) as CareerItem[];
+}
+
 export type NewCareerItem = Pick<CareerItem, 'type' | 'title' | 'content'> &
   Partial<Pick<CareerItem, 'period' | 'source' | 'import_id'>>;
 

@@ -3,6 +3,7 @@ import 'server-only';
 import type { User } from '@supabase/supabase-js';
 import type { z } from 'zod';
 
+import { MAX_CHAT_REQUESTS_PER_STEP } from '@/lib/budget';
 import { DAILY_CALL_LIMIT, countCallsInLast24h, logLlmCall } from '@/lib/db/llmCalls';
 import { ERROR_MESSAGES } from '@/lib/copy';
 import { AiUnavailableError, DailyLimitError, UnauthorizedError } from '@/lib/errors';
@@ -46,8 +47,16 @@ import {
 /**
  * Hard ceiling on metered HTTP requests per user-initiated step: the first
  * attempt plus AT MOST ONE of the two owner-approved exceptions.
+ *
+ * The number itself lives in `lib/budget.ts` and is re-exported here so every
+ * existing importer is unaffected. It moved because this module is
+ * `server-only` and check.mjs R6 keeps `tests/` away from it, which left the
+ * one piece of load-bearing arithmetic in the metered path with no test
+ * (backlog `m-4`) — the same argument that moved the price table into
+ * `lib/pricing.ts`, and for the same reason: the untestable file is where the
+ * arithmetic bug hides.
  */
-export const MAX_CHAT_REQUESTS_PER_STEP = 2;
+export { MAX_CHAT_REQUESTS_PER_STEP } from '@/lib/budget';
 
 /** CLAUDE.md exception (b): one network retry, after 2 s. */
 const NETWORK_RETRY_DELAY_MS = 2_000;
@@ -93,10 +102,15 @@ export type ChatRequest = {
  * the "a configured mechanism is not a working one" defect. An argument cannot
  * fail that way: if a caller does not pass one, the code says so.
  *
- * Every Phase-2 request makes exactly ONE chat call, so nothing passes a ledger
- * yet and the overshoot is zero by call count. The first multi-call request is
- * Phase 4's /generate (generate → judge → regenerate → judge); it must create one
- * ledger and pass it to all four calls.
+ * Phase 4's /generate is the first holder: generate -> judge -> regenerate ->
+ * judge is four chat STEPS in one HTTP request, it creates one ledger and passes
+ * it to all four, and without that the cap could overshoot by three. Every other
+ * request in the app makes exactly one chat call and passes none.
+ *
+ * The ledger counts REQUESTS, not steps — a step that spends its single retry
+ * increments it twice, because rule B7 caps billed calls and not user
+ * intentions. `lib/budget.ts` holds the ceiling that follows from that
+ * (`MAX_CHAT_REQUESTS_PER_GENERATE`), and the generate route asserts against it.
  */
 export type CallLedger = { chat: number };
 
