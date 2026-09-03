@@ -58,7 +58,15 @@ export default async function ApplicationDetailPage({
   return (
     <section className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold">{vacancy.title ?? APPLICATIONS.notAnalysedTitle}</h1>
+        <h1 className="text-2xl font-semibold">
+          {/*
+            Three cases, because a blank heading reads as a rendering fault and
+            "Not analysed yet" would deny a run that happened: a title, an
+            analysed posting the parser gave no title, or a draft.
+          */}
+          {vacancy.title?.trim() ||
+            (analysed ? APPLICATIONS.untitledPosting : APPLICATIONS.notAnalysedTitle)}
+        </h1>
         <p className="text-muted-foreground text-sm">
           {vacancy.company ?? APPLICATIONS.noCompany} ·{' '}
           {APPLICATION_STATUS_LABEL[application.status]}
@@ -69,7 +77,14 @@ export default async function ApplicationDetailPage({
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_1fr]">
         <div className="flex flex-col gap-6">
           <ScoreRing score={score} />
-          <p className="text-muted-foreground text-xs">{RESULT.scoreExplainer}</p>
+          {/*
+            Only where a number was computed. On a draft the ring shows "—" and
+            no 60/40 weighting ever ran, so explaining one would describe work
+            the app did not do.
+          */}
+          {score === null ? null : (
+            <p className="text-muted-foreground text-xs">{RESULT.scoreExplainer}</p>
+          )}
 
           {analysed ? (
             <CategoryBars entries={entries} keywords={keywords} />
@@ -94,11 +109,33 @@ export default async function ApplicationDetailPage({
             sourceIsBase={application.resume_source === 'career_base'}
           />
         ) : (
-          // The posting is still shown — it was saved, which is what the failure
-          // toast promised — but nothing is charted against it.
-          <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium">{RESULT.vacancyRawHeading}</h2>
-            <pre className="text-sm break-words whitespace-pre-wrap">{vacancy.raw_text}</pre>
+          /*
+            The posting is still shown — it was saved, which is what the failure
+            toast promised — but nothing is charted against it.
+
+            Its parsed requirements are shown too WHEN THEY EXIST. A retrieval
+            failure happens after the parse has been stored, so this branch is
+            reachable with a real requirement list, and hiding it would throw
+            away a measurement the user already paid for.
+          */
+          <div className="flex flex-col gap-6">
+            {vacancy.parsed && vacancy.parsed.requirements.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                <h2 className="text-sm font-medium">{RESULT.vacancyParsedHeading}</h2>
+                <ul className="flex flex-col gap-1.5 text-sm">
+                  {vacancy.parsed.requirements.map((requirement, index) => (
+                    <li key={`${requirement.text}-${index}`}>
+                      {requirement.kind === 'must' ? RESULT.kindMust : RESULT.kindNice} ·{' '}
+                      {requirement.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <div className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium">{RESULT.vacancyRawHeading}</h2>
+              <pre className="text-sm break-words whitespace-pre-wrap">{vacancy.raw_text}</pre>
+            </div>
           </div>
         )}
       </div>
@@ -135,16 +172,31 @@ function CategoryBars({
 }
 
 function Bar({ label, issues, total }: { label: string; issues: number | null; total: number }) {
-  const measured = issues !== null && total > 0;
-  const share = measured ? (total - issues) / total : 0;
+  const share = issues !== null && total > 0 ? (total - issues) / total : 0;
+
+  /**
+   * Three states, and the first two are NOT the same:
+   *   - `issues === null` — the check has not happened (ATS format, Quality).
+   *   - `total === 0` — the check RAN and had nothing to look at: no keywords
+   *     were extracted, or the posting stated no requirements (N4). Calling
+   *     that "Not checked yet" would deny work the app did, and the Analysis
+   *     tab on this same screen already says the opposite.
+   *   - otherwise, the count.
+   */
+  const caption =
+    issues === null
+      ? RESULT.notChecked
+      : total === 0
+        ? RESULT.nothingToCheck
+        : issues === 0
+          ? RESULT.noIssues
+          : RESULT.issues(issues);
 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-sm">{label}</span>
-        <span className="text-muted-foreground text-xs">
-          {!measured ? RESULT.notChecked : issues === 0 ? RESULT.noIssues : RESULT.issues(issues)}
-        </span>
+        <span className="text-muted-foreground text-xs">{caption}</span>
       </div>
       <div className="bg-muted h-2 overflow-hidden rounded-full">
         <div

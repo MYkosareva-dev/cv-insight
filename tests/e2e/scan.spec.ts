@@ -6,6 +6,7 @@ import {
   NO_SCORE,
   RESULT,
   SCAN,
+  VACANCY_LENGTH,
 } from '../../src/lib/copy';
 
 /**
@@ -235,6 +236,33 @@ test.describe('scan', () => {
     }
   });
 
+  test('an oversized vacancy is refused with the exact copy, before any spend', async ({
+    page,
+    request,
+  }) => {
+    /**
+     * Edge case S7. The message matters as much as the status: Block D quotes
+     * this exact sentence as the canonical error body, and a `z.union` on the
+     * request would have replaced it with Zod's own "Invalid input" — which is
+     * why the endpoint tells its two body shapes apart before either schema
+     * runs. Asserted through the API, since the textarea has no server round
+     * trip to reach for a bound the client also blocks.
+     */
+    await signUp(page, uniqueEmail());
+    const res = await request.post('/api/scan', {
+      data: {
+        vacancyText: 'x'.repeat(20_001),
+        resumeSource: 'career_base',
+        sourceResumeText: null,
+        resumeVersionId: null,
+      },
+    });
+    expect(res.status()).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toBe(VACANCY_LENGTH);
+  });
+
   test('an empty career base blocks the Career-base source with the exact notice', async ({
     page,
   }) => {
@@ -293,7 +321,16 @@ test.describe('scan', () => {
     await expect(ring).toBeVisible();
     const shown = (await ring.textContent())?.trim() ?? '';
 
-    if (matchScore === null) {
+    /**
+     * Rule B1b is a RENDER rule: the response carries the STORED number, and
+     * the screen shows "—" when 0 MUST requirements met 0 keywords, because
+     * that 0 means "nothing was measured". So the expectation follows the same
+     * rule the app does rather than the raw field.
+     */
+    const noSignal =
+      coverage.every((entry: { kind: string }) => entry.kind !== 'must') && keywords.length === 0;
+
+    if (matchScore === null || noSignal) {
       expect(shown).toBe(NO_SCORE);
     } else {
       expect(shown).toBe(`${matchScore}%`);

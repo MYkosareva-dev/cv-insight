@@ -8,7 +8,8 @@ import {
   fieldErrorsOf,
   parsedVacancySchema,
   patchApplicationSchema,
-  scanRequestSchema,
+  isRescanBody,
+  rescanSchema,
   scanResumeText,
   scanSchema,
 } from '../../src/lib/validation.ts';
@@ -140,21 +141,40 @@ describe('scanSchema — SPEC Block D #4, Block F bounds', () => {
   });
 
   test('the retry branch is the id and nothing else', () => {
-    const retry = scanRequestSchema.safeParse({
+    const retry = rescanSchema.safeParse({
       applicationId: '9f2a6c1e-4b7d-4f7a-9e2b-3c8d1a5e7f90',
     });
     assert.equal(retry.success, true);
     assert.deepEqual(retry.data, { applicationId: '9f2a6c1e-4b7d-4f7a-9e2b-3c8d1a5e7f90' });
+    assert.equal(rescanSchema.safeParse({ applicationId: 'not-a-uuid' }).success, false);
+  });
 
-    // A fresh body has no id and still parses, through the other branch.
-    const fresh = scanRequestSchema.safeParse({
-      vacancyText: vacancy,
+  test('the two shapes are told apart before either schema runs', () => {
+    // The reason this is a predicate and not a z.union: a union reports its
+    // failure as one "Invalid input" issue, which would replace every Block F
+    // message on the endpoint — and S7 requires the exact copy.
+    assert.equal(isRescanBody({ applicationId: 'x' }), true);
+    assert.equal(
+      isRescanBody({
+        vacancyText: vacancy,
+        resumeSource: 'career_base',
+        sourceResumeText: null,
+        resumeVersionId: null,
+      }),
+      false,
+    );
+    assert.equal(isRescanBody(null), false);
+    assert.equal(isRescanBody('applicationId'), false);
+
+    // And the guarantee that matters: a fresh body's failure still carries the
+    // field's own copy, which a union would have thrown away.
+    const parsed = scanSchema.safeParse({
+      vacancyText: 'x'.repeat(20_001),
       resumeSource: 'career_base',
       sourceResumeText: null,
       resumeVersionId: null,
     });
-    assert.equal(fresh.success, true);
-    assert.equal('applicationId' in fresh.data, false);
+    assert.equal(parsed.error.issues[0].message, VACANCY_LENGTH);
   });
 });
 

@@ -96,10 +96,14 @@ function Table({ rows, byId }: { rows: Application[]; byId: Map<string, Heading>
                   <Link href={`/applications/${row.id}`} className="underline-offset-4 hover:underline">
                     {/*
                       A draft whose parse never ran has no title — the parser is
-                      what fills it. Named rather than left blank, which would
-                      look like a rendering fault.
+                      what fills it. An ANALYSED posting with no title is a
+                      different fact and gets a different word; either beats a
+                      blank cell, which looks like a rendering fault.
                     */}
-                    {heading?.title ?? APPLICATIONS.notAnalysedTitle}
+                    {heading?.title?.trim() ||
+                      (row.coverage
+                        ? APPLICATIONS.untitledPosting
+                        : APPLICATIONS.notAnalysedTitle)}
                   </Link>
                 </td>
                 <td className="text-muted-foreground py-2 pr-3">

@@ -203,6 +203,13 @@ export const SCAN = {
    */
   savedVersionUnavailable: 'Saved resume versions arrive with the tailored-resume editor.',
   /**
+   * The re-run is for a draft whose analysis never completed. Re-analysing a
+   * finished scan would replace the numbers that run measured while its date
+   * went on saying otherwise; re-scoring an edited resume is a different
+   * feature (Block D #6).
+   */
+  alreadyAnalysed: 'This scan has already been analysed.',
+  /**
    * Edge case D7 as COPY rather than as a silent all-gaps result. A base with
    * items but zero index entries (every embedding call failed) matches nothing,
    * and "Using all N items of your base" would then be the app promising a
@@ -386,6 +393,14 @@ export const RESULT = {
    * the same defect as B1b rendering a hard 0 for a score with no signal.
    */
   notChecked: 'Not checked yet',
+  /**
+   * A check that RAN and had nothing to look at — no keywords were extracted,
+   * or the posting stated no requirements. Distinct from `notChecked`, which
+   * means the check has not happened: reporting a measured emptiness as
+   * "Not checked yet" denies work the app actually did, and the Analysis tab on
+   * the same screen says the opposite.
+   */
+  nothingToCheck: 'Nothing to check',
 
   // --- Tabs (Block E) ---
   tabAnalysis: 'Analysis',
@@ -421,8 +436,6 @@ export const RESULT = {
   copied: 'Copied to your clipboard.',
   copyFailed: 'Could not copy — select the text instead.',
   vacancyRawHeading: 'Job posting',
-  vacancyShowRaw: 'Show the full posting',
-  vacancyHideRaw: 'Hide the full posting',
   vacancyParsedHeading: 'Parsed requirements',
   /**
    * The THIRD state of a result screen, and the one that must never be confused
@@ -474,7 +487,18 @@ export const APPLICATIONS = {
    * this names the actual state, and the row's own score cell shows NO_SCORE.
    */
   notAnalysedTitle: 'Not analysed yet',
-  noCompany: NO_SCORE,
+  /**
+   * The posting was analysed and the parser found no title. Not
+   * `notAnalysedTitle`, which would deny a run that happened, and not a blank
+   * cell, which reads as a rendering fault.
+   */
+  untitledPosting: 'Untitled posting',
+  /**
+   * Its own em dash, not an alias of `NO_SCORE`. Same glyph, different meaning:
+   * aliasing them means changing the score placeholder silently changes the
+   * Company column.
+   */
+  noCompany: '—',
   statusUpdated: 'Status updated.',
   statusUpdateFailed: 'Could not update the status — try again.',
 } as const;

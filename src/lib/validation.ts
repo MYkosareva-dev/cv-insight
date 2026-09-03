@@ -372,8 +372,20 @@ export type ScanRequest = z.infer<typeof scanSchema>;
  */
 export const rescanSchema = z.object({ applicationId: z.uuid() });
 
-/** Either shape, tried retry-first: a fresh scan never carries an id. */
-export const scanRequestSchema = z.union([rescanSchema, scanSchema]);
+/**
+ * Which of the two shapes a body is CLAIMING to be, decided before either
+ * schema runs.
+ *
+ * Deliberately not `z.union([rescanSchema, scanSchema])`. A Zod union reports a
+ * failure as one top-level `invalid_union` issue whose message is the literal
+ * "Invalid input", so every Block F string on this endpoint would be replaced by
+ * that — and edge case S7 requires the EXACT copy ("Vacancy text must be between
+ * 100 and 20000 characters."), which Block D quotes verbatim as the canonical
+ * error body. Branching first keeps `issues[0].message` the field's own message.
+ */
+export function isRescanBody(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && 'applicationId' in body;
+}
 
 /**
  * The same 15,000-character ceiling applied to text that came out of a PDF

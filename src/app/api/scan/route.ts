@@ -32,9 +32,11 @@ import {
 import { matchDocumentsForTexts, type SearchedOutcome } from '@/lib/retrieval';
 import {
   isPdfUpload,
+  isRescanBody,
   parsedVacancySchema,
-  scanRequestSchema,
+  rescanSchema,
   scanResumeText,
+  scanSchema,
 } from '@/lib/validation';
 
 /**
@@ -252,7 +254,15 @@ async function coverageFor(vacancy: ParsedVacancy, plan: ScanPlan): Promise<Cove
  * become "first row the RPC happened to return" if that ordering ever changes.
  */
 function bestChunk(outcome: SearchedOutcome | undefined) {
-  if (!outcome || outcome.status === 'found_nothing') return null;
+  /**
+   * A MISSING outcome is not "found nothing". The gate guarantees one outcome
+   * per query and refuses the whole run otherwise, so this cannot happen — and
+   * if it ever does, returning null here would turn a requirement nobody
+   * searched into a measured zero and a gap, which is the exact hole the
+   * run-level outcome type exists to close.
+   */
+  if (!outcome) throw new ServerError();
+  if (outcome.status === 'found_nothing') return null;
   return outcome.chunks.reduce((best, chunk) =>
     chunk.similarity > best.similarity ? chunk : best,
   );
@@ -285,21 +295,39 @@ async function readScanRequest(request: Request, userId: string): Promise<ScanPl
     throw new ValidationError(SCAN.vacancyRequired);
   }
 
-  const parsed = scanRequestSchema.safeParse(body);
+  /**
+   * The two shapes are told apart BEFORE either schema runs, rather than by a
+   * Zod union: a union reports its failure as one "Invalid input" issue and
+   * would replace every Block F message on this endpoint, which edge case S7
+   * requires to be exact.
+   */
+  if (isRescanBody(body)) {
+    const retry = rescanSchema.safeParse(body);
+    if (!retry.success) throw new NotFoundError();
+    return rerunPlan(retry.data.applicationId);
+  }
+
+  const parsed = scanSchema.safeParse(body);
   if (!parsed.success) {
     throw new ValidationError(parsed.error.issues[0]?.message ?? SCAN.vacancyRequired);
   }
-
-  if ('applicationId' in parsed.data) return rerunPlan(parsed.data.applicationId);
   return freshPlan(userId, parsed.data);
 }
 
 /** The multipart branch: a PDF plus the vacancy field, in one body. */
 async function readUpload(request: Request) {
-  // Checked off the header BEFORE the body is buffered: `formData()` reads the
-  // whole request into memory, so a size check after it has already paid the
-  // cost it was meant to avoid.
-  const declared = Number(request.headers.get('content-length') ?? '0');
+  /**
+   * Checked off the header BEFORE the body is buffered, because `formData()`
+   * reads the whole request into memory — a size check after it has already
+   * paid the cost it was meant to avoid.
+   *
+   * It is a SHORTCUT, not the fence: an absent or unparseable `Content-Length`
+   * falls through to the buffered read, and the actual limits are `file.size`
+   * below (5 MB, L5) plus whatever the platform enforces on a request body.
+   * Refusing a body that declares no length is recorded as p3-9 rather than
+   * done here, since it would also refuse a legitimate chunked upload.
+   */
+  const declared = Number(request.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > MAX_SCAN_BODY_BYTES) {
     throw new FileTooLargeError(ERROR_MESSAGES.REQUEST_TOO_LARGE);
   }
@@ -322,7 +350,7 @@ async function readUpload(request: Request) {
   const { text, truncated } = scanResumeText(extracted);
 
   const vacancyText = form.get('vacancyText');
-  const parsed = scanRequestSchema.safeParse({
+  const parsed = scanSchema.safeParse({
     vacancyText: typeof vacancyText === 'string' ? vacancyText : '',
     resumeSource: 'file',
     sourceResumeText: text,
@@ -331,7 +359,6 @@ async function readUpload(request: Request) {
   if (!parsed.success) {
     throw new ValidationError(parsed.error.issues[0]?.message ?? SCAN.vacancyRequired);
   }
-  if ('applicationId' in parsed.data) throw new ServerError();
 
   return { ...parsed.data, notice: truncated ? SCAN.resumeTruncated : null };
 }
@@ -380,6 +407,18 @@ async function freshPlan(userId: string, input: FreshScan): Promise<ScanPlan> {
 async function rerunPlan(applicationId: string): Promise<ScanPlan> {
   const application = await getApplication(applicationId);
   if (!application) throw new NotFoundError();
+
+  /**
+   * An UNANALYSED draft only.
+   *
+   * Without this the endpoint would silently re-analyse a finished scan and
+   * overwrite `match_score` and `coverage` — including the stored keyword
+   * counts, whose whole purpose is to stay the numbers this run measured, while
+   * `created_at` went on reporting the original date. Re-scoring an edited
+   * resume is a different feature with its own endpoint (Block D #6, Phase 5).
+   */
+  if (application.coverage !== null) throw new ValidationError(SCAN.alreadyAnalysed);
+
   const vacancy = await getVacancy(application.vacancy_id);
   if (!vacancy) throw new NotFoundError();
 
