@@ -323,4 +323,20 @@ export const ERROR_CODES = {
 export const ERROR_MESSAGES = {
   DAILY_LIMIT: 'Daily AI limit reached (50 calls). Try again tomorrow.',
   VACANCY_LENGTH: 'Vacancy text must be between 100 and 20000 characters.',
+  /**
+   * The 502 body for any step (SPEC v2.10). Deliberately NOT `SCAN.aiUnavailable`,
+   * which is the Block E toast for a scan and promises "Your vacancy was saved" —
+   * true there, and a lie on the career-import path where no vacancy exists. The
+   * API message says only what is true everywhere; each screen still renders its
+   * own copy for its own state.
+   */
+  AI_UNAVAILABLE: 'AI service is unavailable. Try again.',
+  /**
+   * Rule B9's OTHER ceiling. "Career base limit reached (200 items)" is false when
+   * the 500-document cap is what tripped, and a reachable state with no true words
+   * is the defect this constant removes. Chunking is bounded so this is normally
+   * unreachable (see lib/chunking.ts), which makes it a real safety net rather
+   * than routine copy.
+   */
+  DOCUMENT_LIMIT: 'Search-index limit reached (500 entries). Delete unused items first.',
 } as const;

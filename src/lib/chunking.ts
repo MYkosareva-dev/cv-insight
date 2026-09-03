@@ -24,16 +24,43 @@
  * same role as two vectors, because one strongly-matching paragraph gets diluted
  * by the rest. Splitting costs nothing — embeddings are priced per token, and the
  * token count is the same either way.
+ *
+ * The VALUE is then pinned by rule B9 rather than by taste — see
+ * MAX_CHUNKS_PER_ITEM.
  */
-export const CHUNK_TARGET_CHARS = 1_000;
+export const CHUNK_TARGET_CHARS = 2_000;
 
 /**
- * Hard ceiling. A single paragraph longer than this is split on whitespace rather
- * than stored whole: `text-embedding-3-small` truncates at its own context limit
- * silently, and a silently truncated vector is worse than a split one because
- * nothing reports it.
+ * Hard ceiling per chunk. A single paragraph longer than this is split on
+ * whitespace rather than stored whole: `text-embedding-3-small` truncates at its
+ * own context limit silently, and a silently truncated vector is worse than a
+ * split one because nothing reports it.
  */
-export const CHUNK_MAX_CHARS = 1_500;
+export const CHUNK_MAX_CHARS = 2_600;
+
+/**
+ * At most this many `documents` rows per career item — and this is the number
+ * that makes rule B9 self-consistent.
+ *
+ * B9 caps 200 `career_items` AND 500 `documents` per user, as two independent
+ * ceilings. Nothing reconciles them: at 4,000 characters per item, a small chunk
+ * size lets 200 legal items produce well over 500 documents, so a user who is
+ * legal under one cap is illegal under the other — and the only copy B9 provides
+ * says "Career base limit reached (200 items)", which is false when the document
+ * cap is what tripped.
+ *
+ * 200 items × 2 chunks = 400 ≤ 500, so the document ceiling cannot be reached
+ * through the item ceiling and the item-count message is always the true one.
+ * (`ERROR_MESSAGES.DOCUMENT_LIMIT` still exists as a real safety net, because a
+ * future change to these constants must fail loudly rather than silently.)
+ *
+ * Packing alone cannot provide this guarantee: chunks flush when the NEXT
+ * paragraph would exceed the target, so a run of paragraphs just over half the
+ * target yields one chunk each, and the count follows the input's paragraph
+ * structure rather than any constant here. Hence an explicit cap, with the
+ * overflow merged into the final chunk instead of dropped.
+ */
+export const MAX_CHUNKS_PER_ITEM = 2;
 
 /** `title + "\n\n" + chunk` — the stored `documents.content` shape. */
 export function withTitle(title: string, chunk: string): string {
@@ -120,7 +147,27 @@ export function chunkContent(content: string): string[] {
   }
   flush();
 
-  return chunks;
+  return capChunks(chunks);
+}
+
+/**
+ * Enforce MAX_CHUNKS_PER_ITEM by MERGING the overflow into the last kept chunk,
+ * never by dropping it.
+ *
+ * Dropping would silently delete part of the user's own career history from the
+ * index — the item would still look indexed, and the missing paragraph would just
+ * never match anything. Merging makes the last chunk longer than CHUNK_MAX_CHARS,
+ * which is safe here for a reason worth stating: `career_items.content` is capped
+ * at 4,000 characters, and `text-embedding-3-small` accepts 8,191 tokens (roughly
+ * 32,000 characters), so even a maximal item merged whole is an order of magnitude
+ * inside the model's limit. The ceiling exists to avoid SILENT truncation, and
+ * this cannot reach it.
+ */
+function capChunks(chunks: string[]): string[] {
+  if (chunks.length <= MAX_CHUNKS_PER_ITEM) return chunks;
+  const kept = chunks.slice(0, MAX_CHUNKS_PER_ITEM - 1);
+  const merged = chunks.slice(MAX_CHUNKS_PER_ITEM - 1).join('\n\n');
+  return [...kept, merged];
 }
 
 /** Every stored `documents.content` for one item: chunked, each title-prefixed. */
