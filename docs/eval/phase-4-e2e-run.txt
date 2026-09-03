@@ -62,6 +62,45 @@ The two skips are both VISIBLE and both say why:
          The documented pre-existing skip: it needs a server started with a
          deliberately invalid OPENROUTER_API_KEY.
 
+Its own output, verbatim:
+
+  ok  1 [chromium] > tests>e2e>auth.spec.ts:122:3 > auth > sign-up lands on /career (2.2s)
+  ok  2 [chromium] > tests>e2e>auth.spec.ts:129:3 > auth > sign-in lands on /scan, sign-out returns to /login (2.9s)
+  ok  3 [chromium] > tests>e2e>auth.spec.ts:142:3 > auth > a signed-in user is bounced off /login and /signup (2.5s)
+  ok  4 [chromium] > tests>e2e>auth.spec.ts:150:3 > auth > a visitor is redirected off member routes with no data flash (1.0s)
+  ok  5 [chromium] > tests>e2e>auth.spec.ts:163:3 > auth > /privacy is public and reachable from both layouts (2.4s)
+  ok  6 [chromium] > tests>e2e>auth.spec.ts:178:3 > auth > wrong password shows the exact copy and no other outcome (3.3s)
+  ok  7 [chromium] > tests>e2e>auth.spec.ts:207:5 > auth > client-side validation blocks submit on a malformed email (495ms)
+  ok  8 [chromium] > tests>e2e>auth.spec.ts:207:5 > auth > client-side validation blocks submit on a too-short password (475ms)
+  ok  9 [chromium] > tests>e2e>auth.spec.ts:225:3 > auth > native validation never pre-empts our copy (440ms)
+  ok 10 [chromium] > tests>e2e>auth.spec.ts:241:3 > auth > a duplicate email is reported as such (3.1s)
+  ok 11 [chromium] > tests>e2e>auth.spec.ts:252:3 > auth > the session cookie is httpOnly, SameSite=Lax and capped at 30 days (1.7s)
+  ok 12 [chromium] > tests>e2e>auth.spec.ts:296:3 > auth > account deletion removes the user and returns to /login with the toast (12.6s)
+  ok 13 [chromium] > tests>e2e>career.spec.ts:228:3 > career base > every career endpoint refuses a signed-out caller with 401 (1.1s)
+  ok 14 [chromium] > tests>e2e>career.spec.ts:254:3 > career base > a new account sees the exact empty state (2.0s)
+  ok 15 [chromium] > tests>e2e>career.spec.ts:260:3 > career base > a scanned PDF shows the exact 422 copy, pre-opens the paste tab, and saves nothing (3.2s)
+  ok 16 [chromium] > tests>e2e>career.spec.ts:296:3 > career base > a text-layer PDF imports, reviews and saves, and a second import ADDS (9.8s)
+  ok 17 [chromium] > tests>e2e>career.spec.ts:329:3 > career base > re-importing the SAME text saves nothing and reports every skip (9.1s)
+  ok 18 [chromium] > tests>e2e>career.spec.ts:354:3 > career base > a metered Save spends once even when double-clicked (8.3s)
+  ok 19 [chromium] > tests>e2e>generate.spec.ts:159:3 > generate > all four Phase-4 endpoints refuse a signed-out caller with 401 (3.1s)
+  ok 20 [chromium] > tests>e2e>generate.spec.ts:181:3 > generate > another user's application is 404 on every Phase-4 endpoint, never 403 (2.0s)
+  ok 21 [chromium] > tests>e2e>generate.spec.ts:197:3 > generate > generate, judge, edit, re-score, export — the whole US-4/US-5 path (53.9s)
+  ok 22 [chromium] > tests>e2e>generate.spec.ts:522:3 > generate > one click, one spend: a double-clicked [Generate] sends ONE request (39.8s)
+  -  23 [chromium] > tests>e2e>generate.spec.ts:568:3 > generate > a saved display name becomes the resume name line and the file name
+  ok 24 [chromium] > tests>e2e>generate.spec.ts:625:3 > generate > an empty editor blocks both metered buttons with the exact copy (11.6s)
+  ok 25 [chromium] > tests>e2e>generate.spec.ts:649:3 > generate > the judge catches invention, and rule B2 forces revise however good the rest is (22.9s)
+  ok 26 [chromium] > tests>e2e>generate.spec.ts:734:3 > generate > [Add to resume] is refused with a reason while no resume exists (12.1s)
+  ok 27 [chromium] > tests>e2e>scan.spec.ts:214:3 > scan > both scan endpoints refuse a signed-out caller with 401 (812ms)
+  ok 28 [chromium] > tests>e2e>scan.spec.ts:244:3 > scan > an oversized vacancy is refused with the exact copy, before any spend (2.7s)
+  ok 29 [chromium] > tests>e2e>scan.spec.ts:275:3 > scan > an empty career base blocks the Career-base source with the exact notice (3.1s)
+  ok 30 [chromium] > tests>e2e>scan.spec.ts:288:3 > scan > the applications list starts empty with the exact copy (2.6s)
+  ok 31 [chromium] > tests>e2e>scan.spec.ts:294:3 > scan > a pasted resume scans, scores, and renders coverage, keywords and base matches (14.1s)
+  ok 32 [chromium] > tests>e2e>scan.spec.ts:461:3 > scan > a career-base scan says the base is the source, instead of an empty tab (19.6s)
+  -  33 [chromium] > tests>e2e>scan.spec.ts:503:3 > scan > an AI failure saves the vacancy as a draft and says so
+
+  2 skipped
+  31 passed (4.4m)
+
 What the phase-4 diagnostics said on this run:
 
   [phase-4] run: {"versions":2,"autoRevised":true,"revisionNotBetter":false,
@@ -105,8 +144,13 @@ and it was not - it was the test harness, and the way to tell was to reproduce
 one failure by hand rather than to read the list.
 
 ---------------------------------------------------------------------------
-RESULT
+RESULT - the FIRST run, against SPEC v2.16 (superseded, kept for the record)
 ---------------------------------------------------------------------------
+
+This block and the "WHAT THE PHASE-4 RUNS ACTUALLY DID" section under it are the
+v2.16 run. They are kept because they carry the two DoD branches (an approved
+first draft, and a revision) and the defect this suite found in its own branch.
+The run that ships is the one above.
 
   ok  1 [chromium] > tests\e2e\auth.spec.ts:122:3 > auth > sign-up lands on /career (2.3s)
   ok  2 [chromium] > tests\e2e\auth.spec.ts:129:3 > auth > sign-in lands on /scan, sign-out returns to /login (2.9s)
@@ -158,7 +202,8 @@ The spec prints one metadata line per metered run - verdicts, scores and counts
 only, never the resume text and never a violated claim, both of which are
 personal data and neither of which belongs in a log (CLAUDE.md, Privacy).
 
-From THIS run:
+From the v2.16 run (NOT the re-run above — its numbers are under its own
+heading):
 
   [phase-4] run: {"versions":2,"autoRevised":true,"revisionNotBetter":false,
                   "revisionWithheld":false,

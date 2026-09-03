@@ -110,6 +110,17 @@ What is below is what the round turned up alongside them.
 - **NIT p4-22** — `RESULT.generating` lost its ellipsis so `<BusyDots />` can supply it, while `rescoring` / `checkingQuality` / `exporting` keep theirs. Deliberate — only the generate button runs long enough to need motion — but it makes one of four sibling constants shaped differently, which is the kind of thing a later reader "tidies".
 - **NIT p4-23** — a stray control byte reached a committed test: `literalNamePlaceholder` was checking `/^NAME<BS>/`, a literal backspace where `\b` was intended, so it reported false on every run and the eval file drew a conclusion from it. Fixed, and a sweep found no other occurrence on the branch — but nothing PREVENTS it. The check-rule set is frozen, so this is a note rather than an R14: if the set ever reopens, "no C0 control characters outside tab/newline in a source file" is a two-line rule that would have caught it.
 
+## Phase 4 — from the ai-architect review of the OWNER-TESTING ROUND (2026-09-04)
+
+Its BLOCKER (the display name reaching P2 and P3 as instruction text) is fixed on
+this branch, and so are findings 2, 3, 4, 6, 7, 9, 10 and 11 — they were either
+documentation that had stopped being true or one-line changes whose absence was
+the defect. The report is `docs/reviews/phase-4-owner-round.md`. What is left:
+
+- **MINOR p4-24** — `JudgeReport.keywordCoverage.missingHonest` still crosses the wire in both route bodies and in `versions[].judge`, so the type system closes the render site that exists (`JudgeCard`'s required `terms` prop) and not the SHAPE. A future component could read the raw list. SPEC v2.17 note 4 now says so rather than claiming more; the fix, if one is wanted, is a client-facing report type with the field stripped — which means a second shape and a mapping, so it is worth doing only when a second consumer appears.
+- **NIT p4-25** — `result-workspace.tsx` re-syncs `versions` from `initialVersions` on prop-identity change but deliberately does NOT re-sync `review.terms` from `initialJudgeTerms`: for a report the client just fetched, its own partition is the fresher answer. Correct, and now that all three sites use the same corpus the two can no longer disagree about a term — but the docblock does not say the two halves of one refresh are treated differently on purpose.
+- **NIT p4-26** — the display-name gate strips `<` and `>` so `<candidate_name>` cannot be closed early, which is the containment `n-6` accepts NOT having for `<resume>` and `<items>`: a resume legitimately contains angle brackets, so there the tagged block plus output validation is the declared answer. Two policies for two values, each right for its own value — but if `n-6` is ever revisited, this is the precedent for what a full fix looks like.
+
 ## Phase 4 — from the ai-architect DIFF review (2026-09-03)
 
 Both BLOCKERs and every MAJOR are fixed on this branch and declared in SPEC v2.16

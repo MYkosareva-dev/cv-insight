@@ -68,6 +68,25 @@ export async function listCareerItemsByIds(ids: string[]): Promise<CareerItem[]>
   return (data ?? []) as CareerItem[];
 }
 
+/**
+ * The whole base as the two columns a text corpus needs (SPEC v2.17).
+ *
+ * A PROJECTION and not `listCareerItems()`, for the reason this file already
+ * gives twice: `select('*')` on a base at rule B9's cap is 200 rows with
+ * `content` to 4,000 characters — roughly 800 KB of the user's own history —
+ * and the caller here wants a handful of `keywordPresent` answers out of it.
+ * `period`, `type`, the ids and the timestamps are all read and thrown away.
+ *
+ * Ordering is the DAL's default and does not matter: the consumer joins every
+ * row into one body of text, and a corpus has no first row.
+ */
+export async function listCareerItemCorpus(): Promise<{ title: string; content: string }[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from('career_items').select('title, content');
+  if (error) throw error;
+  return (data ?? []) as { title: string; content: string }[];
+}
+
 export type NewCareerItem = Pick<CareerItem, 'type' | 'title' | 'content'> &
   Partial<Pick<CareerItem, 'period' | 'source' | 'import_id'>>;
 

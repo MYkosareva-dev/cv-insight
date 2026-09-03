@@ -20,6 +20,7 @@ import {
   ValidationError,
   apiErrorResponse,
 } from '@/lib/errors';
+import { listCareerItemCorpus } from '@/lib/db/careerItems';
 import { itemsCorpus } from '@/lib/generation';
 import { bestVersion, partitionMissingHonest } from '@/lib/judge';
 import { type Draft, generateWithJudge, retrieveItemsFor } from '@/lib/tailoring';
@@ -201,10 +202,19 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
        * words — it is the record of what the review said — and the client is
        * handed the partition rather than the raw list, so no render site can
        * print "supported by your base" over a term the base does not contain.
+       *
+       * THE WHOLE BASE, not the retrieved items, and it is the same corpus the
+       * detail page uses on reload. Two corpora would be two answers to one
+       * question: a term the base holds but retrieval did not surface would
+       * render under "not in your career base" now and under "supported by your
+       * base" after a refresh — this round's own defect, moved from two blocks
+       * to two renders. The heading says "your career base", so the base is what
+       * decides it. The REVISION prompt keeps the narrower corpus, because that
+       * asks a different question: what the writer could honestly reach for.
        */
       judgeTerms: partitionMissingHonest(
         shown.judge?.keywordCoverage.missingHonest ?? [],
-        itemsCorpus(retrieved.items),
+        itemsCorpus(await listCareerItemCorpus()),
       ),
       versions: [original, revision].filter((v): v is ResumeVersion => v !== null),
     });

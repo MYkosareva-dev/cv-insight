@@ -35,7 +35,7 @@ export async function saveDisplayNameAction(
   // The (app) layout has already verified the session, so this is the second
   // fence rather than the first — and it is the one that matters here, because
   // an action is reachable without the page that renders it.
-  if (!user) return { error: SETTINGS.displayNameFailed, notice: null };
+  if (!user) return { error: SETTINGS.displayNameSignedOut, notice: null };
 
   const parsed = displayNameSchema.safeParse({
     displayName: String(formData.get('displayName') ?? ''),

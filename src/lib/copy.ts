@@ -770,8 +770,16 @@ export const SETTINGS = {
    * which was observed breaking navigation across the whole app.
    */
   displayNameLoadFailed:
-    'Could not load your saved name. What is shown below may be out of date — saving will still work.',
+    'Could not load your saved name, so the field below is blank — it may not be empty. Saving a name will still work.',
   displayNameTooLong: 'A name is limited to 120 characters.',
+  /**
+   * The action ran without a verified session. Its OWN outcome, not
+   * `displayNameFailed`: "try again" is advice that can never work here, and
+   * this app tells three retrieval outcomes and four sign-in outcomes apart for
+   * the same reason. Unreachable through the UI — the layout has already
+   * verified the session — but a Server Action is a public endpoint.
+   */
+  displayNameSignedOut: 'Your session has expired — sign in again to save your name.',
 
   dangerZone: 'Danger zone',
   deleteAccount: 'Delete account and data',

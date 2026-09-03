@@ -576,7 +576,23 @@ test.describe('generate', () => {
       .getByText(SETTINGS.displayNameSaved)
       .isVisible({ timeout: 10_000 })
       .catch(() => false);
-    test.skip(!saved, 'needs migration 004_profiles.sql applied in the Supabase dashboard');
+
+    /**
+     * SKIP ONLY ON THE ONE OUTCOME THE MIGRATION EXPLAINS. "the success copy did
+     * not appear" was the first condition and it was too wide: the save action
+     * answers with the same `displayNameFailed` for a missing relation and for a
+     * genuine regression, so the one test guarding this feature would have
+     * skipped on the defect it exists to catch. Asserting the failure copy is on
+     * screen before skipping means any OTHER outcome — a hang, a crash, a
+     * silently-wrong success — fails here instead of disappearing.
+     */
+    if (!saved) {
+      await expect(
+        page.getByText(SETTINGS.displayNameFailed),
+        'the save neither succeeded nor reported the failure it is allowed to report',
+      ).toBeVisible();
+      test.skip(true, 'needs migration 004_profiles.sql applied in the Supabase dashboard');
+    }
 
     // Stored, not just echoed: the reload is what makes this about the row.
     await page.reload();

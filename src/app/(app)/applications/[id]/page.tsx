@@ -7,7 +7,7 @@ import { ResultWorkspace } from '@/components/applications/result-workspace';
 import { ScoreRing } from '@/components/applications/score';
 import { APPLICATIONS, APPLICATION_STATUS_LABEL, RESULT } from '@/lib/copy';
 import { getApplication } from '@/lib/db/applications';
-import { listCareerItems } from '@/lib/db/careerItems';
+import { listCareerItemCorpus } from '@/lib/db/careerItems';
 import { itemsCorpus } from '@/lib/generation';
 import { openingVersion, partitionMissingHonest } from '@/lib/judge';
 import { listResumeVersions } from '@/lib/db/resumeVersions';
@@ -77,15 +77,17 @@ export default async function ApplicationDetailPage({
    * a fresh review compute the same partition with the same function, so there
    * is exactly one definition of "is this term in the base" in the app.
    *
-   * The WHOLE base and not the retrieved items: a stored report may have been
-   * written against a retrieval this page cannot reproduce, and the broader
-   * corpus is the conservative direction — it can only ever admit a term the
-   * user really does have somewhere.
+   * The WHOLE base and not the retrieved items — the same corpus both endpoints
+   * use, so one term gets one answer on every render. A stored report may have
+   * been written against a retrieval this page cannot reproduce; more to the
+   * point, the heading says "your career base", so the base is what has to
+   * decide it. The REVISION prompt keeps the narrower corpus, because it asks a
+   * different question: what the writer could honestly reach for.
    */
   const opening = openingVersion(versions);
   const judgeTerms = partitionMissingHonest(
     opening?.judge?.keywordCoverage.missingHonest ?? [],
-    opening?.judge ? itemsCorpus(await listCareerItems()) : '',
+    opening?.judge ? itemsCorpus(await listCareerItemCorpus()) : '',
   );
 
   return (

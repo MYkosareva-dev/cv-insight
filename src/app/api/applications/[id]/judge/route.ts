@@ -12,6 +12,7 @@ import { getDisplayName } from '@/lib/db/profiles';
 import { insertResumeVersion } from '@/lib/db/resumeVersions';
 import { getVacancy } from '@/lib/db/vacancies';
 import { NotFoundError, ValidationError, apiErrorResponse } from '@/lib/errors';
+import { listCareerItemCorpus } from '@/lib/db/careerItems';
 import { itemsCorpus } from '@/lib/generation';
 import { partitionMissingHonest } from '@/lib/judge';
 import { judgeResume, retrieveItemsFor } from '@/lib/tailoring';
@@ -120,11 +121,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       source: version.source,
       content: version.content,
       judge,
-      // Split against the same items this review was made against — see the
-      // generate route for why the client never receives the raw list.
+      // Split against the WHOLE career base — the same corpus the detail page
+      // and the generate route use, so one term gets one answer on every render.
+      // See the generate route for why the client never receives the raw list.
       judgeTerms: partitionMissingHonest(
         judge.keywordCoverage.missingHonest,
-        itemsCorpus(retrieved.items),
+        itemsCorpus(await listCareerItemCorpus()),
       ),
     });
   } catch (err) {
