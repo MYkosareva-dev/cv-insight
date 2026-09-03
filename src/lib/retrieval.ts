@@ -40,7 +40,7 @@ import {
  * argument here costs real money on a path that then reports itself as a routine
  * indexing failure.
  *
- * Two of the four exports must ALSO never throw, because indexing may never fail
+ * Two of the INDEXING exports must ALSO never throw, because indexing may never fail
  * a save that already succeeded (CLAUDE.md, Embeddings). They reconcile that with
  * the rule above by refusing rather than raising: no verified user means nothing
  * is embedded, nothing is written, and the outcome says so — which the caller
@@ -359,19 +359,39 @@ export async function reindexCareerItem(item: IndexableItem): Promise<boolean> {
 export type ReindexedItem = {
   careerItemId: string;
   title: string;
-  /** `documents` rows the item had before. */
-  before: number;
-  /** `documents` rows it has now. */
-  after: number;
-  written: boolean;
+  /** `documents` rows the item had before. `null` when the count could not be read. */
+  before: number | null;
+  /** `documents` rows it has now. `null` when that is not knowable. */
+  after: number | null;
+  /**
+   * THREE states, because two of them are not the same failure — and a boolean
+   * `written` reported them as one, which was wrong:
+   *
+   *   reindexed        the swap completed; `after` is the new row count.
+   *   old_rows_intact  the read or the DELETE failed, so NOTHING was deleted.
+   *                    The item keeps its previous chunks and is still fully
+   *                    searchable, just on the old chunking.
+   *   unindexed        the delete succeeded and the INSERT failed. The only
+   *                    state in which the item has no rows at all, and the only
+   *                    one that costs searchability.
+   *
+   * That distinction is the whole point of reporting per item: "39 of 40 items
+   * are searchable" is a true sentence only if the report can tell an item that
+   * kept its old rows apart from one that lost them.
+   */
+  state: 'reindexed' | 'old_rows_intact' | 'unindexed';
 };
 
 export type ReindexOutcome = {
   items: ReindexedItem[];
   /** Embedding inputs sent — the size of the paid part of the run. */
   chunksEmbedded: number;
-  /** Items whose WRITE failed after their embeddings had succeeded. */
-  failedWrites: number;
+  /** Embedding REQUESTS sent, which is what the run is billed per. */
+  embeddingRequests: number;
+  /** Items that lost their rows: delete succeeded, insert failed. */
+  unindexed: number;
+  /** Items still searchable on their OLD chunks, because nothing was deleted. */
+  oldRowsIntact: number;
 };
 
 /**
@@ -393,9 +413,17 @@ export type ReindexOutcome = {
  *
  * The write phase is per item and each item is delete-then-insert, so a failure
  * there can still leave one item unindexed. That window is DB-only (no paid
- * call, no network to a third party) and it is reported per item rather than
- * summarised, because "39 of 40 items are searchable" is a sentence the caller
- * has to be able to say.
+ * call, no network to a third party) and it is reported per item in the THREE
+ * states `ReindexedItem.state` distinguishes: a failed read or delete leaves the
+ * old rows in place and the item searchable, and only a failed INSERT loses
+ * them. Reporting those two as one boolean made "39 of 40 items are searchable"
+ * a sentence the caller could not actually say.
+ *
+ * THE COST OF EMBEDDING FIRST is memory: every vector for the whole base is held
+ * until the last one arrives — 1,536 floats per chunk, so a base at the cap
+ * (200 items x 20 chunks) is on the order of 50 MB inside one request. That is
+ * the real bound on this endpoint's size, ahead of `maxDuration`, and the second
+ * reason p3-18's slicing is the right shape for a large base.
  *
  * No `userId` parameter, by design: `getUser()` runs here and the id comes from
  * the session. An id argument would be a way to re-index someone else's base
@@ -409,27 +437,66 @@ export async function reindexAllCareerItems(items: IndexableItem[]): Promise<Rei
     .map((item) => ({ item, chunks: chunksForItem(item.title, item.content) }))
     .filter((group) => group.chunks.length > 0);
 
-  // PHASE 1 — embed everything. A throw here reaches the caller with the old
-  // index untouched, which is the whole point of doing it first.
+  /**
+   * PHASE 1 — embed everything. A throw here reaches the caller with the old
+   * index untouched, which is the whole point of doing it first.
+   *
+   * Through `batchByItem`, the same packer the save path uses: one request per
+   * EMBEDDING_BATCH_SIZE chunks rather than one per ITEM. Embedding item by item
+   * would cost ~200 requests for a full base where 63 do, and it would bypass
+   * the invariant that packer exists for — a batch never splits an item, so one
+   * failed request can never half-index one.
+   */
   const embedded: { item: IndexableItem; chunks: string[]; vectors: number[][] }[] = [];
-  for (const group of groups) {
-    const vectors = await embedFor(user.id, group.chunks, 'embed');
-    if (vectors.length !== group.chunks.length) {
+  let embeddingRequests = 0;
+  for (const batch of batchByItem(groups)) {
+    const inputs = batch.flatMap((group) => group.chunks);
+    const vectors = await embedFor(user.id, inputs, 'embed');
+    embeddingRequests += 1;
+    if (vectors.length !== inputs.length) {
       // Mis-aligned vectors would store one bullet's embedding against another
       // bullet's text — a silently wrong index, which is worse than none.
       throw new AiUnavailableError(ERROR_MESSAGES.AI_UNAVAILABLE);
     }
-    embedded.push({ ...group, vectors });
+    let offset = 0;
+    for (const group of batch) {
+      embedded.push({ ...group, vectors: vectors.slice(offset, offset + group.chunks.length) });
+      offset += group.chunks.length;
+    }
   }
 
   // PHASE 2 — swap the rows. DB only from here.
   const results: ReindexedItem[] = [];
-  let failedWrites = 0;
+  let unindexed = 0;
+  let oldRowsIntact = 0;
+
   for (const { item, chunks, vectors } of embedded) {
-    let before = 0;
+    let before: number | null = null;
     try {
       before = (await listDocumentsForItem(item.id)).length;
       await deleteDocumentsForItem(item.id);
+    } catch (err) {
+      /**
+       * Nothing was deleted. A failed count never touches a row, and the delete
+       * is one statement that either applied or did not — so the item keeps its
+       * old chunks and stays searchable, which is a different report from losing
+       * them. Metadata only: never chunk text, never item content.
+       */
+      oldRowsIntact += 1;
+      console.error('[retrieval] re-index could not clear an item; old rows left in place', {
+        name: err instanceof Error ? err.name : typeof err,
+      });
+      results.push({
+        careerItemId: item.id,
+        title: item.title,
+        before,
+        after: before,
+        state: 'old_rows_intact',
+      });
+      continue;
+    }
+
+    try {
       await insertDocuments(
         user.id,
         chunks.map((content, i) => ({
@@ -443,12 +510,16 @@ export async function reindexAllCareerItems(items: IndexableItem[]): Promise<Rei
         title: item.title,
         before,
         after: chunks.length,
-        written: true,
+        state: 'reindexed',
       });
     } catch (err) {
-      failedWrites += 1;
-      // Metadata only — never the chunk text, never the item content.
-      console.error('[retrieval] re-index write failed for one item', {
+      /**
+       * The one state that costs searchability: the old rows are gone and the
+       * new ones did not land. Recoverable — the next edit of this item
+       * re-indexes it, and so does a second call to this endpoint.
+       */
+      unindexed += 1;
+      console.error('[retrieval] re-index insert failed; the item has no rows', {
         chunks: chunks.length,
         name: err instanceof Error ? err.name : typeof err,
       });
@@ -457,7 +528,7 @@ export async function reindexAllCareerItems(items: IndexableItem[]): Promise<Rei
         title: item.title,
         before,
         after: 0,
-        written: false,
+        state: 'unindexed',
       });
     }
   }
@@ -465,7 +536,9 @@ export async function reindexAllCareerItems(items: IndexableItem[]): Promise<Rei
   return {
     items: results,
     chunksEmbedded: embedded.reduce((sum, group) => sum + group.chunks.length, 0),
-    failedWrites,
+    embeddingRequests,
+    unindexed,
+    oldRowsIntact,
   };
 }
 

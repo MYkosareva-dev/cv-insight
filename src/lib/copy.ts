@@ -613,12 +613,12 @@ export const ERROR_MESSAGES = {
   AI_UNAVAILABLE: 'AI service is unavailable. Try again.',
   /**
    * Rule B9's OTHER ceiling. "Career base limit reached (200 items)" is false when
-   * the 500-document cap is what tripped, and a reachable state with no true words
+   * the document cap is what tripped, and a reachable state with no true words
    * is the defect this constant removes. Chunking is bounded so this is normally
    * unreachable (see lib/chunking.ts), which makes it a real safety net rather
    * than routine copy.
    */
-  DOCUMENT_LIMIT: 'Search-index limit reached (500 entries). Delete unused items first.',
+  DOCUMENT_LIMIT: 'Search-index limit reached (4000 entries). Delete unused items first.',
   /**
    * 413 for a multipart body that is over the ceiling as a WHOLE, checked off
    * `Content-Length` before the body is buffered. Distinct from

@@ -51,15 +51,24 @@ export const CHUNK_MIN_CHARS = 80;
 export const CHUNK_TARGET_CHARS = 300;
 
 /**
- * Hard ceiling, and the only place a chunk is cut mid-sentence.
+ * The length at which a SENTENCE is split, and the only place a chunk is cut
+ * mid-sentence.
  *
  * A single sentence between the target and this bound is stored WHOLE, because
  * splitting one sentence into two vectors gives two halves that each mean less
  * than the sentence did — there is no boundary inside it to cut on. Beyond this
  * bound the dilution argument wins again and the text is split on word
  * boundaries, never mid-word. `text-embedding-3-small` accepts about 32,000
- * characters, so this ceiling is about retrieval quality and never about the
+ * characters, so this bound is about retrieval quality and never about the
  * model's limit.
+ *
+ * NOT a ceiling on a stored chunk, and the difference is worth being exact
+ * about: the floor merge can push one chunk past this, because a 79-character
+ * bullet followed by a 600-character sentence merges into a 680-character chunk
+ * rather than storing the 79-character fragment alone. Two rules pulling in
+ * opposite directions, and the floor wins on purpose — a fragment alone is the
+ * failure this whole revision is about, while a chunk 13% over the split bound
+ * is one long claim. Recorded as backlog p3-21 rather than fixed silently.
  */
 export const CHUNK_HARD_MAX_CHARS = 600;
 

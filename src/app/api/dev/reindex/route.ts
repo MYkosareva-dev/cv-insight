@@ -45,19 +45,29 @@ import { reindexAllCareerItems } from '@/lib/retrieval';
  * policy) and the old rows are the only working copy until the new vectors are
  * in hand.
  *
- * WHAT IT RETURNS: per-item before/after row counts and titles — never chunk
- * text. Titles and counts are what the development match log may print
- * (CLAUDE.md, Retrieval); the chunks themselves are the user's own resume
- * content.
+ * WHAT IT RETURNS: per-item before/after row counts, titles, and which of the
+ * three write states each item ended in — never chunk text. Titles and counts
+ * are what the development match log may print (CLAUDE.md, Retrieval); the
+ * chunks themselves are the user's own resume content.
+ *
+ * IT RE-EMBEDS EVERY ITEM, including items whose `title` and `content` did not
+ * change — which the edit path is forbidden to do ("re-embed only when title or
+ * content changed", CLAUDE.md Embeddings, honoured at
+ * `api/career/items/[id]/route.ts`). The rule is about spending a paid call for
+ * an item that has not changed; here the item is unchanged and its CHUNK TEXTS
+ * are not, because the chunker itself changed. Skipping unchanged items would
+ * leave exactly the rows this endpoint exists to replace.
  */
 
 /**
- * One embedding request per 64 chunks, sequentially. A 200-item base at the
- * chunk cap is 4,000 chunks, i.e. 63 requests — comfortably past this budget,
- * which is stated rather than hidden: a base that large should be re-indexed in
- * slices (the route is per-user and idempotent, so a second call after a timeout
- * costs money but corrupts nothing), and 120 s is the honest number for the
- * bases this phase actually has.
+ * One embedding request per `EMBEDDING_BATCH_SIZE` chunks, sequentially, through
+ * the gate's own packer. A 200-item base at the chunk cap is 4,000 chunks, i.e.
+ * 63 requests — comfortably past this budget, which is stated rather than
+ * hidden: a base that large should be re-indexed in slices (the route is
+ * per-user and idempotent, so a second call after a timeout costs money but
+ * corrupts nothing), and 120 s is the honest number for the bases this phase
+ * actually has. Memory is the other bound — see `reindexAllCareerItems`. Both
+ * are backlog p3-18.
  */
 export const maxDuration = 120;
 
@@ -84,7 +94,15 @@ export async function POST() {
       documentsBefore,
       documentsAfter: await countDocuments(),
       chunksEmbedded: outcome.chunksEmbedded,
-      failedWrites: outcome.failedWrites,
+      embeddingRequests: outcome.embeddingRequests,
+      /**
+       * Two failure counts, never one. `unindexed` items lost their rows;
+       * `oldRowsIntact` items kept the previous chunks because nothing was
+       * deleted, and are still searchable. Collapsing them would make the
+       * report say an item has no index when it has a working one.
+       */
+      unindexed: outcome.unindexed,
+      oldRowsIntact: outcome.oldRowsIntact,
       items: outcome.items,
     });
   } catch (err) {

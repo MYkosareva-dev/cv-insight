@@ -25,11 +25,12 @@
  * numbers a reader will want to argue with.
  *
  * The shipped values (0.30 / 0.55 / 0.60) predated any measurement against
- * `openai/text-embedding-3-small`. Measured against it, the best similarity a
- * requirement ever reaches in this app's chunking is ~0.43, so `covered` at 0.60
- * was not a strict threshold but an unreachable one: every requirement of every
- * scan rendered "Gap", including requirements the career base plainly covers.
- * Owner testing found exactly that.
+ * `openai/text-embedding-3-small`. Measured against it, `covered` at 0.60 was
+ * not a strict threshold but an unreachable one — the best similarity a
+ * requirement reached was ~0.43 under blob chunking and ~0.46 under semantic
+ * chunking — so every requirement of every scan rendered "Gap", including
+ * requirements the career base plainly covers. Owner testing found exactly
+ * that.
  *
  * FLOOR + SPAN === COVERAGE_THRESHOLD, on purpose, and SPAN is derived from the
  * other two so that stays true. Rule B1 has two halves that
@@ -40,9 +41,14 @@
  * 55% of its weight to the score. A unit test pins the identity: moving one of
  * these numbers has to move another.
  *
- * They are calibrated for the chunking the app ships today (~2,000-character
- * chunks). Bullet-sized chunks would raise the whole band and these numbers
- * would have to be re-derived — backlog p3-13.
+ * They were RE-DERIVED against semantic chunking (SPEC v2.14, 80-300 character
+ * chunks) and deliberately left unchanged: the highest cut that admits every
+ * labeled-covered requirement moved from 0.3629 to 0.3701, i.e. the optimal
+ * threshold moved 0.36 -> 0.37, on seven labeled points with +/-0.0007 of
+ * run-to-run embedding jitter. Moving them by a hundredth on that evidence would
+ * be chasing noise. The covered and partial bands still do NOT separate — see
+ * `docs/eval/coverage-thresholds.md` Part 2, and backlog p3-17 for the reason
+ * (the remaining error is lexical, not a matter of scale).
  */
 export const SIMILARITY_FLOOR = 0.2;
 export const COVERAGE_THRESHOLD = 0.36;

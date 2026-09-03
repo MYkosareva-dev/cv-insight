@@ -1,9 +1,13 @@
 {
   "_comment": [
-    "The owner's own testing case, as a reproducible fixture:",
+    "A RECONSTRUCTION of the owner's testing case, not a copy of it:",
     "`node scripts/coverage-probe.mjs --seed docs/eval/calibration-case-hiredbuddy.json`.",
-    "The Mira persona resume (SPEC v1.2, synthetic) as the career base, against the",
-    "Hiredbuddy Data Annotator posting the owner scanned. The three requirement lines",
+    "The Mira persona resume (SPEC v1.2, synthetic) as the career base, against an",
+    "entry-level annotation posting written around the requirement lines the owner",
+    "quoted from the Hiredbuddy one they scanned - same employer name, wording ours.",
+    "No third-party posting text is committed here, for the same reason the sibling",
+    "fixture says so: a verbatim posting is someone else's copy in this repository.",
+    "The three requirement lines",
     "the p3-13 DoD names are in it verbatim: the 0-2 years of data-entry/annotation",
     "experience, 'Proficient with MS Office or Google Suite', and 'Experience with",
     "annotation tools such as Labelbox or Supervisely'. The base contains none of MS",

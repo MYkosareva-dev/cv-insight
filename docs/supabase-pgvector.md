@@ -78,11 +78,23 @@ The operator class must match the query operator: `vector_cosine_ops` for `<=>`.
 > update on next edit" warning actually promises. The write is still
 > delete-then-insert because there is no UPDATE policy — only the sequencing relative
 > to the paid call matters.
-> **ANNOTATION — chunks per item are capped at 2** (`MAX_CHUNKS_PER_ITEM` in
-> `lib/chunking.ts`). Not a tuning choice: rule B9 caps 200 `career_items` AND 500
-> `documents` as independent numbers, and 200 x 2 = 400 is what keeps the document
-> ceiling unreachable through the item ceiling. Overflow is merged into the last
-> chunk rather than dropped.
+> **ANNOTATION — one chunk per CLAIM, capped at 20 per item** (`MAX_CHUNKS_PER_ITEM`
+> in `lib/chunking.ts`; SPEC v2.14, was 2). A career item is split into semantic units
+> at bullet, sentence and enumeration boundaries in an 80–300 character band, because
+> one vector per ITEM holds eight claims and therefore resembles every requirement a
+> little: owner testing found a generic skills blob winning four of five Covered rows,
+> two of them for requirements the base does not support. The cap is not a tuning
+> choice either — rule B9 caps 200 `career_items` and 4,000 `documents`, and
+> 200 × 20 = 4,000 is what keeps the document ceiling unreachable through the item
+> ceiling, so B9's only copy ("200 items") stays the true sentence. Overflow beyond the
+> cap merges the SMALLEST adjacent pair, repeatedly, never the whole remainder into the
+> last chunk: that older behaviour was harmless at 2 chunks and at 20 would rebuild the
+> blob this revision removed. Nothing is ever dropped.
+> **What chunking did NOT fix** (`docs/eval/coverage-thresholds.md`, Part 2): a
+> requirement naming a tool the base never mentions is still Covered, and scored HIGHER
+> after the change — finer chunks concentrate a topical match rather than diluting it,
+> and the missing evidence is lexical. Backlog p3-17. Do not re-litigate it as a chunk-
+> size or threshold problem; it has been measured twice and it is neither.
 - `match_documents` filters by `auth.uid()` inside the body AND relies on RLS
   (security invoker) — both must stay true (defense in depth).
 - Index: HNSW with `vector_cosine_ops` (chosen over IVFFlat — data grows row by row

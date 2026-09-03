@@ -154,7 +154,7 @@ function indexWarningFor(savedCount: number, failedCount: number): string | null
 }
 
 /**
- * Rule B9's two ceilings: ≤200 `career_items` and ≤500 `documents` per user.
+ * Rule B9's two ceilings: ≤200 `career_items` and ≤4,000 `documents` per user (v2.14).
  *
  * Both are checked, and each has its OWN message. "Career base limit reached
  * (200 items)" is false when the document cap is what tripped, and reporting it
@@ -179,11 +179,12 @@ async function assertUnderB9(incoming: number): Promise<void> {
     throw new ValidationError(CAREER.limitReached);
   }
   // Accounts for what this batch will ADD, not just what is already stored.
-  // `documents >= MAX_DOCUMENTS` would let a 14-item save land 527 rows from a
-  // starting point of 499 — a net that only catches an overshoot after it has
-  // happened is not a net. Unreachable while MAX_CHUNKS_PER_ITEM holds the
-  // relation (200 x 2 = 400), which is exactly why it must stay correct on its
-  // own terms: if that constant ever changes, this is what fails first.
+  // `documents >= MAX_DOCUMENTS` would let a 14-item save land past the ceiling
+  // from a starting point just under it — a net that only catches an overshoot
+  // after it has happened is not a net. Unreachable while MAX_CHUNKS_PER_ITEM
+  // holds the relation (v2.14: 200 x 20 = 4,000 = MAX_DOCUMENTS), which is
+  // exactly why it must stay correct on its own terms: if either constant ever
+  // changes, this is what fails first.
   if (documents + incoming * MAX_CHUNKS_PER_ITEM > MAX_DOCUMENTS) {
     throw new ValidationError(ERROR_MESSAGES.DOCUMENT_LIMIT);
   }

@@ -419,7 +419,8 @@ remaining error is not a size problem.
 ## Cost of the re-index
 
 Measured on the seeded runs: **9 chunks embedded per base, 1 embedding request,
-`cost_usd_micro` 9** — for five career items. Per `llm_calls`, the whole
+`cost_usd_micro` 9** — for five career items, whose nine chunks fit in one
+`EMBEDDING_BATCH_SIZE` batch. Per `llm_calls`, the whole
 before/after exercise (five seeded runs: two Hiredbuddy before/after, one
 Hiredbuddy re-index, one original case, plus the intermediate run) cost about
 **32,000 micro-USD ≈ $0.032**, almost all of it the `import_resume` and
@@ -429,6 +430,7 @@ is 8–9 micro-USD per run.
 Extrapolated for a real base, the number that matters for a re-index: embedding
 is priced per token, and chunking changes how text is DIVIDED, not how much of it
 there is — the title prefix repeated per chunk is the only addition. A 200-item
-base at the chunk cap is ~4,000 chunks, ~63 requests, on the order of **$0.01**.
-Re-indexing is cheap; it is the writes, not the embeddings, that need the
-ordering guarantee.
+base at the chunk cap is ~4,000 chunks, which the gate's own packer sends as ~63
+requests (one per `EMBEDDING_BATCH_SIZE` chunks, never splitting an item across
+two), on the order of **$0.01**. Re-indexing is cheap; it is the writes, not the
+embeddings, that need the ordering guarantee.

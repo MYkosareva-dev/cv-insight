@@ -28,13 +28,14 @@
  *     node scripts/coverage-probe.mjs --seed docs/eval/calibration-case.json
  *
  *   Re-index your own base against the current chunker, then probe:
- *     node scripts/coverage-probe.mjs --application <uuid> --reindex  *       --email you@example.com --password '…'
+ *     node scripts/coverage-probe.mjs --application <uuid> --reindex
+ *       --email you@example.com --password '…'
  *
  * `--reindex` POSTs to /api/dev/reindex before probing. It is what a base
  * written by an earlier chunker needs after SPEC v2.14: rows chunked as one blob
  * per item keep winning comparisons they should lose until they are re-embedded.
- * It spends one embedding request per 64 chunks and prints the per-item
- * before/after row counts.
+ * It spends one embedding request per EMBEDDING_BATCH_SIZE chunks and prints the
+ * per-item before/after row counts and each item's write state.
  *
  * `--seed` is what makes a calibration reproducible by someone who does not have
  * the owner's account: one account, one import, one scan, one probe, then the
@@ -162,12 +163,18 @@ async function reindex(page) {
   );
   console.log(
     `reindex: ${body.careerItems} items, documents ${body.documentsBefore} -> ${body.documentsAfter}, ` +
-      `${body.chunksEmbedded} chunks embedded, ${body.failedWrites} failed writes`,
+      `${body.chunksEmbedded} chunks in ${body.embeddingRequests} embedding request(s)`,
+  );
+  console.log(
+    `reindex: ${body.unindexed} item(s) left with NO rows, ` +
+      `${body.oldRowsIntact} still searchable on their old chunks`,
   );
   for (const item of body.items) {
+    // The state, not a pass/fail mark: "old rows intact" is a working index.
+    const mark = { reindexed: ' ', old_rows_intact: '~', unindexed: '!' }[item.state] ?? '?';
     console.log(
-      `  ${String(item.before).padStart(3)} -> ${String(item.after).padStart(3)} rows  ` +
-        `${item.written ? ' ' : '!'} ${item.title}`,
+      `  ${String(item.before ?? '?').padStart(3)} -> ${String(item.after ?? '?').padStart(3)} rows  ` +
+        `${mark} ${item.state.padEnd(15)} ${item.title}`,
     );
   }
   return body;
