@@ -51,6 +51,23 @@ const REAL_PASTE = [
   '',
 ].join('\n');
 
+/**
+ * The template as it ships before any run exists: prose plus the marker. Built
+ * from PLACEHOLDER and written INTO the sandbox rather than read out of docs/,
+ * so the placeholder case keeps testing the placeholder now that the real
+ * evidence file has been filled in with a real run.
+ */
+const TEMPLATE_PASTE = [
+  '# Auth audit-log purge run evidence',
+  '',
+  'Status: TEMPLATE. No purge run has succeeded yet. Replace the block below',
+  'with the verbatim output of a cron.job_run_details query, in the same commit',
+  'that sets the switch, and never before a run has actually succeeded.',
+  '',
+  PLACEHOLDER,
+  '',
+].join('\n');
+
 const sandboxes = [];
 
 /**
@@ -88,15 +105,24 @@ const write = (dir, rel, text) => {
   writeFileSync(abs, text);
 };
 
-/** Flip the one switch that lets /privacy state a retention period. */
-function flipSwitchOn(dir) {
+/**
+ * Pin the one switch that lets /privacy state a retention period to an EXPLICIT
+ * state. It sets rather than flips, and that is the point: an earlier fixture
+ * rewrote `false` -> `true` and so stopped finding its target on the day the
+ * shipped constant legitimately became `true`, taking four of the cases below
+ * down with it. A fixture that inherits the tree's current state cannot test a
+ * rule about that state. Each case now names the state it needs.
+ */
+const SWITCH_DECL = /export const AUDIT_RETENTION_VERIFIED = (?:true|false);/;
+
+function setSwitch(dir, value) {
   const before = read(dir, SWITCH);
-  const after = before.replace(
-    'export const AUDIT_RETENTION_VERIFIED = false;',
-    'export const AUDIT_RETENTION_VERIFIED = true;',
+  assert.match(before, SWITCH_DECL, `fixture failed to find the switch in ${SWITCH}`);
+  write(
+    dir,
+    SWITCH,
+    before.replace(SWITCH_DECL, `export const AUDIT_RETENTION_VERIFIED = ${value};`),
   );
-  assert.notEqual(after, before, `fixture failed to find the switch in ${SWITCH}`);
-  write(dir, SWITCH, after);
 }
 
 after(() => {
@@ -119,7 +145,7 @@ describe('scripts/check.mjs — the gate the other gates rest on', () => {
    */
   test('R12 state 1/4 — switch ON, no evidence file at all: FAIL', () => {
     const dir = sandbox();
-    flipSwitchOn(dir);
+    setSwitch(dir, true);
     rmSync(path.join(dir, EVIDENCE), { force: true });
     const { status, stderr } = run(dir);
     assert.equal(status, 1, 'the claim shipped with no evidence whatsoever');
@@ -130,8 +156,9 @@ describe('scripts/check.mjs — the gate the other gates rest on', () => {
   test('R12 state 2/4 — switch ON, template placeholder intact: FAIL', () => {
     // The realistic mistake: flip the constant, forget the paste.
     const dir = sandbox();
-    flipSwitchOn(dir);
-    assert.ok(read(dir, EVIDENCE).includes(PLACEHOLDER), 'template must carry the placeholder');
+    setSwitch(dir, true);
+    write(dir, EVIDENCE, TEMPLATE_PASTE);
+    assert.ok(read(dir, EVIDENCE).includes(PLACEHOLDER), 'fixture must carry the placeholder');
     const { status, stderr } = run(dir);
     assert.equal(status, 1, 'an untouched template unlocked the retention claim');
     assert.match(stderr, /placeholder/i);
@@ -139,15 +166,17 @@ describe('scripts/check.mjs — the gate the other gates rest on', () => {
 
   test('R12 state 3/4 — switch ON, a real run pasted in: PASS', () => {
     const dir = sandbox();
-    flipSwitchOn(dir);
+    setSwitch(dir, true);
     write(dir, EVIDENCE, REAL_PASTE);
     const { status, stderr } = run(dir);
     assert.equal(status, 0, `a genuine psql paste must satisfy the gate:\n${stderr}`);
   });
 
   test('R12 state 4/4 — switch OFF: nothing further is checked', () => {
-    // The shipped state. The evidence file may be a template, or absent.
+    // Where the tree sits before any run has succeeded. The evidence file may
+    // be an untouched template, or absent entirely.
     const dir = sandbox();
+    setSwitch(dir, false);
     rmSync(path.join(dir, EVIDENCE), { force: true });
     const { status, stderr } = run(dir);
     assert.equal(status, 0, `with the switch off the evidence file is irrelevant:\n${stderr}`);
@@ -156,7 +185,7 @@ describe('scripts/check.mjs — the gate the other gates rest on', () => {
   test('R12 rejects a stub that is technically placeholder-free', () => {
     // Deleting the marker must not be the whole trick; a real paste has bulk.
     const dir = sandbox();
-    flipSwitchOn(dir);
+    setSwitch(dir, true);
     write(dir, EVIDENCE, 'succeeded\n');
     const { status, stderr } = run(dir);
     assert.equal(status, 1, 'a one-word file unlocked the retention claim');
@@ -164,13 +193,23 @@ describe('scripts/check.mjs — the gate the other gates rest on', () => {
   });
 
   test('/privacy states a period only in the verified branch', () => {
-    // The switch is only meaningful if exactly one branch carries the period and
-    // the shipped constant is false. Read the real files, not a sandbox.
+    // The switch is only meaningful if exactly one branch carries the period.
+    // Read the real files, not a sandbox.
+    //
+    // What is asserted is that the switch stays a plain boolean LITERAL, not
+    // which of the two values it currently holds. R12 recognises the switch by
+    // matching `= true;`, so an env read or a computed expression would leave
+    // the rule's own test false while /privacy could still render the strong
+    // wording -- the one way this gate can go blind. Whether a `true` is backed
+    // by real evidence is R12's own job, exercised against the real tree by
+    // "the shipped tree passes" above; and the constant is designed to return
+    // to `false` if a run ever stops succeeding, which a hard-coded value here
+    // would report as a test failure instead of the correct outcome it is.
     const copy = read(ROOT, SWITCH);
     assert.match(
       copy,
-      /export const AUDIT_RETENTION_VERIFIED = false;/,
-      'the shipped switch must be false until a purge run has succeeded',
+      /^export const AUDIT_RETENTION_VERIFIED = (?:true|false);$/m,
+      'the switch must stay a plain boolean literal, or R12 stops seeing it',
     );
     assert.match(copy, /verified:[\s\S]*?90 days/, 'the verified branch states the period');
     const fallbackOnly = copy.slice(copy.indexOf('fallback:'));

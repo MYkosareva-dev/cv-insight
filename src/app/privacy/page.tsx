@@ -54,10 +54,12 @@ export default function PrivacyPage() {
        * likewise exact - "the data you created in the app", never "all data".
        *
        * Which branch renders is decided by AUDIT_RETENTION_VERIFIED, and by
-       * nothing else. It is false, so the page states no retention period.
-       * check.mjs R12 requires a real cron.job_run_details paste in
-       * docs/eval/audit-retention-evidence.md before that constant may be true,
-       * so the claim and its proof can only ship together.
+       * nothing else. It is true, so the page states the 90-day period: a
+       * scheduled purge run has succeeded, recorded in
+       * docs/eval/audit-retention-evidence.md. check.mjs R12 requires that
+       * paste before the constant may be true, so the claim and its proof
+       * shipped together. If a run ever stops succeeding the constant goes back
+       * to false and this paragraph reverts to promising no period.
        */}
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium">Right to erasure</h2>
