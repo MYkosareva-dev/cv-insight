@@ -108,13 +108,33 @@ export async function retrieveItemsFor(
   return { items: payload, droppedForSize: dropped };
 }
 
-/** P2's `{{parsedRequirementsJson}}` — what the posting asks for, as data. */
+/**
+ * P2/P3's `{{parsedRequirementsJson}}` — what the posting asks for, as data.
+ *
+ * THE VACANCY'S KEYWORD LIST IS DELIBERATELY NOT IN IT, and this is a defect
+ * found by running the pipeline rather than by reading it. An earlier version
+ * included `parsed.keywords`, and against the Hiredbuddy case the generator
+ * pasted the whole list into a SKILLS line: "ms office, google suite, labelbox,
+ * supervisely" — four tools the career base does not contain, claimed as skills.
+ * That is rule B4 ("the generator may use a vacancy keyword only if supported by
+ * retrieved chunks") broken by the app's own prompt, and it is the exact
+ * invention rule B2 exists to catch.
+ *
+ * The cause was not the model's alone. A tidy list of skill terms next to an
+ * instruction to use the vacancy's exact spelling is an invitation to reproduce
+ * it, and Block F's own template asks for "Vacancy requirements" — the
+ * requirements, which each state what is wanted in a sentence a writer has to
+ * check against the items before answering. The per-requirement `keyword` stays
+ * out for the same reason.
+ *
+ * The judge is still the gate. This removes the invitation; it does not replace
+ * the check.
+ */
 function requirementsJson(parsed: ParsedVacancy): string {
   return JSON.stringify({
     title: parsed.title,
     company: parsed.company,
     requirements: parsed.requirements.map((r) => ({ text: r.text, kind: r.kind })),
-    keywords: parsed.keywords,
   });
 }
 
