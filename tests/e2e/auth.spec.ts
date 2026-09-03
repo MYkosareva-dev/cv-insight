@@ -315,14 +315,11 @@ test.describe('auth', () => {
       'href',
       '/privacy',
     );
-    // No retention PERIOD here, ever — one retention story, told on /privacy.
-    // Asserted as an absence so re-adding a number fails here as well as in R12.
-    // The pattern mirrors R12's: hyphenated or spaced, singular or plural, digits
-    // or words. The first version was /\d+\s*(?:days|months|years)/, which missed
-    // "90-day" (hyphen, singular) — the same hole the rule itself had.
-    const PERIOD =
-      /(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fourteen|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)[-\s]*(?:day|week|month|year)s?\b/i;
-    await expect(dialog).not.toContainText(PERIOD);
+    // The retention period lives in ONE ternary branch on /privacy and nowhere
+    // else (SPEC v2.9), so there is nothing to assert about its absence here.
+    // A pattern mirroring the old R12 regex used to sit at this line; it is gone
+    // for the same reason the regex is — it could not close the set of ways to
+    // write a period, so it read as a guarantee it was not providing.
 
     // Confirm stays disabled until the word matches EXACTLY.
     const confirm = dialog.getByRole('button', { name: 'Delete account', exact: true });

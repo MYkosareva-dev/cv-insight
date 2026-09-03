@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { APP_NAME } from '@/lib/copy';
+import { APP_NAME, AUDIT_RETENTION_VERIFIED, PRIVACY_ERASURE } from '@/lib/copy';
 
 export const metadata = { title: 'Privacy — CV Insight' };
 
@@ -40,44 +40,30 @@ export default function PrivacyPage() {
       </section>
 
       {/*
-       * SINGLE SOURCE of the erasure + audit-record claim (SPEC v2.5). This is
+       * SINGLE SOURCE of the erasure + audit-record claim (SPEC v2.9). This is
        * the ONLY place the page may mention audit records, retention or erasure
        * scope. Two sentences on the subject is how the page came to contradict
        * itself once already: an earlier version claimed Supabase retained the
        * records "for its own retention period" while a second section claimed we
        * delete them at 90 days. The first was simply false - auth.audit_log_entries
-       * lives in OUR Postgres and we are the controller. Before adding any
-       * sentence here, grep the RENDERED page for "audit", "retention" and
-       * "provider": each must appear at most once, in this block.
+       * lives in OUR Postgres and we are the controller.
        *
        * The wording states the CONSEQUENCE, not the mechanism: a reader does not
        * care that auth.audit_log_entries has no foreign key to auth.users, they
        * care that deleting the account does not remove these rows. Scope is
        * likewise exact - "the data you created in the app", never "all data".
        *
-       * This is the FALLBACK wording (SPEC v2.5). It makes no retention promise,
-       * because 002_audit_retention.sql is not applied and no purge run has ever
-       * succeeded. check.mjs R12 couples the strong claim to its proof: adding
-       * "90 days" here FAILs the build until docs/eval/audit-retention-evidence.md
-       * exists. The strong sentence, to be swapped in THE SAME COMMIT as that
-       * evidence file, is:
-       *
-       *   ...in our EU database for 90 days for security purposes; these are not
-       *   removed when you delete your account, and are deleted automatically
-       *   when they age out.
-       *
-       * The proof that earns it is a `succeeded` row in cron.job_run_details, not
-       * a row in cron.job: the auth schema is owned by supabase_auth_admin, so
-       * without the grants in 002 the job fails nightly and leaves no
-       * user-visible trace behind a page promising deletion.
+       * Which branch renders is decided by AUDIT_RETENTION_VERIFIED, and by
+       * nothing else. It is false, so the page states no retention period.
+       * check.mjs R12 requires a real cron.job_run_details paste in
+       * docs/eval/audit-retention-evidence.md before that constant may be true,
+       * so the claim and its proof can only ship together.
        */}
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium">Right to erasure</h2>
         <p className="text-muted-foreground text-sm">
-          Deleting your account removes your account and the data you created in the app.
-          Separately, we keep authentication audit records (event type, your user id, email address
-          and IP address) in our EU database for security purposes; these are not removed when you
-          delete your account. An automated retention schedule for them is being set up.
+          {PRIVACY_ERASURE.lead}{' '}
+          {AUDIT_RETENTION_VERIFIED ? PRIVACY_ERASURE.verified : PRIVACY_ERASURE.fallback}
         </p>
       </section>
 

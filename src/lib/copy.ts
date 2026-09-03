@@ -9,6 +9,39 @@
 export const APP_NAME = 'CV Insight';
 
 /**
+ * Has a `purge-auth-audit-log` run actually SUCCEEDED? (SPEC v2.9.)
+ *
+ * THE switch. Flipping it is what lets /privacy state a retention period; while
+ * it is false the page promises nothing it cannot perform. `scripts/check.mjs`
+ * R12 reads this constant: if it is `true`, `docs/eval/audit-retention-evidence.md`
+ * must exist, exceed 200 bytes and no longer carry its placeholder marker. So the
+ * claim and its proof can only land in the same commit.
+ *
+ * Earlier versions of R12 tried to SCAN the page for a period instead. That could
+ * not work — `{90} days`, `<strong>90</strong> days`, "eighteen months" and
+ * "2160 hours" are all the same promise and no regex closes that set. A boolean
+ * has no vocabulary to go blind on.
+ *
+ * Flip it only alongside a real `cron.job_run_details` paste showing `succeeded`.
+ * `cron.schedule` returning a job id proves the job is scheduled, not that the
+ * `auth` schema (owned by `supabase_auth_admin`) will let it delete anything.
+ */
+export const AUDIT_RETENTION_VERIFIED = false;
+
+/**
+ * The /privacy erasure paragraph, in its two states (SPEC v2.9). The retention
+ * period appears in the `verified` branch and NOWHERE else in the app — one
+ * ternary, one claim, one switch.
+ */
+export const PRIVACY_ERASURE = {
+  lead: 'Deleting your account removes your account and the data you created in the app.',
+  verified:
+    'Separately, we keep authentication audit records (event type, your user id, email address and IP address) in our EU database for 90 days for security purposes; these are not removed when you delete your account, and are deleted automatically when they age out.',
+  fallback:
+    'Separately, we keep authentication audit records (event type, your user id, email address and IP address) in our EU database for security purposes; these are not removed when you delete your account. An automated retention schedule for them is being set up.',
+} as const;
+
+/**
  * The score placeholder. Rendered wherever a match score exists as a slot but
  * not as a number:
  *   - the parse produced 0 requirements (edge case N4, matchScore returns null);

@@ -14,11 +14,12 @@ import { fileURLToPath } from 'node:url';
  * the rest of them.
  *
  * R12 is the rule this matters most for. Its entire value is that it FIRES: it
- * couples the 90-day audit-retention claim on a user-facing surface to
+ * couples the audit-retention claim on /privacy to
  * docs/eval/audit-retention-evidence.md, so the app cannot promise an erasure
- * nothing performs. A rule that silently stopped matching would restore that
+ * nothing performs. A rule that silently stopped firing would restore that
  * promise with every gate still green — the exact failure mode R11d exists for
- * on the cookie side.
+ * on the cookie side, and the one two scanner-shaped versions of R12 actually
+ * suffered before it became a switch (SPEC v2.9).
  *
  * Method: copy the repo's checkable surface into a temp dir, mutate ONE thing,
  * run the real scripts/check.mjs against it, assert the exit code. The script is
@@ -26,13 +27,29 @@ import { fileURLToPath } from 'node:url';
  */
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PRIVACY = 'src/app/privacy/page.tsx';
+const SWITCH = 'src/lib/copy.ts';
 const EVIDENCE = 'docs/eval/audit-retention-evidence.md';
+const PLACEHOLDER = '<PASTE RUN OUTPUT HERE>';
 
-/** The strong sentence, verbatim from SPEC v2.5 — the one R12 gates. */
-const STRONG_CLAIM =
-  'in our EU database for 90 days for security purposes; these are not removed when ' +
-  'you delete your account, and are deleted automatically when they age out.';
+/**
+ * A realistic psql paste — deliberately a format the gate does NOT parse. An
+ * earlier R12 demanded an anchored `status: succeeded` line, which no client
+ * actually emits; the only way to satisfy it was to hand-type the line, which is
+ * the paper mechanism the rule opposes. This fixture is the shape of real
+ * evidence, and it passes because the gate asks "is the placeholder gone and is
+ * there substance here", not "does this match my format".
+ */
+const REAL_PASTE = [
+  '# Auth audit-log purge run evidence',
+  '',
+  '  status   |  return_message  |          end_time',
+  '-----------+------------------+----------------------------',
+  ' succeeded | DELETE 0         | 2026-09-03 03:00:07.114+00',
+  ' succeeded | DELETE 0         | 2026-09-02 03:00:06.882+00',
+  ' succeeded | DELETE 12        | 2026-09-01 03:00:07.401+00',
+  '(3 rows)',
+  '',
+].join('\n');
 
 const sandboxes = [];
 
@@ -71,15 +88,15 @@ const write = (dir, rel, text) => {
   writeFileSync(abs, text);
 };
 
-/** Swap the shipped fallback sentence for the strong 90-day claim. */
-function makeStrongClaim(dir) {
-  const before = read(dir, PRIVACY);
+/** Flip the one switch that lets /privacy state a retention period. */
+function flipSwitchOn(dir) {
+  const before = read(dir, SWITCH);
   const after = before.replace(
-    /in our EU database for security purposes; these are not removed when you\s*\n?\s*delete your account\. An automated retention schedule for them is being set up\./,
-    STRONG_CLAIM,
+    'export const AUDIT_RETENTION_VERIFIED = false;',
+    'export const AUDIT_RETENTION_VERIFIED = true;',
   );
-  assert.notEqual(after, before, 'fixture failed to find the fallback sentence in ' + PRIVACY);
-  write(dir, PRIVACY, after);
+  assert.notEqual(after, before, `fixture failed to find the switch in ${SWITCH}`);
+  write(dir, SWITCH, after);
 }
 
 after(() => {
@@ -92,130 +109,79 @@ describe('scripts/check.mjs — the gate the other gates rest on', () => {
     assert.equal(status, 0, `check failed on an unmodified tree:\n${stderr}`);
   });
 
-  test('R12 FAILS on the 90-day claim with no evidence file', () => {
-    const dir = sandbox();
-    makeStrongClaim(dir);
-    const { status, stderr } = run(dir);
-    assert.equal(status, 1, 'the 90-day claim shipped with no evidence and check still passed');
-    assert.match(stderr, /R12/, 'the failure must name R12');
-    assert.match(stderr, /audit-retention-evidence\.md/, 'it must name the file that unblocks it');
-  });
-
-  test('R12 PASSES once the evidence file records a succeeded run', () => {
-    const dir = sandbox();
-    makeStrongClaim(dir);
-    write(dir, EVIDENCE, '# purge run\n\nstatus: succeeded\nend_time: 2026-09-03 03:00:07+00\n');
-    const { status, stderr } = run(dir);
-    assert.equal(status, 0, `claim + evidence should pass:\n${stderr}`);
-  });
-
-  test('R12 is not satisfied by an EMPTY evidence file', () => {
-    // `touch` must not unlock the strongest privacy claim in the app.
-    const dir = sandbox();
-    makeStrongClaim(dir);
-    write(dir, EVIDENCE, '');
-    const { status } = run(dir);
-    assert.equal(status, 1, 'an empty evidence file unlocked the 90-day claim');
-  });
-
-  test('R12 is not satisfied by a file that records a FAILED run', () => {
-    const dir = sandbox();
-    makeStrongClaim(dir);
-    write(dir, EVIDENCE, 'status: failed\nreturn_message: permission denied for table\n');
-    const { status } = run(dir);
-    assert.equal(status, 1, 'a failed purge run unlocked the 90-day claim');
-  });
-
-  test('R12 is not satisfied by PROSE that merely contains the word succeeded', () => {
-    // This is the case the test above was NAMED for and did not cover: it passed
-    // only because its fixture happened not to contain the substring. A substring
-    // test for "succeeded" is satisfied by a file saying the opposite.
-    const dir = sandbox();
-    makeStrongClaim(dir);
-    write(
-      dir,
-      EVIDENCE,
-      'The job has NOT succeeded yet: permission denied for table audit_log_entries.\n',
-    );
-    const { status } = run(dir);
-    assert.equal(status, 1, '"has NOT succeeded" unlocked the claim — the predicate is a substring');
-  });
-
-  test('R12 accepts an anchored status line among other output', () => {
-    const dir = sandbox();
-    makeStrongClaim(dir);
-    write(
-      dir,
-      EVIDENCE,
-      '# purge run\n\n```\n jobid | status    | end_time\n```\n' +
-        'status: succeeded\nend_time: 2026-09-03 03:00:07+00\n',
-    );
-    const { status, stderr } = run(dir);
-    assert.equal(status, 0, `an anchored succeeded line must unlock the claim:\n${stderr}`);
-  });
-
   /**
-   * M1/M2 from the phase-1 code review, as fixtures. R12's first version keyed the
-   * noun on "audit" and the period on the literal "90 days"; all three of these
-   * shipped a fully-formed retention promise past it, exit 0.
+   * R12 is a SWITCH, not a scanner (SPEC v2.9). Four states, and that is the
+   * whole rule. Two earlier versions read the page and tried to decide whether
+   * it stated a retention period; both shipped real promises past the gate,
+   * because `{90} days`, `<strong>90</strong> days`, "eighteen months" and
+   * "2160 hours" are the same claim and no regex closes that set. A boolean has
+   * no vocabulary to go blind on.
    */
-  for (const [label, sentence] of [
-    [
-      'the phrase the app itself ships ("authentication records", no "audit")',
-      'in our EU database for 90 days; these are not removed when you',
-    ],
-    ['a hyphenated singular period ("90-day")', 'in our EU database on a 90-day retention schedule; these are not removed when you'],
-    ['a spelled-out period ("ninety days")', 'in our EU database for ninety days; these are not removed when you'],
-    ['a different unit ("three months")', 'in our EU database for three months; these are not removed when you'],
-  ]) {
-    test(`R12 FAILS on ${label}`, () => {
-      const dir = sandbox();
-      const before = read(dir, PRIVACY);
-      const after = before
-        .replace(
-          /in our EU database for security purposes; these are not removed when you/,
-          sentence,
-        )
-        .replace(/authentication audit records/g, 'authentication records');
-      assert.notEqual(after, before, 'fixture failed to rewrite the paragraph');
-      write(dir, PRIVACY, after);
-      const { status, stderr } = run(dir);
-      assert.equal(status, 1, `a retention promise shipped unguarded: ${label}`);
-      assert.match(stderr, /R12/);
-    });
-  }
-
-  test('R12 follows the claim into another file — the allow-list would have missed this', () => {
-    // The realistic regression: someone lifts the paragraph into a component.
+  test('R12 state 1/4 — switch ON, no evidence file at all: FAIL', () => {
     const dir = sandbox();
-    write(
-      dir,
-      'src/components/privacy-section.tsx',
-      'export function PrivacySection() {\n' +
-        '  return (\n' +
-        '    <p>\n' +
-        `      We keep authentication audit records ${STRONG_CLAIM}\n` +
-        '    </p>\n' +
-        '  );\n' +
-        '}\n',
-    );
+    flipSwitchOn(dir);
+    rmSync(path.join(dir, EVIDENCE), { force: true });
     const { status, stderr } = run(dir);
-    assert.equal(status, 1, 'the claim moved to a new file and R12 did not follow it');
-    assert.match(stderr, /privacy-section/, 'R12 must name the file that carries the claim');
+    assert.equal(status, 1, 'the claim shipped with no evidence whatsoever');
+    assert.match(stderr, /R12/);
+    assert.match(stderr, /audit-retention-evidence\.md/, 'name the file that unblocks it');
   });
 
-  test('R12 reads what SHIPS, not what a comment archives', () => {
-    // src/app/privacy/page.tsx already carries the strong sentence inside a JSX
-    // block comment, on purpose, so the swap is a copy-paste when the evidence
-    // lands. If R12 matched comments, the shipped tree could never be green.
-    assert.match(
-      read(ROOT, PRIVACY),
-      /90 days/,
-      'this test is vacuous unless the comment really does archive the sentence',
-    );
-    const { status } = run(sandbox());
-    assert.equal(status, 0, 'R12 tripped on a comment — it must judge rendered copy only');
+  test('R12 state 2/4 — switch ON, template placeholder intact: FAIL', () => {
+    // The realistic mistake: flip the constant, forget the paste.
+    const dir = sandbox();
+    flipSwitchOn(dir);
+    assert.ok(read(dir, EVIDENCE).includes(PLACEHOLDER), 'template must carry the placeholder');
+    const { status, stderr } = run(dir);
+    assert.equal(status, 1, 'an untouched template unlocked the retention claim');
+    assert.match(stderr, /placeholder/i);
   });
+
+  test('R12 state 3/4 — switch ON, a real run pasted in: PASS', () => {
+    const dir = sandbox();
+    flipSwitchOn(dir);
+    write(dir, EVIDENCE, REAL_PASTE);
+    const { status, stderr } = run(dir);
+    assert.equal(status, 0, `a genuine psql paste must satisfy the gate:\n${stderr}`);
+  });
+
+  test('R12 state 4/4 — switch OFF: nothing further is checked', () => {
+    // The shipped state. The evidence file may be a template, or absent.
+    const dir = sandbox();
+    rmSync(path.join(dir, EVIDENCE), { force: true });
+    const { status, stderr } = run(dir);
+    assert.equal(status, 0, `with the switch off the evidence file is irrelevant:\n${stderr}`);
+  });
+
+  test('R12 rejects a stub that is technically placeholder-free', () => {
+    // Deleting the marker must not be the whole trick; a real paste has bulk.
+    const dir = sandbox();
+    flipSwitchOn(dir);
+    write(dir, EVIDENCE, 'succeeded\n');
+    const { status, stderr } = run(dir);
+    assert.equal(status, 1, 'a one-word file unlocked the retention claim');
+    assert.match(stderr, /too small/i);
+  });
+
+  test('/privacy states a period only in the verified branch', () => {
+    // The switch is only meaningful if exactly one branch carries the period and
+    // the shipped constant is false. Read the real files, not a sandbox.
+    const copy = read(ROOT, SWITCH);
+    assert.match(
+      copy,
+      /export const AUDIT_RETENTION_VERIFIED = false;/,
+      'the shipped switch must be false until a purge run has succeeded',
+    );
+    assert.match(copy, /verified:[\s\S]*?90 days/, 'the verified branch states the period');
+    const fallbackOnly = copy.slice(copy.indexOf('fallback:'));
+    assert.doesNotMatch(fallbackOnly, /90 days/, 'the fallback branch must state no period');
+    assert.match(
+      read(ROOT, 'src/app/privacy/page.tsx'),
+      /AUDIT_RETENTION_VERIFIED \? PRIVACY_ERASURE\.verified : PRIVACY_ERASURE\.fallback/,
+      'the page must choose by the switch, not by hand-edited prose',
+    );
+  });
+
 
   /**
    * R13 is the rule that exists because THREE keyword sweeps in a row declared
