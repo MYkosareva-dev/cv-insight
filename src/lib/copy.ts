@@ -139,7 +139,28 @@ export const CAREER = {
     "We couldn't read text from this PDF. It may be scanned — paste the text instead.",
   fileTooLarge: 'This file is over 5 MB.',
   noItemsFound: 'No career items found — is this a resume?',
+  /**
+   * Edge case D3, verbatim: ONE item saved whose re-index failed. Kept exactly as
+   * SPEC writes it, and used only where it is literally true — a single-item edit,
+   * or a one-item save.
+   */
   indexWarning: 'Item saved, search index will update on next edit.',
+  /**
+   * The bulk shape of the same state (SPEC v2.10). A 14-item import whose
+   * indexing failed is not "Item saved", and singular copy on a bulk path
+   * describes a state the user is not in.
+   */
+  indexWarningBulk: (count: number) =>
+    `${count} items saved, but the search index will update on your next edit.`,
+  /**
+   * And the third state, which a boolean could not express: SOME items indexed.
+   * Failure granularity is one batch and a batch never splits an item, so each
+   * item is either fully searchable or not indexed at all — never half. Naming
+   * the count is the only honest option, because the alternative is reporting a
+   * partial failure as either a total one or a success.
+   */
+  indexWarningPartial: (failed: number) =>
+    `Saved. ${failed} item${failed === 1 ? '' : 's'} will be added to the search index on your next edit.`,
   titleRequired: 'Title is required, max 200 characters.',
   contentRequired: 'Content is required, max 4000 characters.',
   limitReached: 'Career base limit reached (200 items). Delete unused items first.',

@@ -116,10 +116,61 @@ export const extractedItemsSchema = z.object({
 
 export type ExtractedItem = z.infer<typeof extractedItemSchema>;
 
-/** POST /api/career/import — the pasted-text branch. The PDF branch is multipart. */
+/**
+ * Upper bound on the resume text that may reach a model call (SPEC v2.10).
+ *
+ * SPEC bounded the vacancy (100–20,000) and the pasted scan resume (100–15,000)
+ * but never the career import, on either branch. That gap has a price attached:
+ * a 5 MB text-dense PDF is legal under the file-size cap and extracts to
+ * megabytes of characters, which would go out as ONE very large metered prompt.
+ * Edge case S7 is explicit that oversized input is rejected BEFORE any LLM spend,
+ * so both branches are bounded here rather than trusted.
+ *
+ * 20,000 characters is roughly ten résumé pages — comfortably above any real CV
+ * and far below a runaway extraction.
+ */
+export const MAX_IMPORT_TEXT_CHARS = 20_000;
+
+/**
+ * POST /api/career/import — the pasted-text branch. The PDF branch is multipart
+ * and its extracted text is validated with `importedResumeText` below.
+ */
 export const importTextSchema = z.object({
-  text: z.string().trim().min(100, SCAN.resumeRequired).max(20_000),
+  text: z.string().trim().min(100, SCAN.resumeRequired).max(MAX_IMPORT_TEXT_CHARS),
 });
+
+/**
+ * The same bound applied to text that came out of a PDF rather than a textarea.
+ *
+ * A separate schema because the two branches fail differently: a paste that is
+ * too short is the user's typo and gets the Block F copy, whereas an extraction
+ * that is too short means the PDF had no usable text layer — which is 422
+ * UNREADABLE_PDF, not 400. `lib/pdf.ts` owns that lower bound; this owns the
+ * upper one, where an over-long extraction is truncated rather than refused: the
+ * user did nothing wrong, and the first 20,000 characters of a CV are the part
+ * that matters.
+ */
+export function importedResumeText(extracted: string): string {
+  return extracted.length > MAX_IMPORT_TEXT_CHARS
+    ? extracted.slice(0, MAX_IMPORT_TEXT_CHARS)
+    : extracted;
+}
+
+/**
+ * Is this upload a PDF at all?
+ *
+ * Block F lists `.pdf` as rule 1 of the upload validation, and it is not
+ * ceremony: without it a `.docx` reaches `unpdf`, which throws, and the user gets
+ * "We couldn't read text from this PDF. It may be scanned" about a file that is
+ * not a PDF and never was. DOCX and Markdown import are also on the Prohibited
+ * list, so refusing them here is the rule being enforced rather than a UX nicety.
+ *
+ * Extension AND media type, with either sufficient: browsers disagree about the
+ * type they attach to a file input, and some send `application/octet-stream`.
+ */
+export function isPdfUpload(file: { name: string; type: string }): boolean {
+  return file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+}
 
 /**
  * POST /api/career/items — the reviewed items the user chose to keep.
