@@ -5,9 +5,9 @@ not accepted as evidence - the spec run is. A spec FILE is cron.job; this is
 cron.job_run_details.
 
 Command:      npx playwright test
-Date:         2026-09-03 18:05 UTC
+Date:         2026-09-03 19:10 UTC
 Branch:       phase-3-scan
-Commit:       0a8abe9  docs(reviews): the process failure, recorded like any other defect
+Commit:       0ac688b  feat(retrieval): one chunk per claim, and the re-index that makes it real
 Working tree: CLEAN - the commit above is exactly the code that was tested.
               (docs/openrouter-processing.md is the owner's own untracked file
               and is not part of this branch.)
@@ -24,14 +24,15 @@ argument that the difference does not matter. The argument is cheap to make and
 easy to get wrong; a run is neither.
 
 For the record of what the earlier runs found, and why they were themselves
-re-runs: the round before this one recalibrated rule B1's similarity thresholds
-and made keywords literal spans of the vacancy (docs/eval/coverage-thresholds.md),
-which changed what a scan produces. One case failed on that first attempt - the
-pasted-resume case asserted `similarity >= 0.6` and an attributed entry came
-back at 0.5701 under the calibrated threshold - and the fix was to read
-COVERAGE_THRESHOLD from the module that owns it (commit fa9269d). That failure
-is kept in this note rather than erased by a green run, because it is the most
-useful thing those runs found.
+re-runs: an earlier round recalibrated rule B1's similarity thresholds and made
+keywords literal spans of the vacancy, which changed what a scan produces. One
+case failed on that attempt - the pasted-resume case asserted
+`similarity >= 0.6` and an attributed entry came back at 0.5701 under the
+calibrated threshold - and the fix was to read COVERAGE_THRESHOLD from the
+module that owns it (commit fa9269d). That failure is kept in this note rather
+than erased by a green run, because it is the most useful thing those runs
+found: the suite now reads the threshold from lib/scoring, so this round's
+chunking change - which moved similarities again - needed no test edit at all.
 
 The scan cases spend real money: each imports a resume (one import_resume call)
 and runs one scan (one parse_vacancy call plus the embedding requests). That is
@@ -56,47 +57,34 @@ docs/backlog.md rather than left unexplained here.
 
 Running 25 tests using 1 worker
 
-[WebServer] ⨯ Error: {"code":"PGRST303","details":null,"hint":null,"message":"JWT issued at future"}
-[WebServer]     at ignore-listed frames {
-[WebServer]   digest: '102092823@E394'
-[WebServer] }
-  ok  1 [chromium] › tests\e2e\auth.spec.ts:122:3 › auth › sign-up lands on /career (2.7s)
+  ok  1 [chromium] › tests\e2e\auth.spec.ts:122:3 › auth › sign-up lands on /career (2.3s)
   ok  2 [chromium] › tests\e2e\auth.spec.ts:129:3 › auth › sign-in lands on /scan, sign-out returns to /login (3.0s)
-  ok  3 [chromium] › tests\e2e\auth.spec.ts:142:3 › auth › a signed-in user is bounced off /login and /signup (2.6s)
-  ok  4 [chromium] › tests\e2e\auth.spec.ts:150:3 › auth › a visitor is redirected off member routes with no data flash (1.1s)
-  ok  5 [chromium] › tests\e2e\auth.spec.ts:163:3 › auth › /privacy is public and reachable from both layouts (2.4s)
-  ok  6 [chromium] › tests\e2e\auth.spec.ts:178:3 › auth › wrong password shows the exact copy and no other outcome (3.6s)
-  ok  7 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a malformed email (515ms)
-  ok  8 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a too-short password (661ms)
-  ok  9 [chromium] › tests\e2e\auth.spec.ts:225:3 › auth › native validation never pre-empts our copy (445ms)
-  ok 10 [chromium] › tests\e2e\auth.spec.ts:241:3 › auth › a duplicate email is reported as such (3.2s)
-  ok 11 [chromium] › tests\e2e\auth.spec.ts:252:3 › auth › the session cookie is httpOnly, SameSite=Lax and capped at 30 days (1.8s)
-  ok 12 [chromium] › tests\e2e\auth.spec.ts:296:3 › auth › account deletion removes the user and returns to /login with the toast (12.6s)
-  ok 13 [chromium] › tests\e2e\career.spec.ts:228:3 › career base › every career endpoint refuses a signed-out caller with 401 (1.0s)
-  ok 14 [chromium] › tests\e2e\career.spec.ts:254:3 › career base › a new account sees the exact empty state (2.0s)
-  ok 15 [chromium] › tests\e2e\career.spec.ts:260:3 › career base › a scanned PDF shows the exact 422 copy, pre-opens the paste tab, and saves nothing (3.2s)
-  ok 16 [chromium] › tests\e2e\career.spec.ts:296:3 › career base › a text-layer PDF imports, reviews and saves, and a second import ADDS (9.9s)
-  ok 17 [chromium] › tests\e2e\career.spec.ts:329:3 › career base › re-importing the SAME text saves nothing and reports every skip (9.4s)
-  ok 18 [chromium] › tests\e2e\career.spec.ts:354:3 › career base › a metered Save spends once even when double-clicked (8.7s)
-  ok 19 [chromium] › tests\e2e\scan.spec.ts:214:3 › scan › both scan endpoints refuse a signed-out caller with 401 (809ms)
+  ok  3 [chromium] › tests\e2e\auth.spec.ts:142:3 › auth › a signed-in user is bounced off /login and /signup (2.4s)
+  ok  4 [chromium] › tests\e2e\auth.spec.ts:150:3 › auth › a visitor is redirected off member routes with no data flash (997ms)
+  ok  5 [chromium] › tests\e2e\auth.spec.ts:163:3 › auth › /privacy is public and reachable from both layouts (2.3s)
+  ok  6 [chromium] › tests\e2e\auth.spec.ts:178:3 › auth › wrong password shows the exact copy and no other outcome (3.2s)
+  ok  7 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a malformed email (485ms)
+  ok  8 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a too-short password (475ms)
+  ok  9 [chromium] › tests\e2e\auth.spec.ts:225:3 › auth › native validation never pre-empts our copy (433ms)
+  ok 10 [chromium] › tests\e2e\auth.spec.ts:241:3 › auth › a duplicate email is reported as such (3.4s)
+  ok 11 [chromium] › tests\e2e\auth.spec.ts:252:3 › auth › the session cookie is httpOnly, SameSite=Lax and capped at 30 days (2.0s)
+  ok 12 [chromium] › tests\e2e\auth.spec.ts:296:3 › auth › account deletion removes the user and returns to /login with the toast (12.5s)
+  ok 13 [chromium] › tests\e2e\career.spec.ts:228:3 › career base › every career endpoint refuses a signed-out caller with 401 (903ms)
+  ok 14 [chromium] › tests\e2e\career.spec.ts:254:3 › career base › a new account sees the exact empty state (2.1s)
+  ok 15 [chromium] › tests\e2e\career.spec.ts:260:3 › career base › a scanned PDF shows the exact 422 copy, pre-opens the paste tab, and saves nothing (2.8s)
+  ok 16 [chromium] › tests\e2e\career.spec.ts:296:3 › career base › a text-layer PDF imports, reviews and saves, and a second import ADDS (10.4s)
+  ok 17 [chromium] › tests\e2e\career.spec.ts:329:3 › career base › re-importing the SAME text saves nothing and reports every skip (9.2s)
+  ok 18 [chromium] › tests\e2e\career.spec.ts:354:3 › career base › a metered Save spends once even when double-clicked (8.9s)
+  ok 19 [chromium] › tests\e2e\scan.spec.ts:214:3 › scan › both scan endpoints refuse a signed-out caller with 401 (808ms)
   ok 20 [chromium] › tests\e2e\scan.spec.ts:244:3 › scan › an oversized vacancy is refused with the exact copy, before any spend (1.7s)
   ok 21 [chromium] › tests\e2e\scan.spec.ts:275:3 › scan › an empty career base blocks the Career-base source with the exact notice (2.0s)
   ok 22 [chromium] › tests\e2e\scan.spec.ts:288:3 › scan › the applications list starts empty with the exact copy (1.9s)
-[WebServer] ⨯ Error: The destination stream closed early.
-[WebServer]     at ignore-listed frames {
-[WebServer]   digest: '3157741274'
-[WebServer] }
-  ok 23 [chromium] › tests\e2e\scan.spec.ts:294:3 › scan › a pasted resume scans, scores, and renders coverage, keywords and base matches (12.8s)
-[WebServer] ⨯ Error: The destination stream closed early.
-[WebServer]     at ignore-listed frames {
-[WebServer]   digest: '3157741274'
-[WebServer] }
-  ok 24 [chromium] › tests\e2e\scan.spec.ts:448:3 › scan › a career-base scan says the base is the source, instead of an empty tab (12.4s)
+  ok 23 [chromium] › tests\e2e\scan.spec.ts:294:3 › scan › a pasted resume scans, scores, and renders coverage, keywords and base matches (12.4s)
+  ok 24 [chromium] › tests\e2e\scan.spec.ts:448:3 › scan › a career-base scan says the base is the source, instead of an empty tab (11.4s)
   -  25 [chromium] › tests\e2e\scan.spec.ts:490:3 › scan › an AI failure saves the vacancy as a draft and says so
 
   1 skipped
   24 passed (1.7m)
-
 ======================================================================
 RUN 2 - the AI-unavailable path (US-2 step 5, edge cases N2/N3/N5)
 ======================================================================
@@ -133,49 +121,44 @@ What the case asserts, and therefore what this run proves:
 
 Running 1 test using 1 worker
 
-  ok 1 [chromium] › tests\e2e\scan.spec.ts:490:3 › scan › an AI failure saves the vacancy as a draft and says so (5.8s)
+  ok 1 [chromium] › tests\e2e\scan.spec.ts:490:3 › scan › an AI failure saves the vacancy as a draft and says so (5.9s)
 
   1 passed (7.2s)
 
 
 ======================================================================
-RUN 3 - the coverage probe, twice (the calibration's own evidence)
+RUN 3 - the coverage probe, before and after semantic chunking
 ======================================================================
 
-RECORDED EARLIER, at commit fa9269d, and NOT re-run for this file. Nothing
-between fa9269d and 0a8abe9 touches the scan path, the thresholds or the
-retrieval gate - the three commits since are the <html> hydration flag, a
-CLAUDE.md bullet and this review record - so the numbers below still describe
-the code above. Re-running would have spent another import_resume call and
-another parse_vacancy call to reproduce them.
-
 Not part of the Playwright suite: `node scripts/coverage-probe.mjs --seed
-docs/eval/calibration-case.json`, once before the recalibration and once after,
-each against a throwaway account it created and then deleted. The labeled set,
-the distribution, the derived thresholds and the cost of the split are in
-docs/eval/coverage-thresholds.md. Two results from those runs belong here
-because they are evidence about the app rather than about the thresholds:
+<case> [--reindex]`, run five times across this round against throwaway
+accounts it created and deleted. The labeled sets, both similarity
+distributions, the derivation and the cost are in
+docs/eval/coverage-thresholds.md - Part 1 (blob chunking) and Part 2 (semantic
+chunking), kept side by side deliberately.
 
-  - The calibrated constants produce the predicted score IN THE APP: 17 before,
-    57 after, with five of seven requirements covered - the four labeled-covered
-    plus the single over-claim the calibration note declared in advance.
+What those runs prove about the APP rather than about the thresholds:
 
-  - Embedding calls DO write llm_calls rows (rule B8), which the owner's own
-    query could not see. Both runs reported, from the probe's own reading of the
-    llm_calls DAL under RLS:
+  - THE CHUNKER RUNS AND THE RE-INDEX RUNS. The same five career items produce
+    5 documents rows under the old chunker and 9 under the new one, and
+    POST /api/dev/reindex reported the per-item swap (3 + 2 + 1 + 2 + 1) with
+    0 failed writes. A mechanism that is configured is not a working one; this
+    is the run in which it worked.
 
-        embed            rows=2 with_application_id=0 cost_usd_micro=8
-        parse_vacancy    rows=1 with_application_id=1 cost_usd_micro=2602
-        import_resume    rows=1 with_application_id=0 cost_usd_micro=3545
+  - CONCENTRATION IS FIXED, WHICH WAS THE DIAGNOSIS. Distinct chunks winning at
+    least one requirement: 2 before, 4 after. Most requirements won by ONE
+    chunk: 5 of 8 before, 3 of 8 after - and 2 counting only the requirements
+    that actually matched, the third being a chunk "winning" a comparison at
+    0.19 where nothing matched at all.
 
-    Two embed rows per run (one batch for indexing the base, one for the scan's
-    requirements), ok=true, model text-embedding-3-small, a real cost. They
-    carry application_id NULL by design, which is exactly why a query filtered
-    on an application id finds the parse_vacancy row and none of the embedding
-    rows. Backlog p3-8 threads an application id through the scan's embedding
-    calls; the logging itself is not broken.
+  - THE TWO NAMED-TOOL FALSE POSITIVES ARE NOT FIXED, and got stronger:
+    "Proficient with MS Office or Google Suite" 0.4149 -> 0.4438 and
+    "Experience with annotation tools such as Labelbox or Supervisely"
+    0.4280 -> 0.4587, now the top two similarities of eight. Recorded here as
+    well as in the eval note because it is the kind of result a green suite
+    hides: every test passes, and two rows on the result screen are still
+    wrong. Backlog p3-17 carries the mechanism that would fix it.
 
-  - The keywords P1 returned on both runs were literal spans of the posting -
-    8 keywords, keywordsDropped 0 - so the prompt half of the B1a fix held on
-    this case. The server guard is the fence for when it does not, and it is
-    unit-tested rather than waiting on a model to misbehave.
+  - EMBEDDING COST OF A RE-INDEX, measured: 9 chunks, 1 embedding request,
+    cost_usd_micro 9 for a five-item base. Embeddings are priced per token and
+    chunking changes how text is divided, not how much of it there is.
