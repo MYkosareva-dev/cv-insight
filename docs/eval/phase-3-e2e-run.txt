@@ -5,9 +5,9 @@ not accepted as evidence - the spec run is. A spec FILE is cron.job; this is
 cron.job_run_details.
 
 Command:      npx playwright test
-Date:         2026-09-03 19:10 UTC
+Date:         2026-09-03 19:55 UTC
 Branch:       phase-3-scan
-Commit:       0ac688b  feat(retrieval): one chunk per claim, and the re-index that makes it real
+Commit:       e05f597  fix: close the architect pass on the chunking diff
 Working tree: CLEAN - the commit above is exactly the code that was tested.
               (docs/openrouter-processing.md is the owner's own untracked file
               and is not part of this branch.)
@@ -57,30 +57,30 @@ docs/backlog.md rather than left unexplained here.
 
 Running 25 tests using 1 worker
 
-  ok  1 [chromium] › tests\e2e\auth.spec.ts:122:3 › auth › sign-up lands on /career (2.3s)
-  ok  2 [chromium] › tests\e2e\auth.spec.ts:129:3 › auth › sign-in lands on /scan, sign-out returns to /login (3.0s)
+  ok  1 [chromium] › tests\e2e\auth.spec.ts:122:3 › auth › sign-up lands on /career (1.7s)
+  ok  2 [chromium] › tests\e2e\auth.spec.ts:129:3 › auth › sign-in lands on /scan, sign-out returns to /login (2.8s)
   ok  3 [chromium] › tests\e2e\auth.spec.ts:142:3 › auth › a signed-in user is bounced off /login and /signup (2.4s)
-  ok  4 [chromium] › tests\e2e\auth.spec.ts:150:3 › auth › a visitor is redirected off member routes with no data flash (997ms)
+  ok  4 [chromium] › tests\e2e\auth.spec.ts:150:3 › auth › a visitor is redirected off member routes with no data flash (981ms)
   ok  5 [chromium] › tests\e2e\auth.spec.ts:163:3 › auth › /privacy is public and reachable from both layouts (2.3s)
-  ok  6 [chromium] › tests\e2e\auth.spec.ts:178:3 › auth › wrong password shows the exact copy and no other outcome (3.2s)
-  ok  7 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a malformed email (485ms)
-  ok  8 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a too-short password (475ms)
-  ok  9 [chromium] › tests\e2e\auth.spec.ts:225:3 › auth › native validation never pre-empts our copy (433ms)
-  ok 10 [chromium] › tests\e2e\auth.spec.ts:241:3 › auth › a duplicate email is reported as such (3.4s)
-  ok 11 [chromium] › tests\e2e\auth.spec.ts:252:3 › auth › the session cookie is httpOnly, SameSite=Lax and capped at 30 days (2.0s)
-  ok 12 [chromium] › tests\e2e\auth.spec.ts:296:3 › auth › account deletion removes the user and returns to /login with the toast (12.5s)
-  ok 13 [chromium] › tests\e2e\career.spec.ts:228:3 › career base › every career endpoint refuses a signed-out caller with 401 (903ms)
-  ok 14 [chromium] › tests\e2e\career.spec.ts:254:3 › career base › a new account sees the exact empty state (2.1s)
-  ok 15 [chromium] › tests\e2e\career.spec.ts:260:3 › career base › a scanned PDF shows the exact 422 copy, pre-opens the paste tab, and saves nothing (2.8s)
+  ok  6 [chromium] › tests\e2e\auth.spec.ts:178:3 › auth › wrong password shows the exact copy and no other outcome (3.3s)
+  ok  7 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a malformed email (459ms)
+  ok  8 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a too-short password (479ms)
+  ok  9 [chromium] › tests\e2e\auth.spec.ts:225:3 › auth › native validation never pre-empts our copy (436ms)
+  ok 10 [chromium] › tests\e2e\auth.spec.ts:241:3 › auth › a duplicate email is reported as such (3.3s)
+  ok 11 [chromium] › tests\e2e\auth.spec.ts:252:3 › auth › the session cookie is httpOnly, SameSite=Lax and capped at 30 days (1.6s)
+  ok 12 [chromium] › tests\e2e\auth.spec.ts:296:3 › auth › account deletion removes the user and returns to /login with the toast (12.4s)
+  ok 13 [chromium] › tests\e2e\career.spec.ts:228:3 › career base › every career endpoint refuses a signed-out caller with 401 (836ms)
+  ok 14 [chromium] › tests\e2e\career.spec.ts:254:3 › career base › a new account sees the exact empty state (1.9s)
+  ok 15 [chromium] › tests\e2e\career.spec.ts:260:3 › career base › a scanned PDF shows the exact 422 copy, pre-opens the paste tab, and saves nothing (2.5s)
   ok 16 [chromium] › tests\e2e\career.spec.ts:296:3 › career base › a text-layer PDF imports, reviews and saves, and a second import ADDS (10.4s)
-  ok 17 [chromium] › tests\e2e\career.spec.ts:329:3 › career base › re-importing the SAME text saves nothing and reports every skip (9.2s)
-  ok 18 [chromium] › tests\e2e\career.spec.ts:354:3 › career base › a metered Save spends once even when double-clicked (8.9s)
-  ok 19 [chromium] › tests\e2e\scan.spec.ts:214:3 › scan › both scan endpoints refuse a signed-out caller with 401 (808ms)
-  ok 20 [chromium] › tests\e2e\scan.spec.ts:244:3 › scan › an oversized vacancy is refused with the exact copy, before any spend (1.7s)
-  ok 21 [chromium] › tests\e2e\scan.spec.ts:275:3 › scan › an empty career base blocks the Career-base source with the exact notice (2.0s)
+  ok 17 [chromium] › tests\e2e\career.spec.ts:329:3 › career base › re-importing the SAME text saves nothing and reports every skip (8.4s)
+  ok 18 [chromium] › tests\e2e\career.spec.ts:354:3 › career base › a metered Save spends once even when double-clicked (8.4s)
+  ok 19 [chromium] › tests\e2e\scan.spec.ts:214:3 › scan › both scan endpoints refuse a signed-out caller with 401 (800ms)
+  ok 20 [chromium] › tests\e2e\scan.spec.ts:244:3 › scan › an oversized vacancy is refused with the exact copy, before any spend (1.6s)
+  ok 21 [chromium] › tests\e2e\scan.spec.ts:275:3 › scan › an empty career base blocks the Career-base source with the exact notice (1.9s)
   ok 22 [chromium] › tests\e2e\scan.spec.ts:288:3 › scan › the applications list starts empty with the exact copy (1.9s)
-  ok 23 [chromium] › tests\e2e\scan.spec.ts:294:3 › scan › a pasted resume scans, scores, and renders coverage, keywords and base matches (12.4s)
-  ok 24 [chromium] › tests\e2e\scan.spec.ts:448:3 › scan › a career-base scan says the base is the source, instead of an empty tab (11.4s)
+  ok 23 [chromium] › tests\e2e\scan.spec.ts:294:3 › scan › a pasted resume scans, scores, and renders coverage, keywords and base matches (18.6s)
+  ok 24 [chromium] › tests\e2e\scan.spec.ts:448:3 › scan › a career-base scan says the base is the source, instead of an empty tab (11.1s)
   -  25 [chromium] › tests\e2e\scan.spec.ts:490:3 › scan › an AI failure saves the vacancy as a draft and says so
 
   1 skipped
@@ -123,7 +123,7 @@ Running 1 test using 1 worker
 
   ok 1 [chromium] › tests\e2e\scan.spec.ts:490:3 › scan › an AI failure saves the vacancy as a draft and says so (5.9s)
 
-  1 passed (7.2s)
+  1 passed (7.1s)
 
 
 ======================================================================
@@ -141,9 +141,15 @@ What those runs prove about the APP rather than about the thresholds:
 
   - THE CHUNKER RUNS AND THE RE-INDEX RUNS. The same five career items produce
     5 documents rows under the old chunker and 9 under the new one, and
-    POST /api/dev/reindex reported the per-item swap (3 + 2 + 1 + 2 + 1) with
-    0 failed writes. A mechanism that is configured is not a working one; this
-    is the run in which it worked.
+    POST /api/dev/reindex reported the per-item swap (3 + 2 + 1 + 2 + 1), every
+    item in state `reindexed`, 0 unindexed, 0 left on old rows. A mechanism that
+    is configured is not a working one; this is the run in which it worked.
+
+    RE-VERIFIED after the architect's fixes, because the fixes changed this
+    exact code path: the same base now embeds its 9 chunks in ONE embedding
+    request rather than five (one per item), which is what the batch packer was
+    already there for, and every item reports its write state rather than a
+    boolean that called an intact old index "0 rows".
 
   - CONCENTRATION IS FIXED, WHICH WAS THE DIAGNOSIS. Distinct chunks winning at
     least one requirement: 2 before, 4 after. Most requirements won by ONE
