@@ -5,32 +5,33 @@ not accepted as evidence - the spec run is. A spec FILE is cron.job; this is
 cron.job_run_details.
 
 Command:      npx playwright test
-Date:         2026-09-03 17:35 UTC
+Date:         2026-09-03 18:05 UTC
 Branch:       phase-3-scan
-Commit:       fa9269d  fix: nobody may keep a private copy of a calibrated number
-Working tree: CLEAN for src/ and tests/ - the commit above is exactly the code
-              that was tested. The docs-only commits that follow it (the review
-              record and the CLAUDE.md amendment) touch neither.
+Commit:       0a8abe9  docs(reviews): the process failure, recorded like any other defect
+Working tree: CLEAN - the commit above is exactly the code that was tested.
               (docs/openrouter-processing.md is the owner's own untracked file
               and is not part of this branch.)
-Against:      npx next dev on http://localhost:3000 (real Supabase project,
-              EU-Frankfurt) and real OpenRouter calls
+Against:      npm run dev on http://localhost:3000, started and torn down by
+              Playwright itself (real Supabase project, EU-Frankfurt) and real
+              OpenRouter calls
 
-This run REPLACES the one recorded against commit 67affa3. The owner's testing
-round changed src/: keywords are now required to be literal spans of the vacancy
-and the server drops the rest (rule B1a), and rule B1's similarity thresholds
-were recalibrated against measured data (docs/eval/coverage-thresholds.md). Both
-change what a scan produces, so the earlier file stopped describing the code -
-and an evidence file whose commit no longer matches the code is worse than none.
+This run REPLACES the one recorded against commit fa9269d. Nothing about the
+scan path changed between the two - the three commits since are the <html>
+hydration flag, a CLAUDE.md Process bullet and the review record - so this is
+not a re-run that fixes a stale file. It was asked for so that the evidence
+names the commit that actually ships, rather than an ancestor of it plus an
+argument that the difference does not matter. The argument is cheap to make and
+easy to get wrong; a run is neither.
 
-ONE CASE FAILED FIRST, AND THAT IS RECORDED RATHER THAN QUIETLY FIXED. The
-pasted-resume case asserted `similarity >= 0.6` for every coverage entry that
-names a career item. When the coverage threshold moved to 0.36 the assertion
-failed at 0.5701 - correctly: the entry was attributed under the calibrated
-threshold and refused by the literal. The property the case means to assert is
-"an attributed entry cleared the coverage threshold", so it reads
-COVERAGE_THRESHOLD from lib/scoring now. The run below is after that change; the
-failure is the reason commit fa9269d exists.
+For the record of what the earlier runs found, and why they were themselves
+re-runs: the round before this one recalibrated rule B1's similarity thresholds
+and made keywords literal spans of the vacancy (docs/eval/coverage-thresholds.md),
+which changed what a scan produces. One case failed on that first attempt - the
+pasted-resume case asserted `similarity >= 0.6` and an attributed entry came
+back at 0.5701 under the calibrated threshold - and the fix was to read
+COVERAGE_THRESHOLD from the module that owns it (commit fa9269d). That failure
+is kept in this note rather than erased by a green run, because it is the most
+useful thing those runs found.
 
 The scan cases spend real money: each imports a resume (one import_resume call)
 and runs one scan (one parse_vacancy call plus the embedding requests). That is
@@ -55,34 +56,46 @@ docs/backlog.md rather than left unexplained here.
 
 Running 25 tests using 1 worker
 
-  ok  1 [chromium] › tests\e2e\auth.spec.ts:122:3 › auth › sign-up lands on /career (1.8s)
-  ok  2 [chromium] › tests\e2e\auth.spec.ts:129:3 › auth › sign-in lands on /scan, sign-out returns to /login (2.9s)
-  ok  3 [chromium] › tests\e2e\auth.spec.ts:142:3 › auth › a signed-in user is bounced off /login and /signup (2.4s)
-  ok  4 [chromium] › tests\e2e\auth.spec.ts:150:3 › auth › a visitor is redirected off member routes with no data flash (1.0s)
-  ok  5 [chromium] › tests\e2e\auth.spec.ts:163:3 › auth › /privacy is public and reachable from both layouts (2.1s)
-  ok  6 [chromium] › tests\e2e\auth.spec.ts:178:3 › auth › wrong password shows the exact copy and no other outcome (3.4s)
-  ok  7 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a malformed email (544ms)
-  ok  8 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a too-short password (487ms)
-  ok  9 [chromium] › tests\e2e\auth.spec.ts:225:3 › auth › native validation never pre-empts our copy (437ms)
+[WebServer] ⨯ Error: {"code":"PGRST303","details":null,"hint":null,"message":"JWT issued at future"}
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '102092823@E394'
+[WebServer] }
+  ok  1 [chromium] › tests\e2e\auth.spec.ts:122:3 › auth › sign-up lands on /career (2.7s)
+  ok  2 [chromium] › tests\e2e\auth.spec.ts:129:3 › auth › sign-in lands on /scan, sign-out returns to /login (3.0s)
+  ok  3 [chromium] › tests\e2e\auth.spec.ts:142:3 › auth › a signed-in user is bounced off /login and /signup (2.6s)
+  ok  4 [chromium] › tests\e2e\auth.spec.ts:150:3 › auth › a visitor is redirected off member routes with no data flash (1.1s)
+  ok  5 [chromium] › tests\e2e\auth.spec.ts:163:3 › auth › /privacy is public and reachable from both layouts (2.4s)
+  ok  6 [chromium] › tests\e2e\auth.spec.ts:178:3 › auth › wrong password shows the exact copy and no other outcome (3.6s)
+  ok  7 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a malformed email (515ms)
+  ok  8 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a too-short password (661ms)
+  ok  9 [chromium] › tests\e2e\auth.spec.ts:225:3 › auth › native validation never pre-empts our copy (445ms)
   ok 10 [chromium] › tests\e2e\auth.spec.ts:241:3 › auth › a duplicate email is reported as such (3.2s)
-  ok 11 [chromium] › tests\e2e\auth.spec.ts:252:3 › auth › the session cookie is httpOnly, SameSite=Lax and capped at 30 days (1.9s)
-  ok 12 [chromium] › tests\e2e\auth.spec.ts:296:3 › auth › account deletion removes the user and returns to /login with the toast (12.5s)
-  ok 13 [chromium] › tests\e2e\career.spec.ts:228:3 › career base › every career endpoint refuses a signed-out caller with 401 (180ms)
-  ok 14 [chromium] › tests\e2e\career.spec.ts:254:3 › career base › a new account sees the exact empty state (2.1s)
-  ok 15 [chromium] › tests\e2e\career.spec.ts:260:3 › career base › a scanned PDF shows the exact 422 copy, pre-opens the paste tab, and saves nothing (2.9s)
-  ok 16 [chromium] › tests\e2e\career.spec.ts:296:3 › career base › a text-layer PDF imports, reviews and saves, and a second import ADDS (10.6s)
-  ok 17 [chromium] › tests\e2e\career.spec.ts:329:3 › career base › re-importing the SAME text saves nothing and reports every skip (8.8s)
-  ok 18 [chromium] › tests\e2e\career.spec.ts:354:3 › career base › a metered Save spends once even when double-clicked (8.4s)
-  ok 19 [chromium] › tests\e2e\scan.spec.ts:214:3 › scan › both scan endpoints refuse a signed-out caller with 401 (122ms)
-  ok 20 [chromium] › tests\e2e\scan.spec.ts:244:3 › scan › an oversized vacancy is refused with the exact copy, before any spend (1.9s)
-  ok 21 [chromium] › tests\e2e\scan.spec.ts:275:3 › scan › an empty career base blocks the Career-base source with the exact notice (2.1s)
-  ok 22 [chromium] › tests\e2e\scan.spec.ts:288:3 › scan › the applications list starts empty with the exact copy (1.8s)
-  ok 23 [chromium] › tests\e2e\scan.spec.ts:294:3 › scan › a pasted resume scans, scores, and renders coverage, keywords and base matches (13.1s)
-  ok 24 [chromium] › tests\e2e\scan.spec.ts:448:3 › scan › a career-base scan says the base is the source, instead of an empty tab (11.9s)
+  ok 11 [chromium] › tests\e2e\auth.spec.ts:252:3 › auth › the session cookie is httpOnly, SameSite=Lax and capped at 30 days (1.8s)
+  ok 12 [chromium] › tests\e2e\auth.spec.ts:296:3 › auth › account deletion removes the user and returns to /login with the toast (12.6s)
+  ok 13 [chromium] › tests\e2e\career.spec.ts:228:3 › career base › every career endpoint refuses a signed-out caller with 401 (1.0s)
+  ok 14 [chromium] › tests\e2e\career.spec.ts:254:3 › career base › a new account sees the exact empty state (2.0s)
+  ok 15 [chromium] › tests\e2e\career.spec.ts:260:3 › career base › a scanned PDF shows the exact 422 copy, pre-opens the paste tab, and saves nothing (3.2s)
+  ok 16 [chromium] › tests\e2e\career.spec.ts:296:3 › career base › a text-layer PDF imports, reviews and saves, and a second import ADDS (9.9s)
+  ok 17 [chromium] › tests\e2e\career.spec.ts:329:3 › career base › re-importing the SAME text saves nothing and reports every skip (9.4s)
+  ok 18 [chromium] › tests\e2e\career.spec.ts:354:3 › career base › a metered Save spends once even when double-clicked (8.7s)
+  ok 19 [chromium] › tests\e2e\scan.spec.ts:214:3 › scan › both scan endpoints refuse a signed-out caller with 401 (809ms)
+  ok 20 [chromium] › tests\e2e\scan.spec.ts:244:3 › scan › an oversized vacancy is refused with the exact copy, before any spend (1.7s)
+  ok 21 [chromium] › tests\e2e\scan.spec.ts:275:3 › scan › an empty career base blocks the Career-base source with the exact notice (2.0s)
+  ok 22 [chromium] › tests\e2e\scan.spec.ts:288:3 › scan › the applications list starts empty with the exact copy (1.9s)
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  ok 23 [chromium] › tests\e2e\scan.spec.ts:294:3 › scan › a pasted resume scans, scores, and renders coverage, keywords and base matches (12.8s)
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  ok 24 [chromium] › tests\e2e\scan.spec.ts:448:3 › scan › a career-base scan says the base is the source, instead of an empty tab (12.4s)
   -  25 [chromium] › tests\e2e\scan.spec.ts:490:3 › scan › an AI failure saves the vacancy as a draft and says so
 
   1 skipped
-  24 passed (1.6m)
+  24 passed (1.7m)
 
 ======================================================================
 RUN 2 - the AI-unavailable path (US-2 step 5, edge cases N2/N3/N5)
@@ -95,8 +108,10 @@ OpenRouter call fails for real:
     E2E_AI_DOWN=1 E2E_BASE_URL=http://localhost:3100 npx playwright test scan -g "AI failure"
 
 Same branch, same commit, same clean tree. Next 16 allows one dev server per
-directory, so the port-3000 server above was stopped first (by its own PID -
-CLAUDE.md, Process).
+directory, so this ran after Playwright had torn down its own; the broken-key
+server's PIDs were recorded at startup and it was stopped by them afterwards
+(CLAUDE.md, Process - and see the Process section of docs/reviews/phase-3.md for
+why that sentence is in this file).
 
 What the case asserts, and therefore what this run proves:
   - POST /api/scan answers 502 with code AI_UNAVAILABLE and the message
@@ -118,14 +133,21 @@ What the case asserts, and therefore what this run proves:
 
 Running 1 test using 1 worker
 
-  ok 1 [chromium] › tests\e2e\scan.spec.ts:490:3 › scan › an AI failure saves the vacancy as a draft and says so (5.9s)
+  ok 1 [chromium] › tests\e2e\scan.spec.ts:490:3 › scan › an AI failure saves the vacancy as a draft and says so (5.8s)
 
-  1 passed (7.1s)
+  1 passed (7.2s)
 
 
 ======================================================================
 RUN 3 - the coverage probe, twice (the calibration's own evidence)
 ======================================================================
+
+RECORDED EARLIER, at commit fa9269d, and NOT re-run for this file. Nothing
+between fa9269d and 0a8abe9 touches the scan path, the thresholds or the
+retrieval gate - the three commits since are the <html> hydration flag, a
+CLAUDE.md bullet and this review record - so the numbers below still describe
+the code above. Re-running would have spent another import_resume call and
+another parse_vacancy call to reproduce them.
 
 Not part of the Playwright suite: `node scripts/coverage-probe.mjs --seed
 docs/eval/calibration-case.json`, once before the recalibration and once after,
