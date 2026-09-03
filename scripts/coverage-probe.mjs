@@ -27,6 +27,15 @@
  *   Build a throwaway case end to end, probe it, then delete the account:
  *     node scripts/coverage-probe.mjs --seed docs/eval/calibration-case.json
  *
+ *   Re-index your own base against the current chunker, then probe:
+ *     node scripts/coverage-probe.mjs --application <uuid> --reindex  *       --email you@example.com --password '…'
+ *
+ * `--reindex` POSTs to /api/dev/reindex before probing. It is what a base
+ * written by an earlier chunker needs after SPEC v2.14: rows chunked as one blob
+ * per item keep winning comparisons they should lose until they are re-embedded.
+ * It spends one embedding request per 64 chunks and prints the per-item
+ * before/after row counts.
+ *
  * `--seed` is what makes a calibration reproducible by someone who does not have
  * the owner's account: one account, one import, one scan, one probe, then the
  * account is removed through the app's own deletion flow (US-6), so the run
@@ -55,6 +64,7 @@ const BASE_URL = flag('base-url', process.env.E2E_BASE_URL ?? 'http://localhost:
 const SEED_FILE = flag('seed');
 const APPLICATION = flag('application');
 const KEEP = has('keep');
+const REINDEX = has('reindex');
 
 if (!SEED_FILE && !APPLICATION) {
   console.error(
@@ -138,6 +148,31 @@ async function deleteAccount(page) {
   console.log('seed: throwaway account deleted through the app (US-6)');
 }
 
+/** POST /api/dev/reindex and print what it changed, per item. */
+async function reindex(page) {
+  const res = await page.request.post(`${BASE_URL}/api/dev/reindex`);
+  const body = await res.json();
+  if (res.status() !== 200) {
+    throw new Error(`reindex failed: ${res.status()} ${JSON.stringify(body)}`);
+  }
+  console.log('');
+  console.log(
+    `reindex: chunker floor ${body.chunker.floor} / target ${body.chunker.target} / ` +
+      `hard max ${body.chunker.hardMax} / cap ${body.chunker.maxChunksPerItem}`,
+  );
+  console.log(
+    `reindex: ${body.careerItems} items, documents ${body.documentsBefore} -> ${body.documentsAfter}, ` +
+      `${body.chunksEmbedded} chunks embedded, ${body.failedWrites} failed writes`,
+  );
+  for (const item of body.items) {
+    console.log(
+      `  ${String(item.before).padStart(3)} -> ${String(item.after).padStart(3)} rows  ` +
+        `${item.written ? ' ' : '!'} ${item.title}`,
+    );
+  }
+  return body;
+}
+
 const pad = (value, width) => String(value).padEnd(width).slice(0, width);
 const num = (value) => (value === null || value === undefined ? '   —  ' : value.toFixed(4));
 
@@ -174,6 +209,26 @@ function report(probe) {
       );
     }
   }
+
+  /**
+   * How often ONE chunk is the best match. A blob chunk resembles everything a
+   * little and wins comparison after comparison, which is invisible in a column
+   * of item titles and obvious in a count of row ids.
+   */
+  const byChunk = new Map();
+  for (const row of rows) {
+    if (!row.best) continue;
+    const seen = byChunk.get(row.best.chunkId) ?? { n: 0, title: row.best.careerItemTitle };
+    seen.n += 1;
+    byChunk.set(row.best.chunkId, seen);
+  }
+  const concentration = [...byChunk.values()].sort((a, b) => b.n - a.n);
+  console.log('');
+  console.log('best-match concentration (one line per winning chunk):');
+  for (const entry of concentration) {
+    console.log(`  ${String(entry.n).padStart(2)} x  ${entry.title}`);
+  }
+  console.log(`  worst case: one chunk won ${concentration[0]?.n ?? 0} of ${rows.length} requirements`);
 
   const bests = rows.map((row) => row.best?.similarity ?? 0).sort((a, b) => a - b);
   const mean = bests.reduce((sum, value) => sum + value, 0) / (bests.length || 1);
@@ -225,6 +280,8 @@ try {
     if (!user || !secret) throw new Error('--application needs --email and --password');
     await signIn(page, user, secret);
   }
+
+  if (REINDEX) await reindex(page);
 
   const res = await page.request.get(
     `${BASE_URL}/api/dev/coverage-probe?applicationId=${applicationId}`,

@@ -21,10 +21,32 @@
 export const MAX_CAREER_ITEMS = 200;
 
 /**
- * Rule B9: at most 500 `documents` rows per user.
+ * Rule B9: at most 4,000 `documents` rows per user — `MAX_CAREER_ITEMS × the
+ * chunker's MAX_CHUNKS_PER_ITEM` (SPEC v2.14). This also stands in for the whole
+ * performance section (module M13).
  *
- * A separate ceiling from the item count, not a derived one: one career item can
- * chunk into several rows, so 200 items do not imply 200 documents. This is also
- * what stands in for the whole performance section (module M13).
+ * It was 500, beside a chunker that produced at most 2 chunks per item
+ * (`200 × 2 = 400 ≤ 500`). Semantic-unit chunking (backlog p3-13) makes a
+ * 4,000-character item ~14 chunks, so 500 would be reached around the 36th item
+ * while B9's only copy still said "Career base limit reached (200 items)" — a
+ * reachable state with no true words, which is the exact failure the original
+ * reconciliation existed to prevent. Raising this number keeps the ITEM ceiling
+ * the binding one, so that sentence stays true.
+ *
+ * WHY THE RELATION IS PINNED BY A TEST rather than by `MAX_CAREER_ITEMS *
+ * MAX_CHUNKS_PER_ITEM` written here: this module and `lib/chunking.ts` must both
+ * stay loadable by a bare `node:test` process, which resolves neither the `@/`
+ * alias nor a relative `.ts` specifier — so importing one into the other would
+ * cost the unit tests that guard both. `tests/unit/chunking.test.mjs` asserts
+ * `MAX_CAREER_ITEMS × MAX_CHUNKS_PER_ITEM ≤ MAX_DOCUMENTS` as an executable
+ * statement instead, which is the same mechanism that has guarded this pair
+ * since v2.10. `ERROR_MESSAGES.DOCUMENT_LIMIT` remains the loud safety net,
+ * because "unreachable through the item cap" is a claim about these constants
+ * and not a law of nature.
+ *
+ * The cost is storage, and it is worth stating plainly: 4,000 rows × a
+ * 1,536-dimension vector is roughly 25 MB for a user who fills the base to the
+ * item cap. That is a real number on a small Postgres instance, and it is the
+ * price of retrieval that can tell one bullet from another.
  */
-export const MAX_DOCUMENTS = 500;
+export const MAX_DOCUMENTS = 4_000;

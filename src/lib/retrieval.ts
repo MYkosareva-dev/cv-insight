@@ -6,6 +6,7 @@ import { chunksForItem, titleOf } from '@/lib/chunking';
 import {
   deleteDocumentsForItem,
   insertDocuments,
+  listDocumentsForItem,
   matchDocuments as matchDocumentsRpc,
   type NewDocument,
 } from '@/lib/db/documents';
@@ -352,6 +353,120 @@ export async function reindexCareerItem(item: IndexableItem): Promise<boolean> {
     });
     return false;
   }
+}
+
+/** What one item's re-index did, for the dev report. */
+export type ReindexedItem = {
+  careerItemId: string;
+  title: string;
+  /** `documents` rows the item had before. */
+  before: number;
+  /** `documents` rows it has now. */
+  after: number;
+  written: boolean;
+};
+
+export type ReindexOutcome = {
+  items: ReindexedItem[];
+  /** Embedding inputs sent — the size of the paid part of the run. */
+  chunksEmbedded: number;
+  /** Items whose WRITE failed after their embeddings had succeeded. */
+  failedWrites: number;
+};
+
+/**
+ * Re-index the caller's WHOLE career base against the current chunker
+ * (SPEC v2.14, backlog p3-13). Dev-only in practice — the one route that calls
+ * it refuses outside development — but the safety properties are the gate's, not
+ * the route's.
+ *
+ * ORDER IS LOAD-BEARING, and here it is stricter than in `reindexCareerItem`:
+ * EVERY item's chunks are embedded FIRST, and nothing is deleted until the last
+ * embedding has come back. `documents` is select/insert/delete with no UPDATE
+ * policy (CLAUDE.md, Embeddings), so re-indexing is delete-then-insert and the
+ * old rows are the only copy of a working index. Embedding item by item and
+ * writing as it goes would mean a failure on item 40 of 200 leaves 39 items on
+ * the new chunking, one item with nothing at all, and 160 on the old — a base
+ * that reports gaps for content it holds. With this order an embedding failure
+ * changes NOTHING: the run throws before a single delete and the old index is
+ * still there.
+ *
+ * The write phase is per item and each item is delete-then-insert, so a failure
+ * there can still leave one item unindexed. That window is DB-only (no paid
+ * call, no network to a third party) and it is reported per item rather than
+ * summarised, because "39 of 40 items are searchable" is a sentence the caller
+ * has to be able to say.
+ *
+ * No `userId` parameter, by design: `getUser()` runs here and the id comes from
+ * the session. An id argument would be a way to re-index someone else's base
+ * from a route that forgot to check — the defect the phase-2 review found in
+ * this module's other two exported indexers.
+ */
+export async function reindexAllCareerItems(items: IndexableItem[]): Promise<ReindexOutcome> {
+  const user = await requireUser();
+
+  const groups = items
+    .map((item) => ({ item, chunks: chunksForItem(item.title, item.content) }))
+    .filter((group) => group.chunks.length > 0);
+
+  // PHASE 1 — embed everything. A throw here reaches the caller with the old
+  // index untouched, which is the whole point of doing it first.
+  const embedded: { item: IndexableItem; chunks: string[]; vectors: number[][] }[] = [];
+  for (const group of groups) {
+    const vectors = await embedFor(user.id, group.chunks, 'embed');
+    if (vectors.length !== group.chunks.length) {
+      // Mis-aligned vectors would store one bullet's embedding against another
+      // bullet's text — a silently wrong index, which is worse than none.
+      throw new AiUnavailableError(ERROR_MESSAGES.AI_UNAVAILABLE);
+    }
+    embedded.push({ ...group, vectors });
+  }
+
+  // PHASE 2 — swap the rows. DB only from here.
+  const results: ReindexedItem[] = [];
+  let failedWrites = 0;
+  for (const { item, chunks, vectors } of embedded) {
+    let before = 0;
+    try {
+      before = (await listDocumentsForItem(item.id)).length;
+      await deleteDocumentsForItem(item.id);
+      await insertDocuments(
+        user.id,
+        chunks.map((content, i) => ({
+          career_item_id: item.id,
+          content,
+          embedding: vectors[i]!,
+        })),
+      );
+      results.push({
+        careerItemId: item.id,
+        title: item.title,
+        before,
+        after: chunks.length,
+        written: true,
+      });
+    } catch (err) {
+      failedWrites += 1;
+      // Metadata only — never the chunk text, never the item content.
+      console.error('[retrieval] re-index write failed for one item', {
+        chunks: chunks.length,
+        name: err instanceof Error ? err.name : typeof err,
+      });
+      results.push({
+        careerItemId: item.id,
+        title: item.title,
+        before,
+        after: 0,
+        written: false,
+      });
+    }
+  }
+
+  return {
+    items: results,
+    chunksEmbedded: embedded.reduce((sum, group) => sum + group.chunks.length, 0),
+    failedWrites,
+  };
 }
 
 /**

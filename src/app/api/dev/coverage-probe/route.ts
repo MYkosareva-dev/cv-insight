@@ -151,7 +151,13 @@ export async function GET(request: Request) {
           .sort((a, b) => b.similarity - a.similarity)
           .slice(0, PROBE_MATCH_COUNT)
           .map((chunk) => ({
-            // Title and score only. Never `chunk.content`.
+            // Title, row id and score only. Never `chunk.content`.
+            //
+            // The id is the `documents` row's own id, and it is what makes chunk
+            // CONCENTRATION measurable: with one chunk per item a blob wins many
+            // requirements at once, and counting item titles cannot show that
+            // while counting rows can. It identifies a row, not its text.
+            chunkId: chunk.id,
             careerItemTitle: titleOf(chunk.content),
             similarity: chunk.similarity,
             normalized: normalizeSimilarity(chunk.similarity),

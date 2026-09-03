@@ -1,5 +1,14 @@
 # Coverage thresholds — calibration note (2026-09-03)
 
+> Two parts, in the order they were measured. **Part 1** derived the thresholds
+> against the chunker that stored one ~2,000-character blob per career item.
+> **Part 2** is the semantic-chunking intervention (backlog p3-13) and re-measures
+> the same case against it. Part 1's numbers are deliberately NOT overwritten:
+> the before/after pair is the evidence that the intervention did what it did,
+> and that it did not do what it could not.
+
+# Part 1 — deriving the thresholds (blob chunking)
+
 **This is a calibration NOTE, not a benchmark.** It rests on **seven** labeled
 requirements from **one** scan of **one** posting against **one** career base.
 Seven points can show that a threshold is in the wrong place — which is what they
@@ -224,3 +233,202 @@ calibrated against blob-sized chunks. Recorded as backlog `p3-13`.
 
 Until then these thresholds are calibrated for the chunking the app actually
 ships, which is the honest pairing.
+
+---
+
+# Part 2 — semantic chunking (2026-09-03, backlog p3-13)
+
+Everything above stays as recorded: those numbers were measured against
+~2,000-character blob chunks and they are the "before" half of this section. The
+thresholds derived from them are the ones the app shipped when the owner found
+the defect below, which is what makes the comparison worth keeping.
+
+## Why the chunker changed
+
+Owner testing on the recalibrated build: **four of five Covered rows attributed
+to one blob chunk**, and among them
+
+- *"Proficient with MS Office or Google Suite"* — Covered,
+- *"Experience with annotation tools such as Labelbox or Supervisely"* — Covered,
+
+against a career base that contains none of MS Office, Google Suite, Labelbox or
+Supervisely. The earlier recalibration had traded false negatives for false
+positives, and the owner's diagnosis was that no threshold can fix it: a chunk
+holding eight claims resembles every requirement a little and therefore wins any
+comparison.
+
+`src/lib/chunking.ts` now splits a career item into semantic units — one chunk
+per bullet, prose split at sentence boundaries, target 80–300 characters, units
+under the floor merged with a neighbour, sentences over 600 characters split on
+word boundaries. `MAX_CHUNKS_PER_ITEM` went 2 → 20 and `MAX_DOCUMENTS` 500 →
+4,000 to keep rule B9's item ceiling the binding one.
+
+## The case, reproducible
+
+`docs/eval/calibration-case-hiredbuddy.json` — the Mira persona base against the
+Hiredbuddy Data Annotator posting, carrying the three requirement lines the DoD
+names verbatim. Run it with a dev server up:
+
+```
+node scripts/coverage-probe.mjs --seed docs/eval/calibration-case-hiredbuddy.json --reindex
+```
+
+Both halves below are seeded runs: a throwaway account, one import, one scan, one
+probe, then the account is deleted through the app's own flow.
+
+## Before and after, same case, same posting
+
+| # | requirement | before (blob) | after (semantic) | Δ |
+|---|---|---|---|---|
+| 1 | 0-2 years of experience in data entry, data annotation, or similar role | 0.4244 · Data Quality Specialist | 0.4002 · Data Quality Specialist | −0.024 |
+| 2 | **Proficient with MS Office or Google Suite** | 0.4149 · Skills | **0.4438 · Skills** | **+0.029** |
+| 3 | **Experience with annotation tools such as Labelbox or Supervisely** | 0.4280 · Skills | **0.4587 · Skills** | **+0.031** |
+| 4 | Excellent attention to detail and patience for repetitive work | 0.3986 · Data Quality Specialist | 0.4149 · Data Quality Specialist | +0.016 |
+| 5 | Good written English; a second language is a plus | 0.3983 · Skills | 0.3813 · Skills | −0.017 |
+| 6 | Reliable internet connection and quiet place to work from home | 0.1653 · Data Quality Specialist | 0.1916 · Data Quality Specialist | +0.026 |
+| 7 | Basic Python for small data clean-up tasks | 0.3629 · Data Quality Specialist | 0.3791 · Data Quality Specialist | +0.016 |
+| 8 | Any exposure to machine-learning projects | 0.3614 · Data Quality Specialist | 0.3481 · Data Quality Specialist | −0.013 |
+
+Distributions:
+
+```
+before   0.1653  0.3614  0.3629  0.3983  0.3986  0.4149  0.4244  0.4280
+         n=8  min 0.1653  median 0.3986  mean 0.3692  max 0.4280   score 54
+
+after    0.1916  0.3481  0.3791  0.3813  0.4002  0.4149  0.4438  0.4587
+         n=8  min 0.1916  median 0.4002  mean 0.3772  max 0.4587   score 54
+```
+
+Rows per base: **5 documents → 9 documents** for the same five career items
+(3 + 2 + 1 + 2 + 1). Match Rate: **54 → 54** — the flips cancelled, which is
+itself worth knowing: the score is not the instrument that reveals this defect.
+
+## What the intervention fixed, with the number
+
+**Best-match concentration, which was the owner's diagnosis.** Counting the
+`documents` row that actually won each requirement, not the item it belongs to:
+
+| | before | after |
+|---|---|---|
+| distinct chunks winning at least one requirement | **2** | **4** |
+| most requirements won by ONE chunk | **5 of 8** | **3 of 8** |
+| most won by one chunk, counting only requirements that MATCHED | **4** | **2** |
+
+The third row is the honest form of the DoD's "no requirement takes its best
+match from the same chunk more than twice": the after-run's third win is
+requirement 6, the reliable-internet line, whose best match is 0.1916 — a chunk
+"winning" a comparison in which nothing matched at all. Among the requirements
+that cleared the threshold, no chunk wins more than twice. **DoD item 4: met.**
+
+**Attribution.** A generic skills enumeration no longer answers experience
+requirements: requirement 1 attributes to a role item, not the skills list
+(**DoD item 3, in the form this base can express** — the persona has two
+annotation-adjacent roles, and the Data Quality Specialist item is the one whose
+text is about correcting labelled data, so it is the better match than the AI
+Prompt Evaluator item the DoD names).
+
+**True positives rose.** On the original calibration case, "Comfortable working
+with spreadsheets and simple web tools" went 0.3819 → 0.4709 against the same
+base: a requirement that one line of the resume answers literally now matches
+that line instead of the paragraph containing it.
+
+## What it did NOT fix, and why no threshold will
+
+**DoD items 1 and 2 are NOT met.** Both false positives are still Covered, and
+both got STRONGER:
+
+- *Proficient with MS Office or Google Suite* — 0.4149 → **0.4438**
+- *Experience with annotation tools such as Labelbox or Supervisely* — 0.4280 → **0.4587**
+
+They are now the **top two similarities of the eight**. No threshold can exclude
+them without excluding every true positive underneath, so the same argument that
+condemned 0.60 condemns any cut that would fix these.
+
+**Why finer chunks made them worse, measured rather than guessed.** The premise
+was that these requirements win because a blob resembles everything. That is true
+of concentration and false of these two rows. Splitting the skills enumeration
+did not dilute the match — it CONCENTRATED it: the chunk that used to hold twelve
+skills now holds four, so the chunk nearest to "office software" is purer office
+software than before, and the chunk nearest to "annotation tooling" is purer
+annotation tooling. Cosine similarity between short texts measures TOPICAL
+resemblance, and both requirements are topically adjacent to work the base really
+does contain (spreadsheets; annotation quality assurance). What distinguishes
+them from a real match is LEXICAL: the specific proper nouns — MS Office, Google
+Suite, Labelbox, Supervisely — appear nowhere in the base. Chunk size cannot
+carry that distinction, at any size.
+
+**The app already holds the missing evidence, one field away.** The same
+`coverage` payload that calls those two requirements Covered also stores, from
+rule B1a:
+
+```
+'MS Office'     inResume=0  inVacancy=1
+'Google Suite'  inResume=0  inVacancy=1
+'Labelbox'      inResume=0  inVacancy=1
+'Supervisely'   inResume=0  inVacancy=1
+```
+
+So the result screen states both things at once: the keywords table says the
+resume never mentions Labelbox, and the coverage table says the Labelbox
+requirement is Covered. Reconciling them — refusing `covered` for a requirement
+whose own literal terms are absent, or introducing the third status those two
+signals together can support — is a change to rule B1's coverage DECISION and to
+keyword matching, which this task placed out of scope. Recorded as **p3-17**, and
+it is the next thing to do about coverage accuracy; chunking was the necessary
+half, not the sufficient one.
+
+## Thresholds after chunking: unchanged, and why that is the finding
+
+The original calibration case re-run on the new chunker, against the labels
+recorded in Part 1. The matched CHUNK changed for one requirement (the Label
+Studio line moved from the skills list to the Data Quality Specialist role) but
+no label changes: the evidence behind each label is the same text, differently
+divided.
+
+```
+label      before            after
+gap        0.1759            0.2084
+partial    0.3492            0.3577
+covered    0.3629            0.3701
+covered    0.3707            0.3791
+covered    0.3819            0.4709
+covered    0.4245            0.4002
+partial    0.4319            0.4537     <- still above three of four covered
+```
+
+- Highest cut admitting all four labeled-covered requirements: **0.3701** (was
+  0.3629). So the best cut moved from 0.36 to **0.37** — one hundredth.
+- Cost of that cut, unchanged: 4 of 4 covered admitted, **1 of 2 partials
+  admitted** (the Label Studio line, again), 0 of 1 gaps.
+- Margin between the lowest covered and the highest excluded partial:
+  **0.0137 before → 0.0124 after.**
+
+**Asked directly: do the covered and partial bands now separate? No.** They
+overlap by the same requirement they overlapped by before, and the margin is
+0.0013 NARROWER rather than wider. One hundredth of movement in the optimal cut,
+on seven labeled points, with ±0.0007 of run-to-run embedding jitter, is not a
+recalibration — it is noise, and chasing it would be the thing this file was
+created to refuse. **`SIMILARITY_FLOOR` 0.20, `COVERAGE_THRESHOLD` 0.36 and the
+derived span therefore stay exactly as they were.**
+
+That is the honest summary of the intervention: chunking fixed what chunk size
+can fix — which chunk answers a requirement, and how many requirements one chunk
+can answer — and left the threshold arithmetic where it was, because the
+remaining error is not a size problem.
+
+## Cost of the re-index
+
+Measured on the seeded runs: **9 chunks embedded per base, 1 embedding request,
+`cost_usd_micro` 9** — for five career items. Per `llm_calls`, the whole
+before/after exercise (five seeded runs: two Hiredbuddy before/after, one
+Hiredbuddy re-index, one original case, plus the intermediate run) cost about
+**32,000 micro-USD ≈ $0.032**, almost all of it the `import_resume` and
+`parse_vacancy` chat calls at ~6,350 micro-USD per seeded run; the embedding half
+is 8–9 micro-USD per run.
+
+Extrapolated for a real base, the number that matters for a re-index: embedding
+is priced per token, and chunking changes how text is DIVIDED, not how much of it
+there is — the title prefix repeated per chunk is the only addition. A 200-item
+base at the chunk cap is ~4,000 chunks, ~63 requests, on the order of **$0.01**.
+Re-indexing is cheap; it is the writes, not the embeddings, that need the
+ordering guarantee.
