@@ -80,14 +80,38 @@ function sandbox() {
   for (const sub of ['scripts', 'src', 'supabase', 'docs', 'tests']) {
     cpSync(path.join(ROOT, sub), path.join(dir, sub), { recursive: true });
   }
-  for (const file of ['.env.example', 'package.json', 'README.md']) {
-    cpSync(path.join(ROOT, file), path.join(dir, file));
-  }
-  // next.config.ts is read by R8; absent is fine, present must be honest.
-  try {
-    cpSync(path.join(ROOT, 'next.config.ts'), path.join(dir, 'next.config.ts'));
-  } catch {
-    // Not present in every tree; R8 simply has nothing to scan.
+  /**
+   * Root files, and the list is longer than it looks like it needs to be.
+   *
+   * R13 resolves a backticked path against the tree, and its DOC_ROOT_FILES
+   * pattern deliberately covers `SPEC.`, `CLAUDE.`, `README.`, `package.`,
+   * `next.config.`, `eslint.config.` and `tsconfig.`. So a docs/ page that cites
+   * `SPEC.md` — which the shelf does constantly, since SPEC is the source of
+   * truth — resolves in the real tree and FAILED here, because the sandbox did
+   * not copy it. Every case that expects a green sandbox broke at once, and the
+   * defect was in this fixture rather than in the tree it was judging.
+   *
+   * The lesson generalises: this sandbox is only useful while it is a REAL tree
+   * for every path any rule can reach. Copy each root file R13 knows how to
+   * resolve, and tolerate absence so the fixture never fails on a file a future
+   * tree happens not to have.
+   */
+  for (const file of [
+    '.env.example',
+    'package.json',
+    'README.md',
+    'SPEC.md',
+    'CLAUDE.md',
+    'tsconfig.json',
+    'eslint.config.mjs',
+    // Read by R8; absent is fine, present must be honest.
+    'next.config.ts',
+  ]) {
+    try {
+      cpSync(path.join(ROOT, file), path.join(dir, file));
+    } catch {
+      // Not present in every tree; the rules that read it have nothing to scan.
+    }
   }
   return dir;
 }
