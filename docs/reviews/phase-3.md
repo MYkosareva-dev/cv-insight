@@ -585,3 +585,129 @@ background task through the session runner killed the `npm run dev` wrapper whil
 leaving its `next dev` child alive, which is what produced the orphan in the first
 place. A runner-level stop is not always a process-tree stop, and the PID of the
 child is the thing worth recording.
+
+---
+
+# Addendum 2 — the lexical evidence gate (2026-09-03, SPEC v2.15, backlog p3-17)
+
+The last change on this branch, and the second half of the answer to the owner's
+coverage-accuracy findings. Commits `d3dbc7c`, `1f3ae01`.
+
+## What it does, and the measurement that chose the mechanism
+
+Rounds v2.13 and v2.14 established, by measurement rather than argument, that two
+requirements were reported **Covered** against a career base containing none of
+their names — *"Proficient with MS Office or Google Suite"* and *"Experience with
+annotation tools such as Labelbox or Supervisely"* — and that:
+
+- they were the **top two similarities of eight**, so no threshold could exclude
+  them without excluding every true positive; and
+- **finer chunking made them stronger** (0.4149 → 0.4438 and 0.4280 → 0.4587),
+  because sharper chunks concentrate a topical match rather than diluting it.
+
+That is what "cosine similarity is topical" means in practice: the model is right
+that "worked on data labelling" and "worked in Labelbox" are about the same
+thing, and the coverage decision was asking a different question. The
+distinguishing evidence is a NAME, and the app already had it — the same
+`coverage` payload carried `'Labelbox' inResume=0` next to a row reading Covered.
+
+So P1 now classifies each requirement by the evidence it demands — `tool`,
+`credential`, `general` — and copies the verbatim `terms` that would prove it
+(any-of). Rule B1 requires, for the first two kinds only, that one term be
+literally present in the **career base**; absent, the row is a Gap whatever the
+similarity, and the entry stores the missing term so Block E can say why. No
+extra model call — the fields ride in the existing P1 response.
+
+## Result on the seeded case
+
+`docs/eval/coverage-thresholds.md` Part 3 carries the full table. In summary:
+**5 general, 3 tool, 0 credential**; both false positives are Gaps naming their
+term ("MS Office", "Labelbox"); **no `general` requirement changed status** (three
+covered stayed covered, two gaps stayed gaps); and the one `tool` requirement the
+base DOES satisfy — Python — stayed Covered, which is the difference between a
+gate that discriminates and one that distrusts tool requirements.
+
+Match Rate moved 54 → 57, and not because of the gate: rule B1's S term is a
+function of similarity, not of status, and is identical at 0.8333 across both
+runs. The whole difference is K, and the reason is a side effect worth recording:
+the first version of the P1 edit narrowed the top-level keywords list from 10
+terms to 5, halving K's denominator. No test caught it and nothing failed — a
+second measured run is what showed the number was wrong, and the prompt now says
+the keywords list and the per-requirement terms are separate jobs.
+
+## THE ai-architect PASS ON THIS DIFF WAS NOT OBTAINED
+
+Stated plainly because the branch goes to PR next and this is a gate CLAUDE.md
+requires on every phase.
+
+Two `ai-architect` subagents were launched against this diff, with different
+prompts (one long and specific, one under 900 words). Both ran for tens of
+minutes, wrote nothing to their transcripts beyond a first line, and were stopped
+after repeated checks showed no progress. That is an environment failure in this
+session rather than a verdict of any kind: the same subagent completed normally
+against the v2.14 diff earlier in the same session and produced fifteen findings,
+five of which were fixed on the spot.
+
+**So this diff has had no independent architecture review, and the owner should
+treat that as an open gate on the PR, not as a clean pass.** What follows is my
+own walk of the ai-architect checklist — useful, but not the same thing, and
+labelled accordingly.
+
+### Self-review against the gate's own checklist
+
+- **Chokepoints.** No new OpenRouter call site; the gate is pure arithmetic over
+  text the route already holds. `.from(` is unchanged (the extra base read goes
+  through `listCareerItems`). `check.mjs` 13/13.
+- **The false-gap paths**, which are the ones that matter, because a false gap is
+  the error this round was told to avoid:
+  - *bad classification* → the prompt states the asymmetry in those words and
+    `parsedVacancySchema` defaults a missing or unknown `evidence` to `general`;
+  - *empty or whitespace `terms`* → trimmed and dropped by the schema, and
+    `missingLexicalTerm` withholds the gate entirely on an empty array;
+  - *a vacancy parsed before v2.15* → both fields optional, both read as
+    `general`, so the decision is exactly the pre-gate one;
+  - *a re-run of an old draft* → `parseAndScore` always re-parses, so a re-run
+    gets fresh fields rather than a stale classification;
+  - *an empty career base on a pasted scan* → `baseText` is empty, but nothing
+    can clear the similarity threshold against zero chunks, so the gate never
+    decides anything there.
+  - **The path that IS open: term-form variance.** The gate matches forms, so a
+    base saying "Microsoft Office" does not satisfy a vacancy saying "MS Office".
+    Casing is handled; spacing, punctuation and abbreviation are not. Filed as
+    `p3-23` (MAJOR) with the reason it cannot be fixed by loosening the match —
+    substring matching would let "SQL" satisfy "MySQL".
+- **Corpus.** `baseText` is the career base on every path, which is the corpus the
+  retrieval searched and therefore the one the coverage decision is about.
+  Searching the pasted source instead would refuse a tool the base really holds.
+  One extra `listCareerItems()` on the paste path; none on the career-base path,
+  where the scored text and the corpus are the same string.
+- **Return-type change.** `coverageStatusFor` now returns `{ status, missingTerm }`;
+  the only production caller is the scan route, and `tsc` is clean. The gate runs
+  after the similarity test and before the source-versus-base split, so it can
+  only ever turn a covered row into a gap — a requirement the base does not name
+  is not a hidden match the chosen resume is missing.
+- **The duplicated `EvidenceKind`** (in `lib/scoring.ts` and `lib/db/types.ts`) is
+  deliberate and commented: `scoring.ts` must stay pure and loadable by bare
+  `node:test`, so it cannot import the `server-only` DAL types.
+- **Two smaller findings** filed rather than fixed: `p3-24` (the keywords table
+  counts against the scored source while the gate reads the base, so on a pasted
+  scan the two tables can look contradictory while both are true) and `p3-25`
+  (nothing asserts the shape of `terms` beyond its bounds).
+
+## Gates at hand-over
+
+`check` 13/13 · 174 unit tests · `tsc` and `eslint` clean · `npm run build` clean,
+17/17 pages · Playwright **24 passed, 1 skipped**, and the skipped case green on
+the broken-key server (`docs/eval/phase-3-e2e-run.txt`, re-run at `d3dbc7c`).
+
+## Open for the owner, before or with the PR
+
+1. **`ai-architect` on `d3dbc7c`** — not obtained, see above. The one gate this
+   branch is missing.
+2. **`eu-compliance-reviewer`** — still not run on the Phase-2 owner-feedback
+   round or on Phase 3, both of which touch personal data.
+3. **`nextjs-security`** on the phase's route handlers, including the two
+   `/api/dev/*` instruments.
+4. **Block H item 9** — the dev-route production fence needs its owner-run
+   verification; `docs/eval/dev-routes-production-evidence.md` ships as a template
+   that says so.
