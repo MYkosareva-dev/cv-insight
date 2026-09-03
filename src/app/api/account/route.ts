@@ -22,7 +22,8 @@ import { createClient } from '@/lib/supabase/server';
  *   3. HARD delete. `deleteUser(id)` defaults to `shouldSoftDelete: false` and
  *      it must stay that way — a soft delete keeps the auth.users row, fires no
  *      cascades, and would silently turn GDPR erasure into a no-op.
- *   4. Owned rows in all six tables follow via FK ON DELETE CASCADE. Cascades
+ *   4. Owned rows in all seven tables follow via FK ON DELETE CASCADE (the six in
+ *      001 plus `imports` from 003). Cascades
  *      run as the table owner with RLS bypassed, so the deliberately missing
  *      DELETE policies do not block them. (Adding `force row level security` to
  *      a future migration WOULD break this.)

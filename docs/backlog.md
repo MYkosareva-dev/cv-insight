@@ -10,11 +10,13 @@ stays the worklist.
 
 ## Phase 2 — from `docs/reviews/phase-2.md` (2026-09-03)
 
-Reviewer note: M-1 and M-2 are the two the reviewer would have promoted to blocker.
-They are first for that reason.
+> **M-1 and M-2 were CLOSED in the owner-feedback round** (commit "feat(career):
+> named imports with provenance, and a duplicate guard") and are struck from this
+> list rather than left as instructions to redo finished work. M-1's `setNotice`
+> now runs on both branches; M-2's metered buttons are locked by a ref set
+> synchronously, since a `disabled` prop cannot guard two clicks that fire before
+> React re-renders. Their remaining EVIDENCE gaps are e-2 and e-3 below.
 
-- **MAJOR M-1** — `src/components/career/import-resume-dialog.tsx` sets `notice` only on the zero-items branch, so `CAREER.truncated` never renders and a >20,000-character CV silently imports its first part; call `setNotice(payload.notice)` unconditionally in `receive` and assert it in `tests/e2e/career.spec.ts`.
-- **MAJOR M-2** — `src/components/career/career-item-card.tsx` awaits the PATCH outside `startTransition`, so `pending` is never true: Block E's loading state is missing and a double-click buys two paid re-embeds; use the explicit `useState` pending the import dialog already uses, keeping the transition for `router.refresh()` only.
 - **MAJOR M-3** — the `[id]` route segment is unvalidated, so a non-UUID id reaches Postgres and returns 500 where Block D mandates 404; parse it with `z.string().uuid()` after `requireApiUser()` in both verbs of `src/app/api/career/items/` and throw `NotFoundError` on failure.
 - **MAJOR M-4** — rule B9 says "block import", but `src/app/api/career/import/route.ts` checks no cap and spends an `import_resume` call before the save path refuses; count items after `requireApiUser()` and before the model call, and disable the trigger at the cap using the `itemCount` the dialog already receives.
 - **MINOR m-1** — SPEC's declared B7 bound says the overshoot is zero, but a step that spends its second retry request commits two `llm_calls` rows against one cap check; restate as "zero per user-initiated step, at most +1 per step that retries" in `SPEC.md` and in the `CallLedger` doc block in `src/lib/chat.ts`.
@@ -40,3 +42,20 @@ parked, not a defect found in review.
 - **FEATURE** — near-duplicate detection on the review screen: flag proposed items whose embedding similarity to a stored item is >= 0.95 and let the user decide, rather than silently keeping both. Deliberately not what `src/lib/dedupe.ts` does — that guard is exact-match only, because a threshold that discards without asking is the one failure mode this app cannot see.
 - **FEATURE** — a `summary` career-item type, pinned first within its own source, so a resume's opening profile paragraph reads as a summary rather than as another role; needs a `career_items.type` CHECK change and an ordering rule inside each group.
 - **FEATURE** — an inline import panel on the empty state, so a first-time user starts pasting without opening a dialog; the empty state currently renders the same dialog trigger as the header.
+
+## Phase 2 owner-feedback round — from the ai-architect re-review (2026-09-03)
+
+Its BLOCKER (the /privacy data-category list) and the factual drift my own
+migration caused are fixed on this branch. These are the rest. Recorded in
+`docs/reviews/phase-2.md` under the addendum.
+
+- **MAJOR a-1** — a changed `period` is silently discarded: `period` is correctly out of the dedup key, but `dedupeItems` drops the whole incoming item and nothing updates the stored row, so a newer resume's "01/2025 – 08/2026" never replaces a stored "01/2025 – present" and the user sees only a skipped count with no names; name the skipped items on the saved step so the one that moved can be edited.
+- **MAJOR e-1** — the duplicate e2e asserts `saved === 0`, which holds only while the primary model serves at temperature 0; the bound is now declared in `src/lib/dedupe.ts` and SPEC, but the assertion still reads as a guarantee the guard cannot give — assert the contract (`skipped > 0`) alongside the DoD number, or drive the case through a stub.
+- **MAJOR e-2** — the M-2 fix on the Edit save (`src/components/career/career-item-card.tsx`) has no test: the request-count case double-clicks the IMPORT Save instead, so the button the review actually flagged is unverified; add a case that double-clicks Edit → Save and asserts exactly one PATCH.
+- **MAJOR e-3** — `CAREER.truncated` still has no evidence of reaching a screen; the code fix landed but the >20,000-character paste assertion promised in the phase-2 report was never written.
+- **MAJOR e-4** — the target-role half of the request is unverified end to end: `importMetaSchema`'s blank-to-null transform has no unit test and no e2e import fills the field, so `CAREER.fromImport`'s two-part branch has never rendered in a test.
+- **MINOR a-2** — the B9 headroom alert in `src/components/career/import-resume-dialog.tsx` counts pre-dedup selections, so a mostly-duplicate batch can warn about a limit the server will never reach; word it as headroom or show it after the server answers.
+- **MINOR a-3** — `insertImport` then `insertCareerItems` is two statements with no transaction, so a failed item insert leaves a run row that no policy can delete, advancing the count and letting a retry create a second row with the same name; declare the race or look up an empty same-name run first.
+- **MINOR a-4** — the "Resume N" default is derived from a COUNT and never from stored names, so it disagrees with storage after any rename and two runs can both render `from: Resume 2`; `imports.name` has no uniqueness, so disambiguate the chip by date on collision or declare collisions accepted.
+- **MINOR a-5** — the dedup guard is not idempotent under concurrency: two saves in flight both read the signatures before either inserts, and no unique constraint backs the key, so exact duplicates can still land; same class as the declared B9 race, so declare it in the route docblock.
+- **MINOR a-6** — `src/components/career/career-item-card.tsx` seeds Edit state once and never re-keys, so cancelling and reopening shows the abandoned draft and Save then buys a re-embed for an intention the user withdrew; `key={item.updated_at}` on the dialog. (Supersedes NIT n-2, which the architect argues is above NIT now that this component's spend path was reworked.)

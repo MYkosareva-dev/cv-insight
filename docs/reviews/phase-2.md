@@ -122,3 +122,83 @@ Recording this because it is the part a later reviewer should not re-litigate.
 - **The e2e spec builds its own PDFs with correct xref offsets** rather than committing binaries, so the no-text-layer fixture is provably a PDF with no text operators instead of a file someone hopes is one — and it states plainly what its indexing assertion can and cannot see rather than overclaiming.
 
 **Checked:** secrets ✓ · RLS ✓ (unchanged, least-privilege intact) · chokepoints ✓ (`check.mjs` 13/13; gate *invariant* ✗ — see B-1) · zod ✓ (every new API input and the P4 JSON output) · llm_calls logging ✓ (success, failure, and billed-but-empty, with real usage-derived micro-USD and `fallback_used`)
+
+---
+
+# Addendum — owner-feedback round, ai-architect re-review (2026-09-03)
+
+Branch `phase-2-career-base`, reviewing the code as built for SPEC v2.11: the
+`imports` table and provenance, the exact-duplicate guard, the named-import flow,
+and the M-2 in-flight locks. Two owner-reported defects from first live use were
+the trigger — re-importing the same text produced exact duplicates, and career
+items carried no provenance.
+
+## Verdict
+
+**REVISE** — one BLOCKER (a /privacy data-category omission), 7 majors, 7 minors.
+
+The gate's own summary: *"Chokepoints, the DAL boundary and the new table's RLS
+story are the strongest part of this round: `imports` ships with all four required
+parts (DAL `src/lib/db/imports.ts`, `DAL_FILES` line at `scripts/check.mjs:91`,
+S/I/U policies at `supabase/migrations/003_imports.sql:41-44`, SPEC Block C entry),
+no new file touches the connection, and nothing new reads a secret. The defects
+below are elsewhere: one user-facing privacy claim, several undeclared consequences
+of the dedup key, and evidence that tests a different button than the one that was
+fixed."*
+
+On the four design questions it was asked:
+
+- **The dedup guard** is correctly ordered — dedup → B9 → `imports` row → items,
+  server-side against RLS-scoped rows, first-occurrence-wins, in-batch and stored
+  both covered. Its flaws are that it discards a moved `period` invisibly, that it
+  depends on model determinism it cannot guarantee, and that its skips are counted
+  without being named.
+- **The provenance model is sound.** `ON DELETE SET NULL` plus no DELETE policy
+  plus a nullable column plus chip-only-when-set, and `patchCareerItemSchema`
+  gives the client no vocabulary for `import_id` — so no item can claim a source
+  it did not come from. The soft spot is non-unique run names.
+- **"Resume N"** cannot skip through the arithmetic, but it can through an
+  orphaned run row, and it disagrees with storage after any rename.
+- **The ref locks are the right mechanism** and are sufficient against a double
+  click on both buttons. The remaining unasked spend is the cancelled-edit draft;
+  cross-tab replay is unguarded server-side.
+- **No CLAUDE.md chokepoint, gate, embedding, retrieval, DAL, RLS or check.mjs
+  rule is broken by this diff.** The violations are the privacy disclosure and
+  the evidence rules.
+
+## Disposition
+
+Fixed on this branch:
+
+- **BLOCKER** — `/privacy` listed what is stored as though the list were
+  exhaustive and omitted the category this round created: the run name and target
+  role the user types, i.e. a stated job aspiration, stored per account. Added to
+  the page and to SPEC's `/privacy` content enumeration. This one had to be fixed
+  rather than filed: it is a false statement about personal data, on a page whose
+  Phase-1 scope is "accurate now".
+- The erasure story counted **six owned tables while seven exist** — US-6's
+  checkbox, edge case G1, Block H item 6's RLS matrix, the account-deletion
+  route's comment and `lib/db/types.ts`. My migration created the seventh and
+  updated none of them.
+- The **dedup guard's real bound is now declared** in `lib/dedupe.ts` and SPEC:
+  the keys are built from model output, not from the document, so re-importing one
+  file is an exact duplicate only while the model re-emits identical prose —
+  `temperature: 0` makes that normal, not guaranteed, and a fallback-served
+  re-parse can defeat it. The guard also makes a save retry idempotent, which was
+  worth writing down.
+- **Dead code removed** — `countImports()` was unused and its comment described a
+  mechanism the app does not use.
+- **Backlog hygiene** — M-1 and M-2 were closed by this round but still listed as
+  open with prescriptions that no longer matched the code.
+
+Backlogged as `a-1` … `a-6` and `e-1` … `e-4` in `docs/backlog.md`: the silently
+discarded `period` change, the four evidence gaps (duplicate-case assertion, the
+Edit-save lock, `CAREER.truncated`, target-role end to end), the pre-dedup B9
+headroom warning, the non-transactional import+items sequence, run-name
+collisions, and the concurrent-save race.
+
+## Open owner action
+
+The gate asks for **eu-compliance-reviewer** on this round, since it touches
+personal data. This round's instruction was to run ai-architect only, so it has
+not been run. The /privacy wording is corrected; the review is not done.

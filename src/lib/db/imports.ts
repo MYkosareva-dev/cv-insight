@@ -21,7 +21,9 @@ import type { Import } from '@/lib/db/types';
  * There is also no update function yet. The UPDATE policy exists because
  * renaming and re-targeting a source are legitimate operations; nothing in the
  * app performs one today, and an unused write path is a liability rather than
- * preparation.
+ * preparation. A `countImports()` helper was removed for the same reason: the
+ * page already knows the count from `listImports()`, so it was an unused read
+ * whose comment described a mechanism the app does not use.
  */
 
 export async function listImports(): Promise<Import[]> {
@@ -32,21 +34,6 @@ export async function listImports(): Promise<Import[]> {
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as Import[];
-}
-
-/**
- * How many imports this user already has — the "Resume N" default is `count + 1`.
- *
- * A `head` count, so the name suggestion costs one cheap round trip rather than
- * pulling every row just to measure the list.
- */
-export async function countImports(): Promise<number> {
-  const supabase = await createClient();
-  const { count, error } = await supabase
-    .from('imports')
-    .select('id', { count: 'exact', head: true });
-  if (error) throw error;
-  return count ?? 0;
 }
 
 export type NewImport = Pick<Import, 'name' | 'target_role' | 'source_kind'>;

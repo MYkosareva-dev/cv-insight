@@ -11,6 +11,22 @@
  * The trigger was the owner's first live use: importing the same text twice
  * produced an exact second copy of every item, because nothing compared an
  * incoming item against what was already stored.
+ *
+ * WHAT IT COMPARES, AND THE BOUND THAT FOLLOWS. Both import branches run the
+ * user's text through P4 first, so these keys are built from MODEL OUTPUT, not
+ * from the document. Re-importing one file is therefore an exact duplicate only
+ * while the model re-emits identical prose. `temperature: 0` is what makes that
+ * the normal case, but it is not a guarantee: OpenRouter's `models` fallback
+ * array means a second import served by Gemini Flash instead of Haiku can yield
+ * different wording for the same job, and every item would land again. That is
+ * the owner's original defect, narrowed rather than closed — near-duplicate
+ * detection by embedding similarity is the backlog item that would close it, and
+ * it needs a review step precisely because a threshold that discards without
+ * asking is the failure this app cannot see.
+ *
+ * A second thing the guard buys, worth naming because it is free: a save RETRY
+ * is now idempotent. A commit whose response was lost no longer duplicates the
+ * base when the user clicks again.
  */
 
 /**

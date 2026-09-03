@@ -1,6 +1,6 @@
 import 'server-only';
 
-/** Row shapes for the six tables in supabase/migrations/001_init.sql. */
+/** Row shapes for the seven owned tables: `001_init.sql` plus `imports` from `003_imports.sql`. */
 
 export type CareerItemType =
   | 'role'
