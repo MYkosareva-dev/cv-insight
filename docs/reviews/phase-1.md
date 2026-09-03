@@ -167,4 +167,71 @@ different-unit (`three months`) forms, the anchored-status-line acceptance case,
 and the two minors.
 
 **Gates after the fixes:** `npm run check` 13 rules · `npm test` 79/79 ·
-`npm run build` · `npm run lint` · `npx playwright test` 12/12.
+`npm run build` · `npm run lint`. The Playwright artifact committed alongside this
+round recorded `Commit: 697d828`, which predates the commit that widened the
+backstop — the run did include it, but the artifact could not demonstrate that, so
+no e2e claim is made here. See the follow-up round below, where it was re-run on a
+verifiably clean tree.
+
+---
+
+# Addendum 2 — follow-up review outcomes (J1–J4)
+
+A follow-up review of the fix diff returned **REVISE** with four new majors. All
+four were real and were reproduced against the real `scripts/check.mjs` before
+being acted on. Two of them said the same thing about R12 from different angles,
+and the owner's conclusion was that the regex approach itself had failed rather
+than any particular regex — so `SPEC.md` v2.9 replaced R12 with a two-state
+switch. No rule was added; the rule count stays at 13.
+
+| # | Finding | Outcome | Commit |
+|---|---|---|---|
+| J1 | A retention period still shipped past R12: `{90} days`, `<strong>90</strong> days`, "eighteen months", "2160 hours" all exited 0, and SPEC's absolute wording was therefore untrue | R12 no longer reads prose. `AUDIT_RETENTION_VERIFIED` in `src/lib/copy.ts` is the only switch; the /privacy paragraph is a ternary on it, and the period appears in exactly one branch. All period and vocabulary matching deleted. | `2db4c12`, `97dcf56` |
+| J2 | R13 was blind across 170 lines of the shelf: a backticked glob such as `` `lib/db/*` `` opened a fake block comment that closed at a real `*/` in a later code sample | Markdown is no longer comment-stripped at all — neither `//` nor `/* */` exist there. | `2db4c12` |
+| J3 | The anchored `status: succeeded` predicate rejected every format `psql` actually emits, so only hand-typed text passed — the paper mechanism the rule opposes | Format matching removed. The gate asks only whether the placeholder is gone and the file has substance; the owner pastes whatever the client produced. | `2db4c12`, `97dcf56` |
+| J4 | The Playwright artifact recorded `Commit: 697d828`, which predated the commit that widened the backstop, so it could not show which code ran | Re-run at `97dcf56` with the working tree verifiably clean; the file now records the tree state explicitly. 12/12 in 33.3s. The overstated sentence in Addendum 1 is corrected above. | `a1b2540` |
+
+The two fixture defects flagged alongside J1–J4 are gone with the block they were
+in: the weak guard at `check-rules.test.mjs:174` and the unfailable "anchored
+status line" case both belonged to the scanner-era tests, which were replaced
+wholesale by the four-state cases.
+
+## J2 — what became visible
+
+Lines previously blanked by the fake block comments, and now scanned by R13:
+
+```
+docs/supabase-getuser-vs-getsession.md:  22 lines (43..126)
+docs/supabase-ssr-nextjs-app-router.md: 148 lines (141..344)
+TOTAL newly scanned:                    170 non-empty lines
+```
+
+**Findings in them: none.** R13 passes across the whole shelf. Confirmed the region
+is genuinely scanned rather than merely quiet, by injecting a bogus
+`lib/supabase/env.ts` annotation at three depths of the worst-affected file:
+
+```
+line   5 -> exit 1 (caught)
+line 200 -> exit 1 (caught)   <- inside the formerly blanked range
+line 300 -> exit 1 (caught)   <- inside the formerly blanked range
+```
+
+## R12's four states, as tested
+
+```
+switch ON,  no evidence file          -> FAIL
+switch ON,  template placeholder      -> FAIL
+switch ON,  real psql paste           -> PASS
+switch OFF, no evidence file          -> PASS
+```
+
+Plus a stub-rejection case (a one-word placeholder-free file does not unlock the
+claim) and one asserting the shipped constant is `false` and only the verified
+branch carries a period.
+
+**Gates:** `npm run check` 13 rules · `npm test` 73/73 · `npm run build` ·
+`npm run lint` · `npx playwright test` 12/12 on a clean tree at `97dcf56`.
+
+Remaining review findings not acted on — N2, N3, N5–N11 and the nits from the first
+report, and the minors from the follow-up — are recorded above and go to the
+backlog by the owner's decision.
