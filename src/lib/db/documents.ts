@@ -51,8 +51,23 @@ export type NewDocument = {
   embedding: number[];
 };
 
-export async function insertDocuments(_userId: string, _rows: NewDocument[]): Promise<void> {
-  throw new Error('insertDocuments is a phase-0 stub — implemented with the indexing phase.');
+/**
+ * Insert chunk rows. One statement, so a batch cannot land half-written.
+ *
+ * `userId` is stamped here from the caller's verified user, never taken from a
+ * request body — the insert policy is `auth.uid() = user_id`.
+ *
+ * There is no upsert variant and there must not be one: this table has no UPDATE
+ * policy, so RLS refuses one, and re-embedding is delete-then-insert by design
+ * (CLAUDE.md, Embeddings).
+ */
+export async function insertDocuments(userId: string, rows: NewDocument[]): Promise<void> {
+  if (rows.length === 0) return;
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('documents')
+    .insert(rows.map((row) => ({ ...row, user_id: userId })));
+  if (error) throw error;
 }
 
 /** One row from `match_documents`, in the RPC's own snake_case shape. */
