@@ -27,6 +27,7 @@ import { P1_PARSE_VACANCY, fillPrompt } from '@/lib/prompts';
 import {
   coverageStatusFor,
   keywordCount,
+  literalKeywords,
   matchScore as computeMatchScore,
 } from '@/lib/scoring';
 import { matchDocumentsForTexts, type SearchedOutcome } from '@/lib/retrieval';
@@ -157,7 +158,30 @@ async function parseAndScore(plan: ScanPlan) {
     const vacancy: ParsedVacancy = data;
     await setVacancyParsed(plan.vacancyId, vacancy);
 
-    const keywords: KeywordRow[] = vacancy.keywords.map((keyword) => ({
+    /**
+     * Rule B1a's literal-span guard (SPEC v2.13), applied AFTER Zod and BEFORE
+     * anything counts or renders. A keyword the vacancy does not contain would
+     * render an "In vacancy" count of 0 — the app measuring the absence of a
+     * term it says it found — and would drag K down for a requirement the
+     * posting never made. The drop is recorded, not silent: `keywordsDropped`
+     * rides along in the coverage map, so a parser that starts generalizing is
+     * visible in the data rather than only in the owner's reading of a table.
+     */
+    const { kept: vacancyKeywords, dropped } = literalKeywords(
+      plan.vacancyText,
+      vacancy.keywords,
+    );
+    if (dropped.length > 0) {
+      // Metadata only: the count, and the step it came from. Never the vacancy
+      // text, and never the dropped spans — they are fragments of the posting.
+      console.warn('[scan] dropped non-literal keywords from the parse', {
+        step: 'parse_vacancy',
+        dropped: dropped.length,
+        kept: vacancyKeywords.length,
+      });
+    }
+
+    const keywords: KeywordRow[] = vacancyKeywords.map((keyword) => ({
       keyword,
       inResume: keywordCount(plan.sourceText, keyword),
       inVacancy: keywordCount(plan.vacancyText, keyword),
@@ -173,10 +197,12 @@ async function parseAndScore(plan: ScanPlan) {
         .filter((entry) => entry.kind === 'must')
         .map((entry) => entry.similarity),
       resumeText: plan.sourceText,
-      keywords: vacancy.keywords,
+      // K is counted over the KEPT keywords: a phantom keyword is not a
+      // requirement the resume failed to meet.
+      keywords: vacancyKeywords,
     });
 
-    const coverage = { entries, keywords };
+    const coverage = { entries, keywords, keywordsDropped: dropped.length };
     const committed = await updateApplication(plan.applicationId, { matchScore, coverage });
     if (!committed) {
       // The row was inserted moments ago under this same session, so a miss here

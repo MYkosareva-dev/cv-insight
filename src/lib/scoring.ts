@@ -3,11 +3,13 @@
  * embeddings that feed them come from the `lib/retrieval.ts` gate.
  *
  *   score = round(100 × (0.6 × S + 0.4 × K))
- *     S = mean over MUST requirements of clamp((bestSimilarity − 0.30) / 0.55, 0, 1)
+ *     S = mean over MUST requirements of clamp((bestSimilarity − 0.20) / 0.16, 0, 1)
  *     K = share of vacancy keywords present in the resume text
  *         (case-insensitive, word-boundary — see B1a and `keywordPresent`)
  *
- * A requirement counts as covered at bestSimilarity ≥ 0.60.
+ * A requirement counts as covered at bestSimilarity ≥ 0.36. The three numbers
+ * are CALIBRATED against this app's embedding model and chunking, not chosen —
+ * see `docs/eval/coverage-thresholds.md` and the constants below.
  *
  * Two degenerate parses, and they are NOT the same case (SPEC v1.9 B1):
  *   - 0 requirements TOTAL → null, rendered "—" (edge case N4).
@@ -16,9 +18,44 @@
  *     number; reporting "—" there would hide a score we can actually compute.
  */
 
-export const SIMILARITY_FLOOR = 0.3;
-export const SIMILARITY_SPAN = 0.55;
-export const COVERAGE_THRESHOLD = 0.6;
+/**
+ * Rule B1's three similarity numbers, CALIBRATED (SPEC v2.13). The reasoning,
+ * the labeled set and the cost of the split are in
+ * `docs/eval/coverage-thresholds.md`; the summary is here because these are the
+ * numbers a reader will want to argue with.
+ *
+ * The shipped values (0.30 / 0.55 / 0.60) predated any measurement against
+ * `openai/text-embedding-3-small`. Measured against it, the best similarity a
+ * requirement ever reaches in this app's chunking is ~0.43, so `covered` at 0.60
+ * was not a strict threshold but an unreachable one: every requirement of every
+ * scan rendered "Gap", including requirements the career base plainly covers.
+ * Owner testing found exactly that.
+ *
+ * FLOOR + SPAN === COVERAGE_THRESHOLD, on purpose, and SPAN is derived from the
+ * other two so that stays true. Rule B1 has two halves that
+ * both answer "how well is this requirement met" — the binary `isCovered` and
+ * the continuous S term — and S now reaches 1 exactly where `isCovered` turns
+ * true, so they cannot disagree about what a fully met requirement is. Under the
+ * old numbers a requirement could be "covered" at 0.60 and still contribute only
+ * 55% of its weight to the score. A unit test pins the identity: moving one of
+ * these numbers has to move another.
+ *
+ * They are calibrated for the chunking the app ships today (~2,000-character
+ * chunks). Bullet-sized chunks would raise the whole band and these numbers
+ * would have to be re-derived — backlog p3-13.
+ */
+export const SIMILARITY_FLOOR = 0.2;
+export const COVERAGE_THRESHOLD = 0.36;
+/**
+ * 0.16 — DERIVED from the two constants above rather than declared beside them.
+ *
+ * Writing `0.16` a third time would make the identity a coincidence that a
+ * future edit can break silently, and it would not even hold: in binary floating
+ * point `(0.36 - 0.2) / 0.16` is 0.9999999999999998, so a "covered" requirement
+ * would fall a hair short of full credit. Subtracting the same two numbers the
+ * normalizer divides by makes S reach exactly 1 at COVERAGE_THRESHOLD.
+ */
+export const SIMILARITY_SPAN = COVERAGE_THRESHOLD - SIMILARITY_FLOOR;
 export const WEIGHT_SIMILARITY = 0.6;
 export const WEIGHT_KEYWORDS = 0.4;
 
@@ -26,7 +63,7 @@ export function clamp(value: number, min = 0, max = 1): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/** clamp((bestSimilarity − 0.30) / 0.55, 0, 1) */
+/** clamp((bestSimilarity − FLOOR) / SPAN, 0, 1) — 0 at 0.20, 1 at 0.36. */
 export function normalizeSimilarity(bestSimilarity: number): number {
   return clamp((bestSimilarity - SIMILARITY_FLOOR) / SIMILARITY_SPAN);
 }
@@ -75,6 +112,44 @@ export function keywordCount(text: string, keyword: string): number {
   const pattern = keywordRegex(keyword, 'gi');
   if (!pattern) return 0;
   return (text.match(pattern) ?? []).length;
+}
+
+/**
+ * RULE B1a, second half (SPEC v2.13) — keep only the keywords the vacancy text
+ * actually contains.
+ *
+ * P1 is instructed to copy keywords verbatim, and a prompt is not a guarantee.
+ * Owner testing found the parser returning "Quality assurance" for a posting
+ * that says "quality checks" and "Data labeling" for one that says "label,
+ * categorize": the model generalized instead of extracting, and the keywords
+ * table then rendered a row whose "In vacancy" column read 0 — the app
+ * measuring the absence of a term it claimed to have found.
+ *
+ * A keyword with zero occurrences in the vacancy is not a weak signal, it is
+ * not a signal: it cannot be counted in the vacancy, so the row is incoherent,
+ * and it drags K down (rule B1) as though the resume had failed to mention
+ * something the posting never asked for. Dropped rather than repaired, because
+ * there is no honest way to guess which literal span the model meant.
+ *
+ * The SAME boundary rule as `keywordCount` decides membership, so a keyword can
+ * never be dropped as absent while the table would have counted it present.
+ *
+ * `requirements[].keyword` is deliberately NOT filtered here. It never reaches
+ * the screen and carries no in-vacancy count, so it cannot be incoherent; and
+ * blanking it would suppress the `gap_in_resume_covered_by_base` status, which
+ * is US-3's hidden match — a real finding lost to a formatting rule. The prompt
+ * covers that field; this guard covers the one that renders.
+ */
+export function literalKeywords(
+  vacancyText: string,
+  keywords: string[],
+): { kept: string[]; dropped: string[] } {
+  const kept: string[] = [];
+  const dropped: string[] = [];
+  for (const keyword of keywords) {
+    (keywordCount(vacancyText, keyword) > 0 ? kept : dropped).push(keyword);
+  }
+  return { kept, dropped };
 }
 
 export function keywordShare(resumeText: string, keywords: string[]): number {

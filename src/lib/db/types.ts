@@ -121,6 +121,20 @@ export type KeywordRow = {
 export type CoverageMap = {
   entries: CoverageEntry[];
   keywords: KeywordRow[];
+  /**
+   * How many keywords rule B1a's literal-span guard threw away on this run
+   * (SPEC v2.13) — keywords P1 returned that the vacancy text does not contain.
+   *
+   * OPTIONAL because it is optional in the DATA: rows written before v2.13 have
+   * no such field, and a jsonb column cannot be back-filled with a number
+   * nobody measured. `undefined` therefore means "this run did not record it",
+   * which is not the same as `0` ("nothing was dropped") — the distinction the
+   * three-state discipline asks for everywhere else in this file.
+   *
+   * Not rendered. It exists so that a parser drifting back to canonical forms is
+   * visible in the stored data, and so /quality can count it in a later phase.
+   */
+  keywordsDropped?: number;
 };
 
 export type ApplicationStatus = 'draft' | 'applied' | 'interview' | 'offer' | 'rejected';

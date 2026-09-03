@@ -2,12 +2,18 @@ import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
 import {
+  COVERAGE_THRESHOLD,
+  SIMILARITY_FLOOR,
+  SIMILARITY_SPAN,
   coverageStatusFor,
   insufficientSignal,
+  isCovered,
   keywordCount,
   keywordPresent,
   keywordShare,
+  literalKeywords,
   matchScore,
+  normalizeSimilarity,
   renderableScore,
   scoreBand,
 } from '../../src/lib/scoring.ts';
@@ -203,13 +209,19 @@ describe('keywordCount — the Block E keywords table', () => {
 describe('coverageStatusFor — the three Block D statuses', () => {
   const base = { keyword: 'Docker', sourceText: 'I used Docker daily', sourceIsBase: false };
 
-  test('below the 0.60 threshold is a gap, whatever the resume says', () => {
-    assert.equal(coverageStatusFor({ ...base, bestSimilarity: 0.59 }), 'gap');
+  test('below the coverage threshold is a gap, whatever the resume says', () => {
+    // Written against the CONSTANT rather than a literal: the threshold is
+    // calibrated (docs/eval/coverage-thresholds.md) and a recalibration must not
+    // be able to leave this assertion quietly testing an old number.
+    assert.equal(
+      coverageStatusFor({ ...base, bestSimilarity: COVERAGE_THRESHOLD - 0.01 }),
+      'gap',
+    );
     assert.equal(coverageStatusFor({ ...base, bestSimilarity: 0 }), 'gap');
   });
 
   test('covered by the base AND present in the source resume is "covered"', () => {
-    assert.equal(coverageStatusFor({ ...base, bestSimilarity: 0.6 }), 'covered');
+    assert.equal(coverageStatusFor({ ...base, bestSimilarity: COVERAGE_THRESHOLD }), 'covered');
     assert.equal(coverageStatusFor({ ...base, bestSimilarity: 0.91 }), 'covered');
   });
 
@@ -228,7 +240,12 @@ describe('coverageStatusFor — the three Block D statuses', () => {
       'covered',
     );
     assert.equal(
-      coverageStatusFor({ ...base, sourceText: '', sourceIsBase: true, bestSimilarity: 0.4 }),
+      coverageStatusFor({
+        ...base,
+        sourceText: '',
+        sourceIsBase: true,
+        bestSimilarity: COVERAGE_THRESHOLD - 0.01,
+      }),
       'gap',
     );
   });
@@ -296,6 +313,205 @@ describe('renderableScore — one rule everywhere a score renders', () => {
         coverage: { entries: [entry('must', 0.1)], keywords: [{ keyword: 'Docker' }] },
       }),
       0,
+    );
+  });
+});
+
+/**
+ * RULE B1a's literal-span guard (SPEC v2.13), from the owner's testing round: P1
+ * returned "Quality assurance" for a posting that says "quality checks" and
+ * "Data labeling" for one that says "label, categorize". The keywords table then
+ * rendered a row whose "In vacancy" count was 0.
+ */
+describe('literalKeywords — B1a literal spans', () => {
+  const VACANCY =
+    'You will run quality checks against our quality standards, and label, ' +
+    'categorize and review data in Python. Remote work, remotely supported.';
+
+  test("the owner's two reported keywords are dropped, the literal ones kept", () => {
+    const { kept, dropped } = literalKeywords(VACANCY, [
+      'quality checks',
+      'Quality assurance',
+      'Data labeling',
+      'Python',
+    ]);
+    assert.deepEqual(kept, ['quality checks', 'Python']);
+    assert.deepEqual(dropped, ['Quality assurance', 'Data labeling']);
+  });
+
+  test('membership uses the SAME boundary rule as the table it feeds', () => {
+    // "remotely" must not keep the keyword "Remote" alive, and a keyword the
+    // table would count present must never be dropped as absent.
+    const { kept, dropped } = literalKeywords('Works remotely', ['Remote']);
+    assert.deepEqual(kept, []);
+    assert.deepEqual(dropped, ['Remote']);
+
+    const { kept: kept2 } = literalKeywords('Remote-first team', ['Remote']);
+    assert.deepEqual(kept2, ['Remote']);
+    assert.equal(keywordCount('Remote-first team', 'Remote'), 1);
+  });
+
+  test('case and casing follow the table, not the model', () => {
+    // The count is case-insensitive, so a differently-cased copy is still a
+    // literal span and survives — the row it renders will count it.
+    const { kept } = literalKeywords('We do QUALITY CHECKS daily', ['quality checks']);
+    assert.deepEqual(kept, ['quality checks']);
+  });
+
+  test('every kept keyword has a nonzero in-vacancy count, by construction', () => {
+    const { kept } = literalKeywords(VACANCY, [
+      'Python',
+      'Quality assurance',
+      'data',
+      '',
+      '   ',
+    ]);
+    for (const keyword of kept) {
+      assert.ok(keywordCount(VACANCY, keyword) > 0, `${keyword} must be countable`);
+    }
+    // A blank keyword counts 0 in any text, so it can never reach the screen.
+    assert.equal(kept.includes(''), false);
+  });
+
+  test('dropping a phantom keyword RAISES K instead of lowering it', () => {
+    // The defect was not only cosmetic: a keyword the posting never used
+    // counted against the resume in rule B1.
+    const resume = 'I ran quality checks in Python.';
+    const withPhantom = keywordShare(resume, ['quality checks', 'Python', 'Quality assurance']);
+    const { kept } = literalKeywords('quality checks in Python', [
+      'quality checks',
+      'Python',
+      'Quality assurance',
+    ]);
+    assert.equal(withPhantom, 2 / 3);
+    assert.equal(keywordShare(resume, kept), 1);
+  });
+});
+
+/**
+ * The owner asked how a scan with 0 covered requirements and 0 keywords present
+ * renders a nonzero Match Rate. It is rule B1's S term, which is CONTINUOUS
+ * partial credit — clamp((best − 0.30) / 0.55) — while "covered" is a separate
+ * threshold at 0.60. These pin the arithmetic so the answer cannot drift.
+ */
+describe('matchScore — the arithmetic behind a small nonzero score (B1)', () => {
+  /**
+   * The five MUST best similarities MEASURED by the calibration run
+   * (docs/eval/coverage-thresholds.md, application 77539dc8…): a senior
+   * AI-quality career base against an entry-level annotation posting, every
+   * requirement rendered a gap.
+   */
+  const MEASURED_MUST = [0.4245, 0.3492, 0.3707, 0.3819, 0.1759];
+
+  /** Rule B1's S term with explicit thresholds, so a test can hold either set. */
+  const sTerm = (bests, floor, span) =>
+    bests.reduce((sum, b) => sum + Math.min(1, Math.max(0, (b - floor) / span)), 0) /
+    bests.length;
+
+  test('the reported 6% was the S term at the thresholds that produced it', () => {
+    // Owner testing: 0 requirements covered, 0 of 10 keywords in the resume,
+    // Match Rate 6%. Both weighted components looked empty, and one was not:
+    // "covered" is a THRESHOLD, while S is CONTINUOUS partial credit from the
+    // floor upward. At the thresholds in force then (floor 0.30, span 0.55) the
+    // measured band still produces a single-digit score with K = 0 — which is
+    // the reported number, and it needs no term outside B1 to explain it.
+    const s = sTerm(MEASURED_MUST, 0.3, 0.55);
+    const score = Math.round(100 * (0.6 * s + 0.4 * 0));
+    assert.equal(score, 7);
+    assert.ok(score > 0 && score < 10);
+    // 6% back-solves to a mean best similarity of 0.355 on that curve, which is
+    // inside the 0.20–0.43 band the owner reported. Self-consistent.
+    assert.equal(Math.round((0.3 + (6 / 60) * 0.55) * 1000) / 1000, 0.355);
+  });
+
+  test('the calibrated thresholds credit the same measurements as 57%', () => {
+    // Same five numbers, same K, the constants this file now exports. The rise
+    // is the calibration, not a change to the formula.
+    const score = matchScore({
+      requirementCount: 7,
+      mustBestSimilarities: MEASURED_MUST,
+      // 2 of the 8 stored keywords appeared in the base: K = 0.25.
+      resumeText: 'spreadsheets and Python',
+      keywords: [
+        'data annotation',
+        'Label Studio',
+        'CVAT',
+        'spreadsheets',
+        'Python',
+        'quality checks',
+        'computer-vision',
+        'language models',
+      ],
+    });
+    assert.equal(score, 57);
+    assert.equal(
+      score,
+      Math.round(100 * (0.6 * sTerm(MEASURED_MUST, SIMILARITY_FLOOR, SIMILARITY_SPAN) + 0.4 * 0.25)),
+    );
+  });
+
+  test('S saturates exactly where isCovered turns true', () => {
+    // FLOOR + SPAN === COVERAGE_THRESHOLD is the invariant that keeps B1's two
+    // halves from disagreeing about a fully met requirement. Under the old
+    // numbers a requirement could be covered at 0.60 and still contribute 55%
+    // of its weight. Moving one of the three now has to move another.
+    assert.equal(SIMILARITY_SPAN, COVERAGE_THRESHOLD - SIMILARITY_FLOOR);
+    assert.equal(normalizeSimilarity(COVERAGE_THRESHOLD), 1);
+    assert.equal(normalizeSimilarity(SIMILARITY_FLOOR), 0);
+    assert.equal(isCovered(COVERAGE_THRESHOLD), true);
+    // Exactly at the threshold and nowhere below it.
+    assert.ok(normalizeSimilarity(COVERAGE_THRESHOLD - 0.0001) < 1);
+  });
+
+  test('the threshold is reachable by this embedding model, which 0.60 was not', () => {
+    // The point of the calibration: the whole measured band tops out at 0.4319,
+    // so the shipped 0.60 admitted nothing. Every labeled-covered requirement
+    // of the calibration set is admitted now.
+    const labeledCovered = [0.4245, 0.3707, 0.3819, 0.3629];
+    for (const best of labeledCovered) {
+      assert.equal(isCovered(best), true, `${best} is a labeled-covered requirement`);
+      assert.equal(best < 0.6, true, 'and it was refused by the old threshold');
+    }
+    // The one labeled true gap stays a gap and contributes nothing.
+    assert.equal(isCovered(0.1759), false);
+    assert.equal(normalizeSimilarity(0.1759), 0);
+  });
+
+  test('a similarity at or below the floor contributes nothing', () => {
+    assert.equal(normalizeSimilarity(SIMILARITY_FLOOR), 0);
+    assert.equal(normalizeSimilarity(0.1), 0);
+    assert.equal(
+      matchScore({
+        requirementCount: 2,
+        mustBestSimilarities: [SIMILARITY_FLOOR, 0.1],
+        resumeText: 'nothing relevant',
+        keywords: ['Docker'],
+      }),
+      0,
+    );
+  });
+
+  test('K is the only other term, and it is weighted 0.4', () => {
+    // Shown explicitly because the owner asked whether an undocumented term
+    // contributes: with S pinned at 0, the rest of the score is exactly 0.4 × K.
+    const bests = [SIMILARITY_FLOOR];
+    assert.equal(
+      matchScore({
+        requirementCount: 1,
+        mustBestSimilarities: bests,
+        resumeText: 'nothing relevant',
+        keywords: ['Docker'],
+      }),
+      0,
+    );
+    assert.equal(
+      matchScore({
+        requirementCount: 1,
+        mustBestSimilarities: bests,
+        resumeText: 'I used Docker',
+        keywords: ['Docker'],
+      }),
+      40,
     );
   });
 });
