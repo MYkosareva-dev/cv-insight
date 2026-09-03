@@ -202,3 +202,69 @@ collisions, and the concurrent-save race.
 The gate asks for **eu-compliance-reviewer** on this round, since it touches
 personal data. This round's instruction was to run ai-architect only, so it has
 not been run. The /privacy wording is corrected; the review is not done.
+
+---
+
+# Addendum 2 — what the owner-feedback round shipped (2026-09-03)
+
+Approved by the owner. Six commits, `d0353e4`..`59caff8`, on top of the phase-2
+work reviewed above.
+
+| Commit | Change |
+|---|---|
+| `d0353e4` | CLAUDE.md: restored "Both are inside a single user-initiated submit." — collateral of the previous amendment's replaced span. The budget says how MANY requests a step may issue; this says WHEN. |
+| `f294022` | `003_imports.sql`: the `imports` table (RLS S/I/U, **no DELETE**) + `career_items.import_id` (**ON DELETE SET NULL**) + index. Took the `003` slot v2.2 had reserved, so the deferred linter hardening moved to `004`. |
+| `a0cfe3e` | `source_kind` NOT NULL, owner's call, changed in the migration and in SPEC's verbatim copy of it together. |
+| `03d805c` | CLAUDE.md: `lib/db/imports.ts` in the DAL list, `imports S/I/U` in the policy matrix. |
+| `f0f1fa4` | The round's feature commit — dedup guard, provenance, M-2, named-import flow. |
+| `59caff8` | The ai-architect blocker and the drift `003` caused. |
+
+**The two reported defects.**
+
+*Duplicates.* `lib/dedupe.ts` keys on `(type, normalized title, normalized
+content)` — lower-cased, whitespace-collapsed — compared server-side against the
+user's stored rows **and** against earlier items in the same batch. In-batch
+matters: one resume can list a certification twice, and without it the first copy
+inserts and the second is only caught on a later import, so the guard would look
+like it works on the very path it was written for. `period` is out of the key
+because it is free text and "01/2025 – present" versus "Jan 2025 - now" is one
+job. Normalization stops short of punctuation on purpose — this function decides
+what to **throw away**. Skips are counted before rule B9, since an item never
+written never consumes capacity, and a save left with nothing creates no run row.
+
+*Provenance.* One `imports` row per **run**, not per file. The absent DELETE
+policy is the load-bearing part: deleting a source would strip provenance from
+every item pointing at it, which is the defect the table exists to fix.
+`import_id` is `SET NULL` and never `CASCADE` — a career item is the user's real
+experience, the import only records how it arrived, so deleting the paperwork must
+not delete the history. The chip renders only when `import_id` is set; "from: —"
+would invent a fact.
+
+**M-2, closed.** Every metered button — the review Save and the Edit save, which
+re-embeds — is locked by a ref set **synchronously**. A `disabled` prop is not a
+guard: two clicks can fire before React re-renders. The e2e asserts the request
+count, not the UI, because a second POST is a second spend whatever the screen
+shows.
+
+**The /privacy blocker.** The "what is stored" list read as exhaustive and omitted
+what this round created — the run name and target role the user types, a stated
+job aspiration stored per account. Fixed rather than filed: a false statement about
+personal data on a page whose Phase-1 scope is "accurate now". The same commit
+corrected the erasure story's "six owned tables" to seven across US-6, G1, Block H
+item 6, the account route and `lib/db/types.ts`.
+
+**Declared, not fixed.** The dedup keys are built from **model output**, not from
+the document, so re-importing one file is an exact duplicate only while the model
+re-emits identical prose. `temperature: 0` makes that normal, not guaranteed — a
+fallback-served re-parse can word the same job differently and every item lands
+again. The defect is narrowed, not closed; near-duplicate detection is a backlog
+item, because a similarity threshold that discards without asking is the failure
+this app cannot see.
+
+**Gates at approval.** `check` 13/13 · 116 unit tests · `tsc` and `eslint` clean ·
+build clean · 18 Playwright tests green, including all three round DoD cases
+(identical re-import saves nothing, a second distinct resume gets its own run and
+chip, a double-clicked Save spends once).
+
+**Still open for the owner:** eu-compliance-reviewer has not been run on this
+round, and it touches personal data.
