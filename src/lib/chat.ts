@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { cache } from 'react';
 import type { User } from '@supabase/supabase-js';
 import type { z } from 'zod';
 
@@ -76,22 +75,32 @@ export type ChatRequest = {
 };
 
 /**
- * Chat requests this HTTP request has already issued.
+ * A tally of the chat calls ONE HTTP request has already made, passed in by a
+ * handler that makes more than one.
  *
- * `cache()` is per-request in the App Router, so this holder is created once per
- * request and shared by every gate call within it. A module-level counter would
- * be WRONG in the dangerous direction: a warm serverless instance serves many
- * requests, and the count would leak across users.
+ * Rule B7 is otherwise blind to its own request: `countCallsInLast24h` reads
+ * COMMITTED rows, and `logLlmCall` writes through `after()` — i.e. after the
+ * response is sent. So a request making several chat calls sees the same
+ * pre-request count every time and can overshoot the 50-call cap by the number
+ * of extra calls it makes.
  *
- * It exists because rule B7 is otherwise blind to its own request.
- * `countCallsInLast24h` reads COMMITTED rows, and `logLlmCall` writes via
- * `after()` — i.e. after the response. So a single /generate request making
- * generate + judge + regenerate + judge would see the same pre-request count four
- * times and could overshoot the 50-call cap by the width of one request. Counting
- * in-request calls here closes that: the cap is checked against
- * committed + in-flight, so the overshoot is zero rather than "one request wide".
+ * PASSED EXPLICITLY, not discovered from ambient request state. React's `cache()`
+ * was the obvious candidate and was MEASURED before being trusted: a probe route
+ * incrementing a `cache(() => ({ n: 0 }))` holder returned `n = 0` on every
+ * request, because `cache()` does not memoize inside a route handler at all —
+ * each call built a fresh object. It would have been a counter that counted
+ * nothing while this file claimed the overshoot was closed, which is precisely
+ * the "a configured mechanism is not a working one" defect. An argument cannot
+ * fail that way: if a caller does not pass one, the code says so.
+ *
+ * Every Phase-2 request makes exactly ONE chat call, so nothing passes a ledger
+ * yet and the overshoot is zero by call count. The first multi-call request is
+ * Phase 4's /generate (generate → judge → regenerate → judge); it must create one
+ * ledger and pass it to all four calls.
  */
-const inRequestCalls = cache(() => ({ chat: 0 }));
+export type CallLedger = { chat: number };
+
+export const newCallLedger = (): CallLedger => ({ chat: 0 });
 
 /**
  * Rule B7, checked ONCE per user-initiated step.
@@ -101,12 +110,12 @@ const inRequestCalls = cache(() => ({ chat: 0 }));
  * taken the user's money and left the operation half-done. The cap decides
  * whether a step may start, not whether it may finish.
  *
- * Embeddings are excluded by the cap's definition (rule B7), which is why the
- * counter and the DAL query both look at chat steps only.
+ * Embeddings are excluded by the cap's definition (rule B7), which is why both
+ * the ledger and the DAL query count chat steps only.
  */
-async function assertUnderDailyCap(): Promise<void> {
+async function assertUnderDailyCap(ledger: CallLedger | undefined): Promise<void> {
   const committed = await countCallsInLast24h();
-  if (committed + inRequestCalls().chat >= DAILY_CALL_LIMIT) {
+  if (committed + (ledger?.chat ?? 0) >= DAILY_CALL_LIMIT) {
     throw new DailyLimitError(ERROR_MESSAGES.DAILY_LIMIT);
   }
 }
@@ -131,12 +140,15 @@ async function issue(
   userId: string,
   messages: ChatMessage[],
   budget: Budget,
+  ledger: CallLedger | undefined,
 ): Promise<ConnectionResult<string>> {
   if (budget.spent >= MAX_CHAT_REQUESTS_PER_STEP) {
     throw new AiUnavailableError(ERROR_MESSAGES.AI_UNAVAILABLE);
   }
   budget.spent += 1;
-  inRequestCalls().chat += 1;
+  // Counts the RETRY too: a repair retry is a second billed call and B7 caps
+  // billed calls, not user intentions.
+  if (ledger) ledger.chat += 1;
 
   const primaryModel = MODEL_BY_STEP[request.step];
 
@@ -219,11 +231,14 @@ function logFailure(
  * a route handler maps it with the same `isApiError` path as everything else and
  * never has to import the connection (which check.mjs R6 forbids).
  */
-export async function runChat(request: ChatRequest): Promise<ConnectionResult<string>> {
+export async function runChat(
+  request: ChatRequest,
+  ledger?: CallLedger,
+): Promise<ConnectionResult<string>> {
   const user = await requireUser();
-  await assertUnderDailyCap();
+  await assertUnderDailyCap(ledger);
   const budget: Budget = { spent: 0 };
-  return runChatWithin(request, user.id, request.messages, budget);
+  return runChatWithin(request, user.id, request.messages, budget, ledger);
 }
 
 /** The attempt-plus-network-retry core, sharing the caller's budget. */
@@ -232,9 +247,10 @@ async function runChatWithin(
   userId: string,
   messages: ChatMessage[],
   budget: Budget,
+  ledger: CallLedger | undefined,
 ): Promise<ConnectionResult<string>> {
   try {
-    return await issue(request, userId, messages, budget);
+    return await issue(request, userId, messages, budget, ledger);
   } catch (err) {
     const retryable = err instanceof OpenRouterError && err.retryable;
     if (!retryable || budget.spent >= MAX_CHAT_REQUESTS_PER_STEP) {
@@ -244,7 +260,7 @@ async function runChatWithin(
     }
     await sleep(NETWORK_RETRY_DELAY_MS);
     try {
-      return await issue(request, userId, messages, budget);
+      return await issue(request, userId, messages, budget, ledger);
     } catch (retryErr) {
       throw retryErr instanceof OpenRouterError
         ? new AiUnavailableError(ERROR_MESSAGES.AI_UNAVAILABLE)
@@ -271,15 +287,17 @@ export async function runChatJson<T>(args: {
   messages: ChatMessage[];
   applicationId: string | null;
   schema: z.ZodType<T>;
+  /** Pass one when a single HTTP request makes several chat calls. */
+  ledger?: CallLedger;
 }): Promise<{ data: T; usage: ConnectionResult<string> }> {
-  const { step, messages, applicationId, schema } = args;
+  const { step, messages, applicationId, schema, ledger } = args;
   const user = await requireUser();
-  await assertUnderDailyCap();
+  await assertUnderDailyCap(ledger);
 
   const request: ChatRequest = { step, messages, jsonMode: true, applicationId };
   const budget: Budget = { spent: 0 };
 
-  const first = await runChatWithin(request, user.id, messages, budget);
+  const first = await runChatWithin(request, user.id, messages, budget, ledger);
   const parsedFirst = parseJsonOutput(first.data, schema);
   if (parsedFirst.ok) return { data: parsedFirst.data, usage: first };
 
@@ -303,7 +321,7 @@ export async function runChatJson<T>(args: {
     },
   ];
 
-  const second = await runChatWithin(request, user.id, repairMessages, budget);
+  const second = await runChatWithin(request, user.id, repairMessages, budget, ledger);
   const parsedSecond = parseJsonOutput(second.data, schema);
   if (parsedSecond.ok) return { data: parsedSecond.data, usage: second };
 
