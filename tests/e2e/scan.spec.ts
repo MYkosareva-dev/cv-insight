@@ -8,6 +8,11 @@ import {
   SCAN,
   VACANCY_LENGTH,
 } from '../../src/lib/copy';
+// The coverage threshold is CALIBRATED (docs/eval/coverage-thresholds.md), so it
+// is read from the module that owns it. A literal here would go on asserting a
+// number the app no longer uses — and it did: this line said 0.60 until the
+// owner's testing round moved it.
+import { COVERAGE_THRESHOLD } from '../../src/lib/scoring';
 
 /**
  * Phase-3 evidence: US-2 and US-3, end to end, against a real Supabase project
@@ -314,10 +319,10 @@ test.describe('scan', () => {
     for (const entry of coverage) {
       expect(['covered', 'gap_in_resume_covered_by_base', 'gap']).toContain(entry.status);
       expect(['must', 'nice']).toContain(entry.kind);
-      // An entry that names a career item must have cleared the 0.60 threshold;
-      // a gap names none.
+      // An entry that names a career item must have cleared the coverage
+      // threshold; a gap names none.
       if (entry.status === 'gap') expect(entry.careerItemId).toBeNull();
-      else expect(entry.similarity).toBeGreaterThanOrEqual(0.6);
+      else expect(entry.similarity).toBeGreaterThanOrEqual(COVERAGE_THRESHOLD);
     }
 
     // --- the ring, and the Block E colour rule ------------------------------

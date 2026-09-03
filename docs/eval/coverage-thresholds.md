@@ -120,7 +120,7 @@ number cannot express "partially supported"; the most it can separate is
 |---|---|---|---|
 | `COVERAGE_THRESHOLD` | 0.60 | **0.36** | The highest cut that admits all four labeled-covered requirements (min 0.3629). |
 | `SIMILARITY_FLOOR` | 0.30 | **0.20** | Just above the observed minimum (0.1759, the one labeled gap): at or below this, nothing in the base is measurably related. |
-| `SIMILARITY_SPAN` | 0.55 | **0.16** | Chosen so `FLOOR + SPAN = COVERAGE_THRESHOLD` exactly. |
+| `SIMILARITY_SPAN` | 0.55 | **0.16**, derived | Not declared: `COVERAGE_THRESHOLD − SIMILARITY_FLOOR`, so the identity below cannot rot — and because a hard-coded `0.16` does not even satisfy it (`(0.36 − 0.2) / 0.16` is 0.9999999999999998 in binary floating point, so a covered requirement would fall a hair short of full credit). |
 
 **The cost of the 0.36 cut, stated as asked:**
 
@@ -150,6 +150,35 @@ to one number has to move the other.
 **Effect on the calibration scan:** 17% → **57%**. S rises from 0.1186 to 0.7865
 (K is unchanged at 0.25). For a base that covers four of the five must-have
 requirements, 57% is a defensible reading and 17% was not.
+
+## Verified in the app, not only in the arithmetic
+
+The same case re-run against the calibrated constants
+(`application b455f329-8191-48e4-a63b-3c3993cb5177`, a second throwaway account):
+
+```
+score 57  (predicted 57)
+covered 0.4243  0-2 years of experience in data entry, data annotation, or similar role
+gap     0.3499  Attention to detail and patience for repetitive work
+covered 0.3706  Good written English; a second language is welcome
+covered 0.3817  Comfortable working with spreadsheets and simple web tools
+gap     0.1763  Reliable home internet for remote work and a quiet place to work
+covered 0.4316  Experience with annotation platforms such as Label Studio or CVAT
+covered 0.3623  Basic Python for small data clean-up tasks
+```
+
+Five of seven covered: the four labeled-covered requirements, plus requirement 6
+— the over-claim this note declared in advance. The one true gap and the one
+excluded partial still read as gaps. The split behaves exactly as the labels
+predicted, which is the difference between a calibrated threshold and a lucky
+one.
+
+**Similarities are not bit-stable across runs.** The same text embedded twice
+gave 0.4245 and 0.4243, 0.3492 and 0.3499, 0.3819 and 0.3817 — a drift of up to
+±0.0007. It is far below the ~0.01 margins this calibration turns on, but it
+means these thresholds must never be tuned to the fourth decimal, and a
+requirement sitting within a thousandth of the cut can legitimately flip between
+two scans of the same posting.
 
 **The weakest number here is the floor.** It rests on ONE labeled gap. If a
 second case shows unrelated requirements landing at 0.25–0.30, the floor is too

@@ -15,7 +15,13 @@ import {
   apiErrorResponse,
 } from '@/lib/errors';
 import { matchDocumentsForTexts } from '@/lib/retrieval';
-import { isCovered, normalizeSimilarity } from '@/lib/scoring';
+import {
+  COVERAGE_THRESHOLD,
+  SIMILARITY_FLOOR,
+  SIMILARITY_SPAN,
+  isCovered,
+  normalizeSimilarity,
+} from '@/lib/scoring';
 
 /**
  * GET /api/dev/coverage-probe?applicationId=… — DEVELOPMENT ONLY.
@@ -128,7 +134,13 @@ export async function GET(request: Request) {
       applicationId: application.id,
       resumeSource: application.resume_source,
       matchScore: application.match_score,
-      thresholds: { floor: 0.3, span: 0.55, covered: 0.6 },
+      // Read from lib/scoring, never retyped: a probe printing its own copy of
+      // the numbers would report the thresholds a recalibration replaced.
+      thresholds: {
+        floor: SIMILARITY_FLOOR,
+        span: SIMILARITY_SPAN,
+        covered: COVERAGE_THRESHOLD,
+      },
       keywordsDropped: stored?.keywordsDropped ?? null,
       keywords: stored?.keywords ?? [],
       calls,
