@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -18,7 +18,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { CAREER, CAREER_ITEM_TYPE_LABEL } from '@/lib/copy';
-import type { CareerItem } from '@/lib/db/types';
+import type { CareerItem, Import } from '@/lib/db/types';
 import { fieldErrorsForItem, type ItemFieldErrors } from '@/lib/validation';
 
 /**
@@ -30,7 +30,14 @@ import { fieldErrorsForItem, type ItemFieldErrors } from '@/lib/validation';
  * a Server Component and the route handlers already call `revalidatePath`, so
  * refresh is what turns a mutation into the new list without a page reload.
  */
-export function CareerItemCard({ item }: { item: CareerItem }) {
+export function CareerItemCard({
+  item,
+  source,
+}: {
+  item: CareerItem;
+  /** The import run this item came from, when it has one (SPEC v2.11). */
+  source: Import | null;
+}) {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -44,6 +51,19 @@ export function CareerItemCard({ item }: { item: CareerItem }) {
       </div>
 
       {item.period ? <p className="text-muted-foreground text-xs">{item.period}</p> : null}
+
+      {/*
+        Provenance (SPEC v2.11). Rendered only when the item HAS a run: a
+        hand-created item has no source, and a chip reading "from: —" would
+        invent a fact about where it came from. `source` is null rather than
+        stale when an import row has gone (ON DELETE SET NULL), so this is the
+        same branch for both cases.
+      */}
+      {source ? (
+        <Badge variant="accent" className="w-fit max-w-full truncate">
+          {CAREER.fromImport(source.name, source.target_role)}
+        </Badge>
+      ) : null}
 
       {/* Exactly two lines, per Block E. */}
       <p className="text-muted-foreground line-clamp-2 text-sm break-words">{item.content}</p>
@@ -88,7 +108,20 @@ function EditDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  /**
+   * M-2 from the phase-2 review. This was `useTransition`, whose `pending` was
+   * never true for the request: the fetch was awaited OUTSIDE any transition and
+   * `startTransition` was only reached afterwards. So the Block E loading state
+   * never appeared, and — because saving a changed title or content triggers a
+   * re-embed — a double-click bought TWO paid embedding calls for one intention.
+   *
+   * The ref is the actual lock and the state is only for the UI. Two clicks can
+   * fire before React re-renders, so `disabled={pending}` alone cannot be the
+   * guard; a ref is set synchronously and the second click returns immediately.
+   * One click, one spend.
+   */
+  const inFlight = useRef(false);
+  const [pending, setPending] = useState(false);
   const [title, setTitle] = useState(item.title);
   const [content, setContent] = useState(item.content);
   const [period, setPeriod] = useState(item.period ?? '');
@@ -96,31 +129,41 @@ function EditDialog({
   const [formError, setFormError] = useState<string | null>(null);
 
   async function save() {
+    if (inFlight.current) return;
+
     // The SAME schema the route handler runs. This one blocks the submit and
     // renders the Block F copy inline; the server parse is the actual gate.
     const fieldErrors = fieldErrorsForItem({ type: item.type, title, content, period });
     setErrors(fieldErrors);
     if (Object.keys(fieldErrors).length > 0) return;
 
+    inFlight.current = true;
+    setPending(true);
     setFormError(null);
-    const res = await fetch(`/api/career/items/${item.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, content, period: period.trim() === '' ? null : period }),
-    });
-
-    if (!res.ok) {
+    try {
+      const res = await fetch(`/api/career/items/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content, period: period.trim() === '' ? null : period }),
+      });
       const body = await res.json().catch(() => null);
-      setFormError(body?.error?.message ?? CAREER.updateFailed);
-      return;
-    }
 
-    const body = await res.json().catch(() => null);
-    onOpenChange(false);
-    toast.success(CAREER.updated);
-    // D3: saved, but its chunks may be a moment stale. Surfaced, never silent.
-    if (body?.indexWarning) toast.warning(body.indexWarning);
-    startTransition(() => router.refresh());
+      if (!res.ok) {
+        setFormError(body?.error?.message ?? CAREER.updateFailed);
+        return;
+      }
+
+      onOpenChange(false);
+      toast.success(CAREER.updated);
+      // D3: saved, but its chunks may be a moment stale. Surfaced, never silent.
+      if (body?.indexWarning) toast.warning(body.indexWarning);
+      router.refresh();
+    } catch {
+      setFormError(CAREER.updateFailed);
+    } finally {
+      inFlight.current = false;
+      setPending(false);
+    }
   }
 
   return (
@@ -196,20 +239,30 @@ function DeleteDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const inFlight = useRef(false);
   const [pending, setPending] = useState(false);
 
   async function remove() {
+    // Not a metered path, but a double-click still sends two DELETEs and the
+    // second answers 404 for a row that is already gone. Same lock, same reason.
+    if (inFlight.current) return;
+    inFlight.current = true;
     setPending(true);
-    const res = await fetch(`/api/career/items/${item.id}`, { method: 'DELETE' });
-    setPending(false);
-
-    if (!res.ok) {
+    try {
+      const res = await fetch(`/api/career/items/${item.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        toast.error(CAREER.deleteFailed);
+        return;
+      }
+      onOpenChange(false);
+      toast.success(CAREER.deleted);
+      router.refresh();
+    } catch {
       toast.error(CAREER.deleteFailed);
-      return;
+    } finally {
+      inFlight.current = false;
+      setPending(false);
     }
-    onOpenChange(false);
-    toast.success(CAREER.deleted);
-    router.refresh();
   }
 
   return (

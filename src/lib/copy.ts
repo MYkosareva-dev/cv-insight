@@ -195,6 +195,43 @@ export const CAREER = {
   saved: (count: number) => `${count} item${count === 1 ? '' : 's'} added to your career base.`,
   saveFailed: 'Could not save — try again.',
 
+  // --- Import identity and the saved step (SPEC v2.11) ---
+  /**
+   * The step indicator, verbatim as specified: "1 Paste -> 2 Review -> 3 Saved".
+   * "Paste" names the primary path (paste is now the default tab) rather than
+   * branching per tab, so the indicator does not change shape mid-flow.
+   */
+  steps: ['Paste', 'Review', 'Saved'] as const,
+  fieldName: 'Name this resume',
+  /** Default label for a run: "Resume 1", "Resume 2", … Editable before saving. */
+  defaultName: (n: number) => `Resume ${n}`,
+  nameRequired: 'Name is required, max 120 characters.',
+  fieldTargetRole: 'Target role (optional)',
+  targetRolePlaceholder: 'AI Automation Engineer',
+  targetRoleTooLong: 'Target role is limited to 120 characters.',
+  nameHint: 'Career items remember which resume they came from.',
+  /**
+   * The saved step. The "· M skipped as duplicates" half renders only when
+   * something was actually skipped — "Saved 14 items · 0 skipped as duplicates"
+   * would report a state the user is not in, and this app writes the copy for
+   * the state it is describing.
+   */
+  savedSummary: (saved: number, skipped: number) => {
+    const head = `Saved ${saved} item${saved === 1 ? '' : 's'}`;
+    return skipped === 0 ? head : `${head} · ${skipped} skipped as duplicates`;
+  },
+  /**
+   * The whole batch was already in the base. Not an error and not a silent
+   * no-op: the user asked for something, the app did nothing, and it says why.
+   */
+  allDuplicates: (skipped: number) =>
+    `Nothing new to save — all ${skipped} item${skipped === 1 ? '' : 's'} are already in your career base.`,
+  done: 'Done',
+  importAnother: 'Import another',
+  /** Provenance chip on a card: "from: Resume 2 · AI Automation Engineer". */
+  fromImport: (name: string, targetRole: string | null) =>
+    targetRole ? `from: ${name} · ${targetRole}` : `from: ${name}`,
+
   // --- Cards (Block E: title, type Badge, period, 2-line preview, Edit/Delete) ---
   itemCount: (count: number) => `${count} item${count === 1 ? '' : 's'}`,
   edit: 'Edit',

@@ -182,6 +182,34 @@ export function isPdfUpload(file: { name: string; type: string }): boolean {
 }
 
 /**
+ * The import RUN's own fields (SPEC v2.11), validated to the `imports` CHECK
+ * constraints in 003 so a violation is a 400 with copy the field renders rather
+ * than a Postgres error mapped to a 500.
+ *
+ * `targetRole` is trimmed to null when blank: an empty box means "no target",
+ * and storing `''` would make a card render "from: Resume 2 · " with nothing
+ * after the separator.
+ *
+ * `sourceKind` is sent by the client, and that is safe in a way worth stating:
+ * it is provenance metadata the user could equally have typed, it is constrained
+ * to two values by both this schema and a NOT NULL CHECK in the database, and no
+ * access decision reads it. Nothing else in the body is trusted — the items are
+ * re-validated field by field.
+ */
+export const importMetaSchema = z.object({
+  name: z.string().trim().min(1, CAREER.nameRequired).max(120, CAREER.nameRequired),
+  targetRole: z
+    .string()
+    .trim()
+    .max(120, CAREER.targetRoleTooLong)
+    .nullish()
+    .transform((v) => (v && v.length > 0 ? v : null)),
+  sourceKind: z.enum(['pdf', 'paste']),
+});
+
+export type ImportMeta = z.infer<typeof importMetaSchema>;
+
+/**
  * POST /api/career/items — the reviewed items the user chose to keep.
  *
  * The client sends items it may have EDITED in the review list, so every field is
@@ -189,6 +217,12 @@ export function isPdfUpload(file: { name: string; type: string }): boolean {
  */
 export const saveCareerItemsSchema = z.object({
   items: z.array(extractedItemSchema).min(1, CAREER.nothingSelected).max(MAX_CAREER_ITEMS),
+  /**
+   * Optional, so a save without provenance is still a valid request rather than
+   * a 400. Items created outside the import flow legitimately have no run, and
+   * `career_items.import_id` is nullable for exactly that reason.
+   */
+  import: importMetaSchema.optional(),
 });
 
 /**

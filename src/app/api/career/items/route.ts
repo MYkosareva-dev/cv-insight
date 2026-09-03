@@ -5,17 +5,25 @@ import { NextResponse } from 'next/server';
 
 import { requireApiUser } from '@/lib/auth/requireApiUser';
 import { CAREER, ERROR_MESSAGES } from '@/lib/copy';
-import { MAX_CAREER_ITEMS, countCareerItems, insertCareerItems } from '@/lib/db/careerItems';
+import {
+  MAX_CAREER_ITEMS,
+  countCareerItems,
+  insertCareerItems,
+  listItemSignatureFields,
+} from '@/lib/db/careerItems';
 import { MAX_CHUNKS_PER_ITEM } from '@/lib/chunking';
 import { MAX_DOCUMENTS, countDocuments } from '@/lib/db/documents';
+import { insertImport } from '@/lib/db/imports';
+import { dedupeItems, itemSignature } from '@/lib/dedupe';
 import { ValidationError, apiErrorResponse } from '@/lib/errors';
 import { indexCareerItems } from '@/lib/retrieval';
 import { saveCareerItemsSchema } from '@/lib/validation';
 
 /**
- * POST /api/career/items — SPEC Block D #2, US-1 steps 4–5.
+ * POST /api/career/items — SPEC Block D #2, US-1 steps 4–5, extended in v2.11.
  *
- * Saves the reviewed items and indexes them into `documents`.
+ * Saves the reviewed items, records which import RUN produced them, and indexes
+ * them into `documents`.
  *
  * Order, and why each step is where it is:
  *
@@ -25,11 +33,18 @@ import { saveCareerItemsSchema } from '@/lib/validation';
  *      nothing in the body can name an owner.
  *   2. Zod on every field. The client may have EDITED these items in the review
  *      list, so nothing is trusted because it once came out of our own parse.
- *   3. Rule B9, checked against the user's stored counts and REJECTING THE BATCH
- *      WHOLE. Saving the first N that fit would be a partial write (rule B6) and
- *      would silently drop items the user explicitly chose to keep.
- *   4. Insert — one statement, so there is no half-saved batch.
- *   5. Index — AFTER the write has succeeded, and unable to fail it. An
+ *   3. The duplicate guard, BEFORE the cap. Skipped items are never written, so
+ *      they must not consume capacity either — refusing a batch for exceeding a
+ *      limit it does not actually reach would be the app enforcing arithmetic it
+ *      invented.
+ *   4. Rule B9 on what SURVIVES, rejecting the batch WHOLE. Saving the first N
+ *      that fit would be a partial write (rule B6) and would silently drop items
+ *      the user explicitly chose to keep.
+ *   5. The `imports` row — only when something survived. An import that
+ *      contributed nothing new leaves no row behind, or re-importing one file
+ *      five times accumulates five empty sources.
+ *   6. Insert — one statement, so there is no half-saved batch.
+ *   7. Index — AFTER the write has succeeded, and unable to fail it. An
  *      embedding failure returns a warning alongside the saved items
  *      (CLAUDE.md, Embeddings).
  */
@@ -48,15 +63,52 @@ export async function POST(request: Request) {
     if (!parsed.success) {
       throw new ValidationError(parsed.error.issues[0]?.message ?? CAREER.saveFailed);
     }
-    const items = parsed.data.items;
+    const { items, import: importMeta } = parsed.data;
 
-    await assertUnderB9(items.length);
+    /**
+     * v2.11: the owner imported the same text twice and got an exact second copy
+     * of every item, because nothing compared an incoming item against what was
+     * already stored.
+     *
+     * The comparison runs SERVER-side against the user's own rows. A
+     * client-supplied "I already have these" list would let a caller suppress
+     * real items or force duplicates straight back in.
+     */
+    const stored = await listItemSignatureFields();
+    const { keep, skipped } = dedupeItems(items, stored.map(itemSignature));
+
+    // Everything was already in the base. A 200 that says so, not an error: the
+    // request was valid and the app simply had nothing to add. No import row,
+    // because this run contributed nothing.
+    if (keep.length === 0) {
+      return NextResponse.json({
+        items: [],
+        indexed: 0,
+        indexWarning: null,
+        skipped,
+        import: null,
+      });
+    }
+
+    await assertUnderB9(keep.length);
+
+    const importRow = importMeta
+      ? await insertImport(user.id, {
+          name: importMeta.name,
+          target_role: importMeta.targetRole,
+          source_kind: importMeta.sourceKind,
+        })
+      : null;
 
     const saved = await insertCareerItems(
       user.id,
-      // Everything created through this endpoint came from an import; the column
-      // defaults to 'manual', which would quietly mislabel every imported item.
-      items.map((item) => ({ ...item, source: 'import' as const })),
+      keep.map((item) => ({
+        ...item,
+        // Everything created through this endpoint came from an import; the
+        // column defaults to 'manual', which would quietly mislabel every one.
+        source: 'import' as const,
+        import_id: importRow?.id ?? null,
+      })),
     );
 
     // Indexing is a side effect of the save and never a precondition for it.
@@ -77,6 +129,8 @@ export async function POST(request: Request) {
        */
       indexed: index.indexed,
       indexWarning: indexWarningFor(saved.length, index.failed),
+      skipped,
+      import: importRow,
     });
   } catch (err) {
     return apiErrorResponse(err);
@@ -108,6 +162,9 @@ function indexWarningFor(savedCount: number, failedCount: number): string | null
  * (Chunking is bounded so the document cap cannot be reached through the item
  * cap — see `lib/chunking.ts` — which makes this branch a safety net that must
  * fail loudly if those constants ever change.)
+ *
+ * `incoming` is the count AFTER de-duplication, because a skipped item is never
+ * written and so never consumes capacity.
  *
  * The count-then-insert race is accepted, deliberately and in the same spirit as
  * edge case D6: this is a single-user tool, two concurrent saves by one person

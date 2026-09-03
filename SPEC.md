@@ -110,6 +110,8 @@ cv-insight/
 │   │   │                        # node:test can load it (the retrieval gate cannot be imported).
 │   │   │                        # Owns MAX_CHUNKS_PER_ITEM — see the B9 note in Block F
 │   │   ├── pdf.ts               # unpdf text extraction; maps a scan AND a corrupt file to 422
+│   │   ├── dedupe.ts            # v2.11: exact-duplicate guard. Pure, so the decision that
+│   │   │                        # DISCARDS the user's data is testable
 │   │   ├── pricing.ts           # the price table + micro-USD math. Pure, NOT server-only: it
 │   │   │                        # had to be testable, and tests/ is in R6 scope so a test can
 │   │   │                        # never import the connection where this used to live
@@ -121,7 +123,8 @@ cv-insight/
 │   │   ├── supabase/admin.ts    # the ONE service-role client — imported ONLY by DELETE /api/account
 │   │   ├── retrieval.ts         # GATE (server-only): embeddings + getUser() first; ORCHESTRATES
 │   │   │                        # matching by calling lib/db/documents.ts (the .rpc lives in the DAL)
-│   │   ├── db/                  # one DAL per table (+ types.ts) — the ONLY files calling .from()/.rpc(
+│   │   ├── db/                  # one DAL per table (+ types.ts, imports.ts from v2.11) — the ONLY
+│   │   │                        # files calling .from()/.rpc(
 │   │   ├── prompts.ts           # literal prompt templates (Block F)
 │   │   ├── scoring.ts           # match score + coverage math (B1/B1a/B1b anchored here)
 │   │   ├── copy.ts              # user-facing strings incl. the B1b em-dash constant
@@ -605,6 +608,10 @@ Left: resume source Tabs (shadcn `Tabs`): **Career base** (default; shows "Using
 Right: Textarea "Paste the job posting here. Tip: skip benefits and legal boilerplate." Char counter `4,180 / 20,000`.
 Footer: violet hero button [Analyze] (the screen's single accent).
 Loading: [Analyze] → spinner "Analyzing…" ~10–20 s, panels dimmed. Empty: career base has 0 items and tab=Career base → panel notice "Your career base is empty — import a resume first." + [Go to Career base]. Error: toast "AI service is unavailable. Your vacancy was saved — retry from Applications."
+
+> **v2.11 — the import dialog, as built.** Three phases, named by a step indicator reading "1 Paste → 2 Review → 3 Saved". The SOURCE step asks for the run's identity BEFORE the text — a name defaulting to "Resume N" (N derived from the runs already stored, editable) and an optional "Target role" — then offers **Paste text as the DEFAULT tab**, with Upload PDF second; paste is now the primary path. The SAVED step reports `Saved N items · M skipped as duplicates`, with the second half rendered only when something was actually skipped, and `Nothing new to save — all N items are already in your career base.` when the whole batch was a duplicate. A card shows `from: <import name> · <target role>` when `import_id` is set, and nothing when it is not — a chip reading "from: —" would invent a fact about where an item came from.
+> **v2.11 — the duplicate guard.** From the owner's first live use: importing the same text twice produced an exact second copy of every item. `lib/dedupe.ts` compares `(type, normalized title, normalized content)` — lower-cased, whitespace-collapsed — against the user's stored items AND against earlier items in the same batch, server-side. Normalization is deliberately minimal because this function decides what to THROW AWAY: it catches re-extraction noise (pdf.js emits text per positioned run, so line wrapping differs between two parses of one file) and stops short of punctuation, which would start merging items that differ in meaning. `period` is excluded from the key — it is free text, and "01/2025 – present" versus "Jan 2025 - now" is one job. EXACT duplicates only; near-duplicate detection by embedding similarity is a backlog item, because a threshold that discards without asking is a failure this app cannot see. Skipped items are counted BEFORE rule B9, since an item that is never written never consumes capacity, and a save that survives dedup with nothing left creates no `imports` row at all.
+> **v2.11 — one click, one spend** (closing M-2 from the phase-2 review). Every metered button — the review-step Save and the Edit dialog's save, which re-embeds — is locked by a ref that is set synchronously, not by a `disabled` prop alone: two clicks can fire before React re-renders, so state-based disabling is not a guard. `tests/e2e/career.spec.ts` asserts the REQUEST COUNT rather than the UI, because a second POST is a second embedding spend whatever the screen shows.
 
 **`/career` — Career base.** Header: item count + [Import resume] (green). List of cards grouped by type: title, type Badge, period, content preview 2 lines, Edit/Delete icon buttons. Import opens a Dialog: tabs Upload PDF / Paste text → after extraction, review list of proposed items (each editable inline, checkbox to include) → [Save 14 items to base].
 Loading: 6 skeleton cards. Empty: illustration + "Your career base is empty. Import your resume — CV Insight will split it into reusable career items." + [Import resume]. Error (import failed): inline in dialog — unreadable PDF copy per US-1; oversized → "This file is over 5 MB."

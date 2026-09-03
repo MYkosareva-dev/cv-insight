@@ -39,6 +39,8 @@ const COPY = {
   unreadablePdf:
     "We couldn't read text from this PDF. It may be scanned — paste the text instead.",
   deleteAccount: 'Delete account and data',
+  pastePlaceholder: 'Paste your resume text here.',
+  extract: 'Extract items',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -138,6 +140,35 @@ const RESUME_LINES = [
   'BSc Business Informatics — Universitaet Hamburg (2016 – 2020)',
 ];
 
+/**
+ * A DIFFERENT resume, for the "a second import adds" case.
+ *
+ * It has to be genuinely different content now that the duplicate guard exists:
+ * the old fixture imported the same text under a second filename, which added
+ * items only because nothing compared them. Same fictional persona, a different
+ * part of her history — so the items it yields share no title or body with the
+ * first resume and the guard has nothing to skip.
+ */
+const RESUME_LINES_SECOND = [
+  'MIRA STEINBERG',
+  'Business Analyst — Hamburg, Germany',
+  '',
+  'EXPERIENCE',
+  'Junior Business Analyst — Hafenlicht Consulting (03/2021 - 12/2023)',
+  'Mapped as-is and to-be procurement processes in BPMN for three client',
+  'programmes, and ran requirements workshops with up to twelve stakeholders.',
+  'Documented forty user stories with acceptance criteria for a warehouse',
+  'management rollout, cutting rework in the first sprint by a third.',
+  '',
+  'Working Student, Data Operations — Elbstrom Analytics (09/2019 - 02/2021)',
+  'Cleaned and reconciled monthly logistics datasets in SQL and Excel.',
+  'Built the weekly KPI report the operations lead presented to management.',
+  '',
+  'CERTIFICATIONS',
+  'IREB Certified Professional for Requirements Engineering, Foundation Level (2022)',
+  'Scrum Alliance Certified Scrum Product Owner (2023)',
+];
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -231,6 +262,8 @@ test.describe('career base', () => {
   }) => {
     await signUp(page, uniqueEmail());
     const dialog = await openImportDialog(page);
+    // v2.11: Paste is the default tab, so reach Upload deliberately.
+    await dialog.getByRole('tab', { name: COPY.tabUpload }).click();
 
     const response = page.waitForResponse(
       (res) => res.url().includes('/api/career/import') && res.request().method() === 'POST',
@@ -267,7 +300,7 @@ test.describe('career base', () => {
     test.setTimeout(180_000);
     await signUp(page, uniqueEmail());
 
-    const firstCount = await importAndSave(page, 'mira_cv_2026.pdf');
+    const firstCount = await importAndSave(page, 'mira_cv_2026.pdf', RESUME_LINES);
     expect(firstCount).toBeGreaterThan(0);
 
     // US-1: "Saved items appear in the career base list without page reload."
@@ -275,7 +308,7 @@ test.describe('career base', () => {
     await expect(page.getByText(`${firstCount} item`)).toBeVisible({ timeout: 15_000 });
 
     // A second import ADDS, never overwrites (the last US-1 checkbox).
-    const secondCount = await importAndSave(page, 'mira_cv_2026_v2.pdf');
+    const secondCount = await importAndSave(page, 'mira_ba_cv_2023.pdf', RESUME_LINES_SECOND);
     expect(secondCount).toBeGreaterThan(0);
 
     const total = firstCount + secondCount;
@@ -283,15 +316,134 @@ test.describe('career base', () => {
 
     // And the first import's items are still on the page.
     await expect(page.getByRole('article')).toHaveCount(total);
+
+    /**
+     * v2.11 provenance: each run got its OWN row and its items carry its chip.
+     * Two distinct chips is the assertion that matters — one would mean the
+     * second import had been folded into the first source.
+     */
+    await expect(page.getByText('from: Resume 1').first()).toBeVisible();
+    await expect(page.getByText('from: Resume 2').first()).toBeVisible();
+  });
+
+  test('re-importing the SAME text saves nothing and reports every skip', async ({ page }) => {
+    /**
+     * The owner's defect, from first live use: importing the same text twice
+     * produced an exact second copy of every item. Pasted rather than uploaded,
+     * so the input is byte-identical by construction and the assertion is about
+     * the guard rather than about PDF extraction being deterministic.
+     */
+    test.setTimeout(180_000);
+    await signUp(page, uniqueEmail());
+
+    const first = await pasteAndSave(page, RESUME_LINES.join('\n'));
+    expect(first.saved).toBeGreaterThan(0);
+    expect(first.skipped).toBe(0);
+
+    // Same text, second run.
+    const second = await pasteAndSave(page, RESUME_LINES.join('\n'));
+    expect(second.saved).toBe(0);
+    expect(second.skipped).toBeGreaterThan(0);
+    // No run row for an import that contributed nothing.
+    expect(second.import).toBeNull();
+
+    // The base did not grow, and the dialog says why rather than looking broken.
+    await expect(page.getByRole('article')).toHaveCount(first.saved);
+  });
+
+  test('a metered Save spends once even when double-clicked', async ({ page }) => {
+    /**
+     * M-2 from the phase-2 review. Two clicks can fire before React re-renders,
+     * so `disabled` alone cannot be the guard — a ref is.
+     *
+     * The assertion counts REQUESTS and nothing else. That is the only thing
+     * that means anything here: a second POST would be a second embedding spend
+     * and a second `imports` row, whatever the UI happened to show. Asserting on
+     * the saved step instead made this test depend on a locator whose accessible
+     * name changes to "Saving…" mid-flight.
+     */
+    test.setTimeout(180_000);
+    await signUp(page, uniqueEmail());
+
+    const dialog = await openImportDialog(page);
+    const importResponse = page.waitForResponse(
+      (res) => res.url().includes('/api/career/import') && res.request().method() === 'POST',
+      { timeout: 90_000 },
+    );
+    await dialog.getByPlaceholder(COPY.pastePlaceholder).fill(RESUME_LINES.join('\n'));
+    await dialog.getByRole('button', { name: COPY.extract }).click();
+    await importResponse;
+
+    let saveRequests = 0;
+    page.on('request', (req) => {
+      if (req.url().includes('/api/career/items') && req.method() === 'POST') saveRequests += 1;
+    });
+    const saveResponse = page.waitForResponse(
+      (res) => res.url().includes('/api/career/items') && res.request().method() === 'POST',
+      { timeout: 90_000 },
+    );
+
+    const save = dialog.getByRole('button', { name: /^Save \d+ items? to base$/ });
+    // Two clicks as fast as Playwright can deliver them, with no wait between.
+    // The second is given a short timeout on purpose: once the first click lands
+    // the button relabels to "Saving…", so this locator stops matching — which is
+    // itself part of the guard, and should fail fast rather than stall the test.
+    await save.click({ noWaitAfter: true });
+    await save.click({ noWaitAfter: true, force: true, timeout: 2_000 }).catch(() => {
+      // Already disabled or relabelled — exactly the intended outcome.
+    });
+
+    await saveResponse;
+    // Settle, so a late second request would still be counted before asserting.
+    await page.waitForTimeout(2_000);
+    expect(saveRequests, 'one click, one spend').toBe(1);
   });
 });
+
+/**
+ * Paste a resume, review, save — the paste branch of the same flow.
+ * Returns what the save reported.
+ */
+async function pasteAndSave(
+  page: Page,
+  text: string,
+): Promise<{ saved: number; skipped: number; import: unknown }> {
+  const dialog = await openImportDialog(page);
+
+  const importResponse = page.waitForResponse(
+    (res) => res.url().includes('/api/career/import') && res.request().method() === 'POST',
+    { timeout: 90_000 },
+  );
+  await dialog.getByPlaceholder(COPY.pastePlaceholder).fill(text);
+  await dialog.getByRole('button', { name: COPY.extract }).click();
+  const imported = await (await importResponse).json();
+  expect(imported.items.length).toBeGreaterThan(0);
+
+  const saveResponse = page.waitForResponse(
+    (res) => res.url().includes('/api/career/items') && res.request().method() === 'POST',
+    { timeout: 90_000 },
+  );
+  await dialog.getByRole('button', { name: /^Save \d+ items? to base$/ }).click();
+  const saved = await (await saveResponse).json();
+
+  // The saved step reports both halves of the outcome.
+  if (saved.items.length === 0) {
+    await expect(dialog.getByText(/^Nothing new to save/)).toBeVisible();
+  } else {
+    await expect(dialog.getByText(/^Saved \d+ items?/)).toBeVisible();
+  }
+  await dialog.getByRole('button', { name: 'Done' }).click();
+
+  return { saved: saved.items.length, skipped: saved.skipped, import: saved.import };
+}
 
 /**
  * Import a resume PDF, review, save — and assert what the save reports.
  * Returns how many items were saved.
  */
-async function importAndSave(page: Page, filename: string): Promise<number> {
+async function importAndSave(page: Page, filename: string, lines: string[]): Promise<number> {
   const dialog = await openImportDialog(page);
+  await dialog.getByRole('tab', { name: COPY.tabUpload }).click();
 
   const importResponse = page.waitForResponse(
     (res) => res.url().includes('/api/career/import') && res.request().method() === 'POST',
@@ -300,7 +452,7 @@ async function importAndSave(page: Page, filename: string): Promise<number> {
   await dialog.getByLabel('Choose a .pdf file').setInputFiles({
     name: filename,
     mimeType: 'application/pdf',
-    buffer: textLayerPdf(RESUME_LINES),
+    buffer: textLayerPdf(lines),
   });
 
   const imported = await (await importResponse).json();
@@ -340,6 +492,16 @@ async function importAndSave(page: Page, filename: string): Promise<number> {
    */
   expect(saved.indexed).toBe(saved.items.length);
   expect(saved.indexWarning).toBeNull();
+
+  // v2.11: provenance. The run row exists and carries the name the dialog
+  // defaulted, and every saved item points at it.
+  expect(saved.import).not.toBeNull();
+  expect(saved.import.name).toMatch(/^Resume \d+$/);
+  for (const item of saved.items) expect(item.import_id).toBe(saved.import.id);
+
+  // Step 3 of the indicator, with the summary copy.
+  await expect(dialog.getByText(/^Saved \d+ items?/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Done' }).click();
 
   return saved.items.length;
 }

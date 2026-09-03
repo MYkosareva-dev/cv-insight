@@ -30,3 +30,13 @@ They are first for that reason.
 - **NIT n-5** — `tests/e2e/career.spec.ts` asserts the item count by substring, so "1 item" also matches "11 items"; use an exact or regex matcher.
 - **NIT n-6** — `fillPrompt` in `src/lib/prompts.ts` interpolates user text verbatim, so a CV containing a literal closing `</resume>` tag ends the data block early; the tagged-data plus output-validation design is the accepted containment (S1), but stripping the closing tag from interpolated values costs nothing.
 - **NIT n-7** — `assertUnderB9` maps both capacity ceilings to 400 `VALIDATION_ERROR`; defensible since Block D has no capacity row and the copy is exact, but a limit is not a malformed body, so either add the row to `SPEC.md` or record the decision there.
+
+## Phase 2 owner-feedback round — deferred by the owner (2026-09-03)
+
+Asked for explicitly and NOT built. Each is a product decision the owner has
+parked, not a defect found in review.
+
+- **FEATURE** — group the `/career` list by source with a toggle, so a base built from several resumes can be read one document at a time instead of only by item type; the provenance chip already carries the name, and `listImports()` already returns the runs the toggle would group by.
+- **FEATURE** — near-duplicate detection on the review screen: flag proposed items whose embedding similarity to a stored item is >= 0.95 and let the user decide, rather than silently keeping both. Deliberately not what `src/lib/dedupe.ts` does — that guard is exact-match only, because a threshold that discards without asking is the one failure mode this app cannot see.
+- **FEATURE** — a `summary` career-item type, pinned first within its own source, so a resume's opening profile paragraph reads as a summary rather than as another role; needs a `career_items.type` CHECK change and an ordering rule inside each group.
+- **FEATURE** — an inline import panel on the empty state, so a first-time user starts pasting without opening a dialog; the empty state currently renders the same dialog trigger as the header.

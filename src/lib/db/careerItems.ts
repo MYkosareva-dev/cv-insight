@@ -47,7 +47,27 @@ export async function getCareerItem(id: string): Promise<CareerItem | null> {
 }
 
 export type NewCareerItem = Pick<CareerItem, 'type' | 'title' | 'content'> &
-  Partial<Pick<CareerItem, 'period' | 'source'>>;
+  Partial<Pick<CareerItem, 'period' | 'source' | 'import_id'>>;
+
+/**
+ * Just the three fields the duplicate guard compares (SPEC v2.11).
+ *
+ * Three columns and not `*`: this runs on every save, and the rows it reads are
+ * only ever turned into comparison keys. Pulling `content` is unavoidable — the
+ * key includes it — but there is no reason to pull embeddings-adjacent metadata,
+ * timestamps or ids that nothing here looks at.
+ *
+ * Bounded by rule B9 at 200 items per user, so this is a small read by
+ * construction rather than by luck.
+ */
+export async function listItemSignatureFields(): Promise<
+  Pick<CareerItem, 'type' | 'title' | 'content'>[]
+> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from('career_items').select('type, title, content');
+  if (error) throw error;
+  return (data ?? []) as Pick<CareerItem, 'type' | 'title' | 'content'>[];
+}
 
 /**
  * Bulk insert, returning the stored rows.
