@@ -45,9 +45,15 @@ RE-RUN AFTER THE OWNER-TESTING ROUND (SPEC v2.17)
 
 Command:      npx playwright test
 Date:         2026-09-04 UTC
-Commit:       (this run) fix(settings): a profile that cannot be read is said,
-              not thrown
+Commit:       (this run) fix: close the architect pass on the owner-testing round
 Result:       31 passed, 2 skipped.
+
+RE-RUN ONCE MORE after the architect's findings were fixed - the prompt slots
+moved into a <candidate_name> data block, the display name sanitised, the judge
+panel's corpus unified across all three sites, and the e2e probe narrowed. Same
+result, and it is named here rather than argued about: the fixes touched two
+prompts and the corpus a rendered panel is computed from, and a re-run is the
+only thing that says what they did.
 
 The two skips are both VISIBLE and both say why:
 
