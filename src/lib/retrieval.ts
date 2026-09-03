@@ -81,13 +81,35 @@ export type MatchedChunk = {
 };
 
 /**
+ * The two outcomes of a search that RAN. Split out from `MatchOutcome` so a
+ * batch can hand back one of these per query without `could_not_search` being
+ * representable in that position — see `BatchMatchOutcome`.
+ */
+export type SearchedOutcome =
+  | { status: 'found'; chunks: MatchedChunk[] }
+  | { status: 'found_nothing'; chunks: [] };
+
+/**
  * Three outcomes, never two. `could_not_search` must NEVER be reported as
  * `found_nothing`: calling a requirement a "gap" because the embeddings call
  * died is the app lying about data it never checked (CLAUDE.md, Retrieval).
  */
-export type MatchOutcome =
-  | { status: 'found'; chunks: MatchedChunk[] }
-  | { status: 'found_nothing'; chunks: [] }
+export type MatchOutcome = SearchedOutcome | { status: 'could_not_search'; error: string };
+
+/**
+ * The outcome of matching MANY queries in one run (SPEC Block D #4: "embed each
+ * requirement (`embed` step, batched) -> match_documents per requirement").
+ *
+ * The third retrieval outcome is at the RUN level and nowhere else, which is the
+ * whole point of the shape: a caller iterating `outcomes` has no
+ * `could_not_search` case to forget, so a dead embeddings call cannot fall
+ * through a per-item `else` and become a gap. Either every query was searched,
+ * or none of them are reported at all.
+ *
+ * `outcomes` is index-aligned with the queries that were passed in.
+ */
+export type BatchMatchOutcome =
+  | { status: 'searched'; outcomes: SearchedOutcome[] }
   | { status: 'could_not_search'; error: string };
 
 type EmbedStep = Extract<LlmStep, 'embed' | 'rescore'>;
@@ -376,6 +398,61 @@ export async function matchDocuments(
   logConsideredChunks(chunks);
 
   return chunks.length === 0 ? { status: 'found_nothing', chunks: [] } : { status: 'found', chunks };
+}
+
+/**
+ * Match MANY queries in one run — the scan path (SPEC Block D #4).
+ *
+ * Batched on purpose, and the batching is the reason this exists rather than a
+ * loop over `matchDocuments`: that function embeds its own query, so one call
+ * per requirement would issue one embeddings REQUEST per requirement. A
+ * fifteen-requirement posting would make fifteen metered round trips where the
+ * spec asks for one batch (`embedFor` already splits at EMBEDDING_BATCH_SIZE).
+ *
+ * The RPC still runs once per requirement, because `match_documents` ranks
+ * against a single query vector — that is a database call, not a spend.
+ *
+ * A failure anywhere — embedding or RPC — fails the WHOLE run as
+ * `could_not_search`. Partial results are deliberately not offered: the caller
+ * would have to decide what an un-searched requirement means, and the only
+ * honest answer is "we do not know", which is not a coverage status. The scan
+ * fails with AI_UNAVAILABLE instead, and nothing renders as a gap.
+ */
+export async function matchDocumentsForTexts(
+  queryTexts: string[],
+  matchCount = 5,
+  step: EmbedStep = 'embed',
+): Promise<BatchMatchOutcome> {
+  const user = await requireUser();
+  if (queryTexts.length === 0) return { status: 'searched', outcomes: [] };
+
+  try {
+    const vectors = await embedFor(user.id, queryTexts, step);
+    if (vectors.length !== queryTexts.length) {
+      // Fewer vectors than queries would silently mis-align the results with the
+      // requirements they belong to, which is worse than not searching.
+      return { status: 'could_not_search', error: 'embeddings did not cover every query' };
+    }
+
+    const outcomes: SearchedOutcome[] = [];
+    for (const vector of vectors) {
+      const rows = await matchDocumentsRpc(vector, matchCount);
+      const chunks: MatchedChunk[] = rows.map((row) => ({
+        id: row.id,
+        careerItemId: row.career_item_id,
+        content: row.content,
+        similarity: row.similarity,
+      }));
+      logConsideredChunks(chunks);
+      outcomes.push(
+        chunks.length === 0 ? { status: 'found_nothing', chunks: [] } : { status: 'found', chunks },
+      );
+    }
+    return { status: 'searched', outcomes };
+  } catch (err) {
+    // The one branch that must never be mistaken for "found nothing".
+    return { status: 'could_not_search', error: err instanceof Error ? err.name : 'search failed' };
+  }
 }
 
 /**
