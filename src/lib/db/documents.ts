@@ -16,8 +16,8 @@ import type { DocumentRow } from '@/lib/db/types';
  * to fail that save.
  */
 
-/** SPEC rule B9: <= 500 documents rows per user. */
-export const MAX_DOCUMENTS = 500;
+/** SPEC rule B9: <= 500 documents rows per user. Single-sourced in `lib/db/limits.ts`. */
+export { MAX_DOCUMENTS } from '@/lib/db/limits';
 
 export async function countDocuments(): Promise<number> {
   const supabase = await createClient();

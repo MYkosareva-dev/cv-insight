@@ -107,6 +107,16 @@ export const AUTH = {
   signUpFailed: 'Sign-up failed. Try again.',
 } as const;
 
+/**
+ * The PDF dropzone label (SPEC Block E). One string, two screens: the /scan
+ * resume-source panel and the /career import dialog. Promoted out of SCAN so
+ * neither screen reads the other's constant and neither copy can drift.
+ */
+export const PDF_DROPZONE = 'Drag & drop or choose a .pdf file, max 5 MB';
+
+/** PDF upload ceiling, in bytes (Block F / edge case L5). 413 before any parsing. */
+export const MAX_PDF_BYTES = 5 * 1024 * 1024;
+
 export const SCAN = {
   analyze: 'Analyze',
   analyzing: 'Analyzing…',
@@ -117,7 +127,7 @@ export const SCAN = {
   goToCareerBase: 'Go to Career base',
   aiUnavailable: 'AI service is unavailable. Your vacancy was saved — retry from Applications.',
   noRequirements: "We couldn't find concrete requirements in this posting.",
-  dropzone: 'Drag & drop or choose a .pdf file, max 5 MB',
+  dropzone: PDF_DROPZONE,
 } as const;
 
 export const CAREER = {
@@ -133,7 +143,77 @@ export const CAREER = {
   titleRequired: 'Title is required, max 200 characters.',
   contentRequired: 'Content is required, max 4000 characters.',
   limitReached: 'Career base limit reached (200 items). Delete unused items first.',
+
+  // --- Import dialog (Block E: Dialog, tabs Upload PDF / Paste text, review list) ---
+  dialogTitle: 'Import resume',
+  dialogDescription:
+    'CV Insight reads the text and splits it into reusable career items. Nothing is saved until you review them.',
+  tabUpload: 'Upload PDF',
+  tabPaste: 'Paste text',
+  dropzone: PDF_DROPZONE,
+  choosePdf: 'Choose a .pdf file',
+  pastePlaceholder: 'Paste your resume text here.',
+  notPdf: 'Only .pdf files are supported.',
+  extract: 'Extract items',
+  extracting: 'Reading your resume…',
+  importFailed: 'Import failed — try again.',
+  /** US-1 step 3: "Review 14 extracted items". */
+  reviewHeading: (count: number) => `Review ${count} extracted item${count === 1 ? '' : 's'}`,
+  reviewHint: 'Edit anything that looks wrong, then uncheck what you do not want to keep.',
+  /** Block E: "[Save 14 items to base]". */
+  saveToBase: (count: number) => `Save ${count} item${count === 1 ? '' : 's'} to base`,
+  saving: 'Saving…',
+  nothingSelected: 'Select at least one item to save.',
+  saved: (count: number) => `${count} item${count === 1 ? '' : 's'} added to your career base.`,
+  saveFailed: 'Could not save — try again.',
+
+  // --- Cards (Block E: title, type Badge, period, 2-line preview, Edit/Delete) ---
+  itemCount: (count: number) => `${count} item${count === 1 ? '' : 's'}`,
+  edit: 'Edit',
+  delete: 'Delete',
+  cancel: 'Cancel',
+  save: 'Save',
+  editTitle: 'Edit career item',
+  fieldType: 'Type',
+  fieldTitle: 'Title',
+  fieldPeriod: 'Period',
+  fieldContent: 'Content',
+  periodPlaceholder: '01/2025 – present',
+  deleteTitle: 'Delete this career item?',
+  /**
+   * Names the CONSEQUENCE for search, because that is the part a user cannot
+   * see: the item's `documents` rows go with it via FK cascade, so anything
+   * generated afterwards can no longer draw on this experience.
+   */
+  deleteBody:
+    'The item and its search index entries are removed. Resumes you already generated are not changed.',
+  deleteConfirm: 'Delete item',
+  deleting: 'Deleting…',
+  deleted: 'Career item deleted.',
+  deleteFailed: 'Could not delete — try again.',
+  updated: 'Career item updated.',
+  updateFailed: 'Could not save changes — try again.',
 } as const;
+
+/** Human labels for `career_items.type`, used by the Badge and the group headings. */
+export const CAREER_ITEM_TYPE_LABEL = {
+  role: 'Role',
+  project: 'Project',
+  achievement: 'Achievement',
+  skill_block: 'Skills',
+  education: 'Education',
+  certification: 'Certification',
+} as const;
+
+/** Group order on /career — most load-bearing experience first (Block E grouping). */
+export const CAREER_ITEM_TYPE_ORDER = [
+  'role',
+  'project',
+  'achievement',
+  'skill_block',
+  'education',
+  'certification',
+] as const;
 
 export const RESULT = {
   generate: 'Generate tailored resume',
