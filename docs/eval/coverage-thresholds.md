@@ -1,11 +1,13 @@
 # Coverage thresholds — calibration note (2026-09-03)
 
-> Two parts, in the order they were measured. **Part 1** derived the thresholds
+> Three parts, in the order they were measured. **Part 1** derived the thresholds
 > against the chunker that stored one ~2,000-character blob per career item.
 > **Part 2** is the semantic-chunking intervention (backlog p3-13) and re-measures
-> the same case against it. Part 1's numbers are deliberately NOT overwritten:
-> the before/after pair is the evidence that the intervention did what it did,
-> and that it did not do what it could not.
+> the same case against it. **Part 3** is the lexical evidence gate (p3-17), which
+> fixes the two false positives Part 2 proved were not a chunking problem. No
+> part's numbers are overwritten by a later one: the before/after chain is the
+> evidence that each intervention did what it did, and that it did not do what it
+> could not.
 
 # Part 1 — deriving the thresholds (blob chunking)
 
@@ -434,3 +436,124 @@ base at the chunk cap is ~4,000 chunks, which the gate's own packer sends as ~63
 requests (one per `EMBEDDING_BATCH_SIZE` chunks, never splitting an item across
 two), on the order of **$0.01**. Re-indexing is cheap; it is the writes, not the
 embeddings, that need the ordering guarantee.
+
+---
+
+# Part 3 — the lexical evidence gate (2026-09-03, backlog p3-17)
+
+Parts 1 and 2 stay as recorded. Part 2 ended with two requirements Covered that
+the base does not support, and with the reason they could not be fixed by
+chunking or by a threshold. This part fixes them, and the argument for HOW is the
+measurement in Part 2.
+
+## Why a purely semantic decision cannot separate "adjacent to" from "has"
+
+Cosine similarity between two short texts measures how much they are ABOUT the
+same thing. "Worked on data labelling" and "worked in Labelbox" are about the
+same thing. So are "annotation quality assurance" and "annotation tools such as
+Labelbox or Supervisely". A vector model is doing its job when it puts them close
+together, and the coverage decision is asking a different question — does this
+person have this thing — which the distance does not answer.
+
+The two measured pairs, same career base, three chunkings:
+
+| requirement | base contains | blob chunks | semantic chunks | rank in its scan |
+|---|---|---|---|---|
+| Experience with annotation tools such as **Labelbox or Supervisely** | annotation QA, no tool named | 0.4280 | **0.4587** | 1st of 8 |
+| Proficient with **MS Office or Google Suite** | "spreadsheets", no product named | 0.4149 | **0.4438** | 2nd of 8 |
+
+Three things follow, and each closes a door:
+
+1. **They are the top two similarities of the eight.** Every true positive in the
+   same scan scored LOWER. A threshold that excluded them would exclude the whole
+   result, so no value of `COVERAGE_THRESHOLD` fixes this.
+2. **Finer chunking made them stronger, not weaker.** The v2.14 hypothesis was
+   dilution — a blob resembles everything a little. Splitting the skills
+   enumeration raised both numbers, because the chunk nearest to "office
+   software" became *purer* office software. So no chunk size fixes this either;
+   the direction of the effect is the opposite of the one that would help.
+3. **The distinguishing evidence is a NAME**, and the app already had it. The same
+   `coverage` payload carried rule B1a's keyword rows: `'Labelbox' inResume=0`,
+   `'MS Office' inResume=0`, `'Google Suite' inResume=0`, `'Supervisely'
+   inResume=0`. The screen asserted "Covered" and "0 in resume" side by side.
+
+So the gate is not a new signal. It is a join between two things the app already
+computed, and the only new work is P1 saying which requirements the join applies
+to.
+
+## What was built
+
+P1 classifies each requirement by the evidence it demands — `tool`, `credential`,
+`general` — and copies the verbatim `terms` that would prove it, any one of them
+being enough. Rule B1 then requires, for `tool` and `credential` only, that one
+of those terms be literally present in the **career base**; absent, the row is a
+Gap whatever the similarity, and the entry records the missing term so the screen
+can name it. No extra model call: both fields ride in the existing P1 response.
+
+Two design points that decide whether the gate lies in the other direction:
+
+- **Conservative classification, stated in the prompt in those words.** A general
+  requirement misfiled as `tool` invents a gap that is not there — the error this
+  entire round of work exists to remove — while a tool requirement left as
+  `general` merely keeps the previous behaviour. The prompt says to answer
+  `general` whenever the requirement does not clearly name a product or a
+  qualification, and `parsedVacancySchema` defaults a missing value to `general`.
+- **The corpus is the base, never the pasted source.** They are different bodies
+  of text. Searching a one-page pasted resume for "Python" would refuse a tool
+  the career base really holds; the base is what the retrieval searched, so the
+  base is what the gate reads. The source resume keeps its own job — deciding
+  US-3's hidden match.
+
+## Before and after, every requirement in the seeded case
+
+`docs/eval/calibration-case-hiredbuddy.json`, career base as source. Both columns
+are seeded runs on the same fixture; "before" is the v2.14 run from Part 2.
+
+| # | kind | evidence | requirement | before | after | missing term |
+|---|---|---|---|---|---|---|
+| 1 | must | general | 0-2 years of experience in data entry, data annotation, or similar role | covered 0.4002 | covered 0.4002 | — |
+| 2 | must | **tool** | Proficient with MS Office or Google Suite | covered 0.4438 | **gap 0.4438** | **MS Office** |
+| 3 | must | **tool** | Experience with annotation tools such as Labelbox or Supervisely | covered 0.4587 | **gap 0.4587** | **Labelbox** |
+| 4 | must | general | Excellent attention to detail and patience for repetitive work | covered 0.4149 | covered 0.4142 | — |
+| 5 | must | general | Good written English; a second language is a plus | covered 0.3813 | covered 0.3813 | — |
+| 6 | must | general | A reliable internet connection and a quiet place to work from home | gap 0.1916 | gap 0.1832 | — |
+| 7 | nice | **tool** | Basic Python for small data clean-up tasks | covered 0.3791 | **covered 0.3800** | none — the base says Python |
+| 8 | nice | general | Any exposure to machine-learning projects | gap 0.3481 | gap 0.3492 | — |
+
+**Classification: 5 general, 3 tool, 0 credential** (this posting asks for no
+diploma, degree or licence).
+
+**No requirement classified `general` changed status.** Three covered stayed
+covered, two gaps stayed gaps. That was the condition for calling this a result
+rather than an over-firing classifier, and it is the property to re-check on any
+future posting: a general row that moves means the classifier has started
+claiming requirements it should have left alone.
+
+**Requirement 7 is the case that shows the gate discriminating rather than
+refusing.** "Basic Python" is classified `tool`, its term is `Python`, and the
+base says Python — so it stays Covered. A gate that simply distrusted tool
+requirements would have failed this row, and the difference between those two
+behaviours is the whole value of the feature.
+
+## The score moved, and NOT because of the gate
+
+Match Rate **54 → 57**. The gate cannot move the score at all, and the numbers
+show it: rule B1's S term is a function of SIMILARITY, not of status, and S is
+identical across the two runs at **0.8333**. The whole difference is K, which
+went from 1/10 to 2/11 keywords present, because the P1 edit changed the keyword
+list (the parser now also returns "annotation guidelines", which the base
+contains).
+
+That is worth stating plainly rather than leaving as a coincidence: a scan can
+gain two Gaps and a higher score in the same round, and if the two had been
+connected the arithmetic would have been wrong. They are not connected. The
+coverage table and the Match Rate answer different questions — which
+requirements are met, and how close the base is overall — and only the first one
+changed here.
+
+**One side effect, caught and fixed rather than shipped.** The first version of
+the P1 edit narrowed the top-level `keywords` list from 10 terms to 5: asked for
+per-requirement `terms`, the parser started treating the keyword list as the same
+job. That halved K's denominator for no good reason. The prompt now says the two
+are separate jobs and asks for 8–15 keywords; the list came back at 11. Measured,
+not assumed — it took a second seeded run to see it.

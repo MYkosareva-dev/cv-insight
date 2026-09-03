@@ -53,10 +53,24 @@ export type DocumentRow = {
   created_at: string;
 };
 
+/**
+ * What kind of evidence a requirement demands (SPEC v2.15, rule B1's lexical
+ * gate). `general` is the default and the conservative answer — see P1.
+ */
+export type EvidenceKind = 'tool' | 'credential' | 'general';
+
 export type ParsedVacancy = {
   title: string;
   company: string | null;
-  requirements: { text: string; kind: 'must' | 'nice'; keyword: string }[];
+  requirements: {
+    text: string;
+    kind: 'must' | 'nice';
+    keyword: string;
+    /** v2.15. Absent on vacancies parsed before it — read it as `general`. */
+    evidence?: EvidenceKind;
+    /** v2.15. The verbatim names that satisfy a tool/credential requirement. */
+    terms?: string[];
+  }[];
   keywords: string[];
 };
 
@@ -88,6 +102,19 @@ export type CoverageEntry = {
    * (CLAUDE.md, Retrieval).
    */
   similarity: number;
+  /**
+   * The term whose ABSENCE made this a gap (SPEC v2.15, rule B1's lexical gate):
+   * a `tool` or `credential` requirement whose best chunk cleared the similarity
+   * threshold, but none of whose verbatim terms appears anywhere in the career
+   * base. Null on every other row, and absent entirely on rows written before
+   * v2.15 — which is not the same as null, but reads the same on screen.
+   *
+   * Stored because the screen has to be able to say WHY: "Covered" beside
+   * "Labelbox: 0 in resume" was the contradiction this field exists to end, and
+   * replacing it with an unexplained "Gap" would trade one confusion for
+   * another.
+   */
+  missingTerm?: string | null;
 };
 
 /**

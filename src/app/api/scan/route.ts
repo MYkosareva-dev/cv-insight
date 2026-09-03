@@ -123,6 +123,19 @@ type ScanPlan = {
    */
   sourceText: string;
   sourceIsBase: boolean;
+  /**
+   * The CAREER BASE as one body of text — the corpus rule B1's coverage decision
+   * is made against, and therefore the corpus its lexical gate searches
+   * (SPEC v2.15).
+   *
+   * Separate from `sourceText` on purpose. For a career-base scan they are the
+   * same string and no second query is made; for a pasted or uploaded resume
+   * they are DIFFERENT bodies of text, and this is the one the retrieval ran
+   * over. Searching the paste instead would refuse a tool the base really holds
+   * because the one page the user pasted did not mention it — the gate lying in
+   * the other direction.
+   */
+  baseText: string;
   /** A non-blocking notice for the client (a truncated PDF extraction). */
   notice: string | null;
 };
@@ -250,15 +263,23 @@ async function coverageFor(vacancy: ParsedVacancy, plan: ScanPlan): Promise<Cove
   return vacancy.requirements.map((requirement, index) => {
     const best = bestChunk(outcome.outcomes[index]);
     const similarity = best?.similarity ?? 0;
-    const status = coverageStatusFor({
+    const { status, missingTerm } = coverageStatusFor({
       bestSimilarity: similarity,
       keyword: requirement.keyword,
       sourceText: plan.sourceText,
       sourceIsBase: plan.sourceIsBase,
+      // v2.15: what would prove this requirement, and the corpus that decides —
+      // the BASE, not the scored source. A vacancy parsed before v2.15 carries
+      // neither field and reads as `general`, i.e. the pre-gate behaviour.
+      evidence: requirement.evidence,
+      terms: requirement.terms,
+      baseText: plan.baseText,
     });
     // A gap keeps the similarity it measured but names no item: the best chunk
     // did NOT cover the requirement, and printing its title beside a gap would
-    // suggest it did (SPEC Block D's own example does the same).
+    // suggest it did (SPEC Block D's own example does the same). That holds for
+    // a lexical gap too — the chunk was topically close and still did not prove
+    // the requirement, so naming it would be the same overclaim.
     const attributed = status === 'gap' ? null : best;
     return {
       requirement: requirement.text,
@@ -267,6 +288,7 @@ async function coverageFor(vacancy: ParsedVacancy, plan: ScanPlan): Promise<Cove
       careerItemId: attributed?.careerItemId ?? null,
       careerItemTitle: attributed ? titleOf(attributed.content) : null,
       similarity,
+      missingTerm,
     };
   });
 }
@@ -418,6 +440,7 @@ async function freshPlan(userId: string, input: FreshScan): Promise<ScanPlan> {
     resumeSource: input.resumeSource,
     sourceText: source.text,
     sourceIsBase: source.isBase,
+    baseText: source.baseText,
     notice: input.notice ?? null,
   };
 }
@@ -457,6 +480,7 @@ async function rerunPlan(applicationId: string): Promise<ScanPlan> {
     resumeSource: application.resume_source,
     sourceText: source.text,
     sourceIsBase: source.isBase,
+    baseText: source.baseText,
     notice: null,
   };
 }
@@ -471,7 +495,7 @@ async function rerunPlan(applicationId: string): Promise<ScanPlan> {
 async function resolveSource(
   resumeSource: Application['resume_source'],
   sourceResumeText: string | null,
-): Promise<{ text: string; isBase: boolean }> {
+): Promise<{ text: string; isBase: boolean; baseText: string }> {
   if (resumeSource === 'resume_version') {
     // A valid value of the column's CHECK constraint whose rows do not exist
     // yet: `resume_versions` and the tailored-resume editor land in Phase 4.
@@ -481,10 +505,9 @@ async function resolveSource(
   if (resumeSource === 'career_base') {
     const items = await listCareerItems();
     if (items.length === 0) throw new ValidationError(SCAN.emptyBase);
-    return {
-      text: items.map((item) => `${item.title}\n${item.content}`).join('\n\n'),
-      isBase: true,
-    };
+    const base = careerBaseCorpus(items);
+    // One query: for this source the scored text IS the base corpus.
+    return { text: base, isBase: true, baseText: base };
   }
 
   if (!sourceResumeText) {
@@ -493,5 +516,28 @@ async function resolveSource(
     // having written something it cannot score — not a request to blame.
     throw new ServerError();
   }
-  return { text: sourceResumeText, isBase: false };
+  /**
+   * The base is loaded even though it is not what gets scored: rule B1's lexical
+   * gate asks whether the BASE names a tool, because the base is what the
+   * retrieval searched. An empty base yields an empty corpus, which is honest —
+   * nothing was found because there is nothing there, and the similarity half of
+   * the decision already says so.
+   */
+  return {
+    text: sourceResumeText,
+    isBase: false,
+    baseText: careerBaseCorpus(await listCareerItems()),
+  };
+}
+
+/**
+ * The career base as one searchable body of text: every item's title and
+ * content, in the order the DAL returns them.
+ *
+ * One definition, used for both jobs it has — the text a career-base scan is
+ * scored against, and the corpus rule B1's lexical gate searches. Two spellings
+ * of "the base as text" would be two things to keep in step.
+ */
+function careerBaseCorpus(items: { title: string; content: string }[]): string {
+  return items.map((item) => `${item.title}\n${item.content}`).join('\n\n');
 }

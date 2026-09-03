@@ -117,7 +117,15 @@ function CoverageTable({ entries }: { entries: CoverageEntry[] }) {
                 <StatusBadge status={entry.status} />
               </td>
               <td className="text-muted-foreground py-2">
-                {entry.careerItemTitle ?? RESULT.statusGap} · {percent(entry.similarity)}
+                {/*
+                  A lexical gap says WHY (SPEC v2.15): the base cleared the
+                  similarity threshold and never names the term, so the cell
+                  names the term instead of an item that did not prove it.
+                */}
+                {entry.missingTerm
+                  ? RESULT.missingTerm(entry.missingTerm)
+                  : (entry.careerItemTitle ?? RESULT.statusGap)}{' '}
+                · {percent(entry.similarity)}
               </td>
             </tr>
           ))}

@@ -12,6 +12,7 @@ import {
   keywordPresent,
   keywordShare,
   literalKeywords,
+  missingLexicalTerm,
   matchScore,
   normalizeSimilarity,
   renderableScore,
@@ -208,26 +209,25 @@ describe('keywordCount — the Block E keywords table', () => {
 
 describe('coverageStatusFor — the three Block D statuses', () => {
   const base = { keyword: 'Docker', sourceText: 'I used Docker daily', sourceIsBase: false };
+  /** The status alone, for the cases that predate the v2.15 lexical gate. */
+  const statusOf = (args) => coverageStatusFor(args).status;
 
   test('below the coverage threshold is a gap, whatever the resume says', () => {
     // Written against the CONSTANT rather than a literal: the threshold is
     // calibrated (docs/eval/coverage-thresholds.md) and a recalibration must not
     // be able to leave this assertion quietly testing an old number.
-    assert.equal(
-      coverageStatusFor({ ...base, bestSimilarity: COVERAGE_THRESHOLD - 0.01 }),
-      'gap',
-    );
-    assert.equal(coverageStatusFor({ ...base, bestSimilarity: 0 }), 'gap');
+    assert.equal(statusOf({ ...base, bestSimilarity: COVERAGE_THRESHOLD - 0.01 }), 'gap');
+    assert.equal(statusOf({ ...base, bestSimilarity: 0 }), 'gap');
   });
 
   test('covered by the base AND present in the source resume is "covered"', () => {
-    assert.equal(coverageStatusFor({ ...base, bestSimilarity: COVERAGE_THRESHOLD }), 'covered');
-    assert.equal(coverageStatusFor({ ...base, bestSimilarity: 0.91 }), 'covered');
+    assert.equal(statusOf({ ...base, bestSimilarity: COVERAGE_THRESHOLD }), 'covered');
+    assert.equal(statusOf({ ...base, bestSimilarity: 0.91 }), 'covered');
   });
 
   test('covered by the base but absent from the source is the US-3 hidden match', () => {
     assert.equal(
-      coverageStatusFor({ ...base, sourceText: 'no tooling mentioned', bestSimilarity: 0.81 }),
+      statusOf({ ...base, sourceText: 'no tooling mentioned', bestSimilarity: 0.81 }),
       'gap_in_resume_covered_by_base',
     );
   });
@@ -236,11 +236,11 @@ describe('coverageStatusFor — the three Block D statuses', () => {
     // Nothing covered by the base can be "missing from the source" when they
     // are the same body of text.
     assert.equal(
-      coverageStatusFor({ ...base, sourceText: '', sourceIsBase: true, bestSimilarity: 0.81 }),
+      statusOf({ ...base, sourceText: '', sourceIsBase: true, bestSimilarity: 0.81 }),
       'covered',
     );
     assert.equal(
-      coverageStatusFor({
+      statusOf({
         ...base,
         sourceText: '',
         sourceIsBase: true,
@@ -254,9 +254,15 @@ describe('coverageStatusFor — the three Block D statuses', () => {
     // The parser can emit an empty keyword. "Not in your resume" would then be
     // a statement about a search that was never performed.
     assert.equal(
-      coverageStatusFor({ ...base, keyword: '', sourceText: 'anything', bestSimilarity: 0.8 }),
+      statusOf({ ...base, keyword: '   ', sourceText: 'nothing relevant', bestSimilarity: 0.81 }),
       'covered',
     );
+  });
+
+  test('every status carries a missingTerm field, null unless the gate fired', () => {
+    for (const bestSimilarity of [0, COVERAGE_THRESHOLD, 0.91]) {
+      assert.equal(coverageStatusFor({ ...base, bestSimilarity }).missingTerm, null);
+    }
   });
 });
 
@@ -513,5 +519,185 @@ describe('matchScore — the arithmetic behind a small nonzero score (B1)', () =
       }),
       40,
     );
+  });
+});
+
+/**
+ * RULE B1's LEXICAL GATE (SPEC v2.15, backlog p3-17).
+ *
+ * The measured case: "Experience with annotation tools such as Labelbox or
+ * Supervisely" scored 0.4587 against a career base that says "annotation quality
+ * assurance" and names no tool at all — a similarity ABOVE every true positive
+ * in the same scan, and higher after semantic chunking than before it. Cosine
+ * similarity between short texts measures topic; topic is not fact.
+ */
+describe('missingLexicalTerm — topic is not fact', () => {
+  const BASE = [
+    'AI Prompt Evaluator — Nordlicht Digital',
+    'Evaluated and annotated LLM outputs against scoring rubrics.',
+    'Skills',
+    'LLM evaluation, annotation quality assurance, Python (pandas), SQL, spreadsheets.',
+  ].join('\n\n');
+
+  test("the owner's two false positives are named as missing", () => {
+    assert.equal(
+      missingLexicalTerm({ evidence: 'tool', terms: ['Labelbox', 'Supervisely'], baseText: BASE }),
+      'Labelbox',
+    );
+    assert.equal(
+      missingLexicalTerm({ evidence: 'tool', terms: ['MS Office', 'Google Suite'], baseText: BASE }),
+      'MS Office',
+    );
+  });
+
+  test('ANY ONE term satisfies the requirement', () => {
+    // "Python or R" against a base with Python is met, and the gate must not
+    // report the term the base happens not to use.
+    assert.equal(
+      missingLexicalTerm({ evidence: 'tool', terms: ['R', 'Python'], baseText: BASE }),
+      null,
+    );
+    assert.equal(
+      missingLexicalTerm({ evidence: 'tool', terms: ['Python'], baseText: BASE }),
+      null,
+    );
+  });
+
+  test('general requirements are never gated — the conservative direction', () => {
+    // A general requirement misfiled as tool invents a gap, which is the error
+    // this round exists to remove. `general` therefore short-circuits before
+    // anything is searched, whatever terms came along with it.
+    assert.equal(
+      missingLexicalTerm({ evidence: 'general', terms: ['Labelbox'], baseText: BASE }),
+      null,
+    );
+    assert.equal(missingLexicalTerm({ evidence: 'general', terms: [], baseText: '' }), null);
+  });
+
+  test('a tool requirement with NO terms is not gated either', () => {
+    // The parser classified it and then gave nothing to look for. Refusing on
+    // that would be a gap asserted from an empty search.
+    assert.equal(missingLexicalTerm({ evidence: 'tool', terms: [], baseText: BASE }), null);
+  });
+
+  test('credentials are gated on the same terms', () => {
+    assert.equal(
+      missingLexicalTerm({
+        evidence: 'credential',
+        terms: ["associate's degree"],
+        baseText: BASE,
+      }),
+      "associate's degree",
+    );
+    assert.equal(
+      missingLexicalTerm({
+        evidence: 'credential',
+        terms: ['BSc Business Informatics'],
+        baseText: 'BSc Business Informatics — Universitaet Hamburg',
+      }),
+      null,
+    );
+  });
+
+  test('presence uses the SAME boundary rule as the keywords table', () => {
+    // Whatever the table would count as present, the gate must accept — and the
+    // reverse. "SQL" in the base is present; "MySQL" is not, and a substring
+    // test would have accepted it.
+    assert.equal(missingLexicalTerm({ evidence: 'tool', terms: ['SQL'], baseText: BASE }), null);
+    assert.equal(keywordCount(BASE, 'SQL') > 0, true);
+    assert.equal(missingLexicalTerm({ evidence: 'tool', terms: ['MySQL'], baseText: BASE }), 'MySQL');
+    assert.equal(keywordCount(BASE, 'MySQL'), 0);
+    // Case-insensitive, like the table.
+    assert.equal(missingLexicalTerm({ evidence: 'tool', terms: ['python'], baseText: BASE }), null);
+  });
+});
+
+describe('coverageStatusFor — the lexical gate in the decision (B1, v2.15)', () => {
+  const BASE = 'Skills\n\nLLM evaluation, annotation quality assurance, Python, spreadsheets.';
+
+  test('a tool requirement above the threshold is a GAP when the base never names it', () => {
+    const result = coverageStatusFor({
+      // The measured similarity of the Labelbox requirement: above every true
+      // positive in that scan.
+      bestSimilarity: 0.4587,
+      keyword: 'Labelbox',
+      sourceText: BASE,
+      sourceIsBase: true,
+      evidence: 'tool',
+      terms: ['Labelbox', 'Supervisely'],
+      baseText: BASE,
+    });
+    assert.equal(result.status, 'gap');
+    assert.equal(result.missingTerm, 'Labelbox');
+  });
+
+  test('the same requirement is covered once the base names the tool', () => {
+    const result = coverageStatusFor({
+      bestSimilarity: 0.4587,
+      keyword: 'Labelbox',
+      sourceText: BASE,
+      sourceIsBase: true,
+      evidence: 'tool',
+      terms: ['Labelbox'],
+      baseText: `${BASE} Labelbox.`,
+    });
+    assert.equal(result.status, 'covered');
+    assert.equal(result.missingTerm, null);
+  });
+
+  test('a general requirement is decided exactly as before the gate existed', () => {
+    const withGate = coverageStatusFor({
+      bestSimilarity: 0.4587,
+      keyword: 'annotation',
+      sourceText: BASE,
+      sourceIsBase: true,
+      evidence: 'general',
+      terms: [],
+      baseText: BASE,
+    });
+    const withoutFields = coverageStatusFor({
+      bestSimilarity: 0.4587,
+      keyword: 'annotation',
+      sourceText: BASE,
+      sourceIsBase: true,
+    });
+    assert.deepEqual(withGate, withoutFields);
+    assert.equal(withGate.status, 'covered');
+  });
+
+  test('the gate searches the BASE, not the pasted source', () => {
+    // A pasted one-page resume that omits a tool the base holds must not lose
+    // the requirement: the coverage decision is made against the base, so that
+    // is the corpus the gate reads. Searching the paste would make the gate lie
+    // in the other direction.
+    const result = coverageStatusFor({
+      bestSimilarity: 0.5,
+      keyword: 'Python',
+      sourceText: 'A short resume with no tooling section.',
+      sourceIsBase: false,
+      evidence: 'tool',
+      terms: ['Python'],
+      baseText: BASE,
+    });
+    // Covered by the base, absent from the chosen resume: US-3's hidden match,
+    // which is exactly what should survive here.
+    assert.equal(result.status, 'gap_in_resume_covered_by_base');
+    assert.equal(result.missingTerm, null);
+  });
+
+  test('a tool requirement BELOW the threshold stays a plain gap, with no term named', () => {
+    // The similarity test still runs first, so the row is a gap for the older
+    // and simpler reason and the screen has nothing extra to explain.
+    const result = coverageStatusFor({
+      bestSimilarity: COVERAGE_THRESHOLD - 0.01,
+      keyword: 'Labelbox',
+      sourceText: BASE,
+      sourceIsBase: true,
+      evidence: 'tool',
+      terms: ['Labelbox'],
+      baseText: BASE,
+    });
+    assert.equal(result.status, 'gap');
+    assert.equal(result.missingTerm, null);
   });
 });

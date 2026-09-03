@@ -280,6 +280,28 @@ export const parsedVacancySchema = z.object({
         text: z.string().min(1).max(1_000),
         kind: z.enum(['must', 'nice']),
         keyword: z.string().max(200),
+        /**
+         * What kind of evidence would PROVE this requirement (SPEC v2.15, rule
+         * B1's lexical gate). Defaults to `general` on a missing or unknown
+         * value, and that default is the safe direction: `general` keeps the
+         * purely semantic decision, while a wrong `tool` invents a gap. The
+         * prompt is told the same asymmetry in the same words.
+         */
+        evidence: z
+          .enum(['tool', 'credential', 'general'])
+          .nullish()
+          .transform((v) => v ?? 'general'),
+        /**
+         * The verbatim names that would satisfy a `tool` or `credential`
+         * requirement, ANY ONE of them being enough. Bounded like the keyword
+         * list and trimmed of blanks — a blank term would match nothing and
+         * would turn every such requirement into a permanent gap.
+         */
+        terms: z
+          .array(z.string().max(200))
+          .max(20)
+          .nullish()
+          .transform((v) => (v ?? []).map((t) => t.trim()).filter((t) => t.length > 0)),
       }),
     )
     .max(200)

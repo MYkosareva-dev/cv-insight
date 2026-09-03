@@ -194,7 +194,7 @@ function report(probe) {
   );
   console.log('');
   console.log(
-    `${pad('kind', 5)} ${pad('stored', 26)} ${pad('best', 7)} ${pad('norm', 7)} ${pad('best-matching career item', 44)} requirement`,
+    `${pad('kind', 5)} ${pad('evidence', 11)} ${pad('stored', 26)} ${pad('best', 7)} ${pad('norm', 7)} ${pad('best-matching career item', 40)} requirement`,
   );
   console.log('-'.repeat(150));
 
@@ -204,10 +204,19 @@ function report(probe) {
     rows.push({ requirement: requirement.requirement, kind: requirement.kind, best });
     console.log(
       `${pad(requirement.kind, 5)} ` +
+        `${pad(requirement.evidence ?? 'general', 11)} ` +
         `${pad(`${requirement.stored?.status ?? '—'} ${num(requirement.stored?.similarity)}`, 26)} ` +
         `${pad(num(best?.similarity), 7)} ${pad(num(best?.normalized), 7)} ` +
-        `${pad(best?.careerItemTitle ?? '(nothing matched)', 44)} ${requirement.requirement}`,
+        `${pad(best?.careerItemTitle ?? '(nothing matched)', 40)} ${requirement.requirement}`,
     );
+    // v2.15: the terms the gate looked for, and the one it could not find.
+    if ((requirement.terms ?? []).length > 0) {
+      const missing = requirement.stored?.missingTerm;
+      console.log(
+        `${pad('', 5)} ${pad('', 11)} terms: ${requirement.terms.join(' | ')}` +
+          (missing ? `  -> MISSING: ${missing}` : '  -> present in the base'),
+      );
+    }
     // The runners-up, indented: a threshold has to separate the best match from
     // the next one, and that spread is invisible in a single column.
     for (const match of requirement.matches.slice(1, 3)) {

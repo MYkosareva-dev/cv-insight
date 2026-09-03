@@ -418,6 +418,18 @@ export const RESULT = {
   statusCovered: 'Covered',
   statusBaseOnly: 'In base only',
   statusGap: 'Gap',
+  /**
+   * The BEST MATCH cell for a row that rule B1's lexical gate turned into a gap
+   * (SPEC v2.15): the base was topically close enough to clear the similarity
+   * threshold, and it never names the thing the requirement asks for.
+   *
+   * One short phrase, in the cell that would otherwise hold a career-item title,
+   * because that cell is exactly where the user asks "matched against what?".
+   * Naming the TERM is the whole point — an unexplained "Gap" beside a keywords
+   * table that says "Labelbox: 0 in resume" would trade one contradiction for a
+   * different confusion.
+   */
+  missingTerm: (term: string) => `no mention of “${term}”`,
   /** US-3 step 2: "BPMN — found in career item 'Business Analyst, BotWorks Labs'". */
   foundInItem: (title: string) => `found in career item “${title}”`,
   /**

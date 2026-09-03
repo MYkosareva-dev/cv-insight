@@ -168,8 +168,17 @@ export async function GET(request: Request) {
           requirement: requirement.text,
           kind: requirement.kind,
           keyword: requirement.keyword,
+          // v2.15: what evidence the requirement demands, and the verbatim names
+          // that would prove it — without these the lexical gate's decisions are
+          // not auditable, which is the whole job of this endpoint.
+          evidence: requirement.evidence ?? 'general',
+          terms: requirement.terms ?? [],
           stored: storedEntry
-            ? { status: storedEntry.status, similarity: storedEntry.similarity }
+            ? {
+                status: storedEntry.status,
+                similarity: storedEntry.similarity,
+                missingTerm: storedEntry.missingTerm ?? null,
+              }
             : null,
           matches: ranked,
         };

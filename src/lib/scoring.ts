@@ -50,6 +50,15 @@
  * `docs/eval/coverage-thresholds.md` Part 2, and backlog p3-17 for the reason
  * (the remaining error is lexical, not a matter of scale).
  */
+/**
+ * Declared here rather than imported from `lib/db/types.ts`, which is
+ * `server-only`: this module is pure on purpose (node:test loads it, and client
+ * components read `renderableScore` through it), so it cannot depend on the DAL
+ * types. `ParsedVacancy` uses the same three literals, and `parsedVacancySchema`
+ * is the one place they are validated.
+ */
+export type EvidenceKind = 'tool' | 'credential' | 'general';
+
 export const SIMILARITY_FLOOR = 0.2;
 export const COVERAGE_THRESHOLD = 0.36;
 /**
@@ -228,9 +237,52 @@ export function insufficientSignal(args: {
 }
 
 /**
- * The Block D coverage status for one requirement, from the two things that
- * decide it: what the career base returned, and whether the requirement's
- * keyword is in the resume SOURCE the user chose.
+ * RULE B1's LEXICAL GATE (SPEC v2.15, backlog p3-17) — the term a `tool` or
+ * `credential` requirement demands and the career base does not contain, or null
+ * when nothing is missing.
+ *
+ * WHY A SEMANTIC DECISION CANNOT DO THIS. Cosine similarity between short texts
+ * measures TOPIC, and "worked on data labelling" and "worked in Labelbox" are
+ * neighbours in that space. Measured twice on the same base: "Experience with
+ * annotation tools such as Labelbox or Supervisely" scored 0.4280 against blob
+ * chunks and 0.4587 against semantic ones — sharper chunking made the false
+ * positive STRONGER, because the chunk nearest to annotation tooling became
+ * purer annotation tooling. There is no chunk size and no threshold at which
+ * "adjacent to" separates from "has", and the app already held the missing
+ * evidence one field away in the same coverage payload.
+ *
+ * ANY-OF. A requirement naming "MS Office or Google Suite" is satisfied by
+ * either, so the terms are alternatives and only an empty intersection is a
+ * gap. The term reported is the FIRST one, because that is the one the posting
+ * led with and the one worth naming on screen.
+ *
+ * The boundary rule is `keywordCount`'s, so this gate and the keywords table can
+ * never disagree about whether a term is present.
+ */
+export function missingLexicalTerm(args: {
+  evidence: EvidenceKind;
+  terms: readonly string[];
+  /** The corpus the coverage decision is made against — the CAREER BASE. */
+  baseText: string;
+}): string | null {
+  const { evidence, terms, baseText } = args;
+  if (evidence === 'general') return null;
+  /**
+   * A tool requirement with no terms is not evidence of anything: the parser
+   * classified it and then gave nothing to look for. Withholding the gate is the
+   * conservative direction — the same direction the prompt's asymmetry and the
+   * schema's default both take.
+   */
+  if (terms.length === 0) return null;
+  if (terms.some((term) => keywordCount(baseText, term) > 0)) return null;
+  return terms[0] ?? null;
+}
+
+/**
+ * The Block D coverage status for one requirement, from the three things that
+ * decide it: what the career base returned, whether the base literally contains
+ * the term a tool or credential requirement names (v2.15), and whether the
+ * requirement's keyword is in the resume SOURCE the user chose.
  *
  *   covered                        base covers it AND the source resume says so
  *   gap_in_resume_covered_by_base  base covers it, the source resume does not
@@ -250,10 +302,41 @@ export function coverageStatusFor(args: {
   keyword: string;
   sourceText: string;
   sourceIsBase: boolean;
-}): 'covered' | 'gap_in_resume_covered_by_base' | 'gap' {
+  /** v2.15: what would prove the requirement. Omitted reads as `general`. */
+  evidence?: EvidenceKind;
+  /** v2.15: the verbatim names that satisfy it, any one of them. */
+  terms?: readonly string[];
+  /**
+   * v2.15: the CAREER BASE text, which is the corpus the coverage decision is
+   * made against. NOT `sourceText` — for a pasted resume those are different
+   * bodies of text, and searching the paste would make the gate lie in the
+   * other direction: it would refuse a tool the base really holds because the
+   * one-page resume the user pasted happened not to mention it.
+   */
+  baseText?: string;
+}): { status: 'covered' | 'gap_in_resume_covered_by_base' | 'gap'; missingTerm: string | null } {
   const { bestSimilarity, keyword, sourceText, sourceIsBase } = args;
-  if (!isCovered(bestSimilarity)) return 'gap';
-  if (sourceIsBase) return 'covered';
+  if (!isCovered(bestSimilarity)) return { status: 'gap', missingTerm: null };
+
+  /**
+   * THE LEXICAL GATE (v2.15). A `tool` or `credential` requirement is covered
+   * only if the base literally says the thing, however similar the best chunk
+   * was — similarity is topical, and topic is not fact. The term is carried on
+   * the entry so the screen can say WHY the row is a gap instead of leaving the
+   * user to reconcile "Covered" with "Labelbox: 0 in resume".
+   *
+   * It runs AFTER the similarity test and BEFORE the source-versus-base split,
+   * because it can only ever turn a covered row into a gap: a requirement the
+   * base does not name is not a "hidden match" the chosen resume is missing.
+   */
+  const missingTerm = missingLexicalTerm({
+    evidence: args.evidence ?? 'general',
+    terms: args.terms ?? [],
+    baseText: args.baseText ?? '',
+  });
+  if (missingTerm !== null) return { status: 'gap', missingTerm };
+
+  if (sourceIsBase) return { status: 'covered', missingTerm: null };
   /**
    * P1 can return a requirement with an empty `keyword`. There is then nothing
    * to search the resume for, and "covered by your base but missing from your
@@ -261,8 +344,10 @@ export function coverageStatusFor(args: {
    * is withheld rather than asserted. The base covered the requirement; that
    * much was measured.
    */
-  if (keyword.trim().length === 0) return 'covered';
-  return keywordPresent(sourceText, keyword) ? 'covered' : 'gap_in_resume_covered_by_base';
+  if (keyword.trim().length === 0) return { status: 'covered', missingTerm: null };
+  return keywordPresent(sourceText, keyword)
+    ? { status: 'covered', missingTerm: null }
+    : { status: 'gap_in_resume_covered_by_base', missingTerm: null };
 }
 
 /**
