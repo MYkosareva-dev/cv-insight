@@ -1,5 +1,6 @@
 # CV Insight — Technical Specification
-> Version: 2.10 | Date: 2026-09-03 | Status: Production-ready
+> Version: 2.11 | Date: 2026-09-03 | Status: Production-ready
+> v2.11: Phase-2 owner-feedback round. Two defects from first live use: importing the same text twice produced exact duplicates (no dedup guard), and career items carried no provenance - no way to see which resume a fact came from or what role it targeted. Adds the `imports` table + `career_items.import_id` (003_imports.sql), a save-time dedup guard, and the import name / target-role fields. The linter-hardening migration deferred in v2.2 moves from 003 to 004.
 > v2.10: Phase 2 (career base + the first real OpenRouter calls). Nine deviations found by the ai-architect phase gate, declared here rather than shipped silently: P4 import prompt; lib/chunking.ts with the chunk bound that makes B9 self-consistent; a per-step max_tokens map; import input bounds and the .pdf-only check; career/loading.tsx; new copy constants; the errors.ts annotation; B7's in-request counter; and the retry cap. No new enforcement rules - the 13 stay frozen.
 > v2.9: R12 redesigned from a prose scanner to a two-state switch (AUDIT_RETENTION_VERIFIED + a template evidence file). Scanning could not close the set of ways to write a period, and the anchored evidence format matched no real psql output — the guard had become more complex than what it guards. Rules stay frozen; this replaces one, it does not add any.
 > v2.8: R12 stated as fail-closed and over-inclusive (a rule keyed on one blessed word was blind to the app's own shipped phrasing); evidence predicate anchored, not substring. Enforcement rules are FROZEN for Phase 1 after this — new rules only when a defect in product code motivates one.
@@ -79,6 +80,7 @@ cv-insight/
 │                              # nextjs-security, vercel-security, eu-compliance-reviewer
 ├── supabase/migrations/001_init.sql
 ├── supabase/migrations/002_audit_retention.sql   # pg_cron 90-day purge of auth.audit_log_entries
+├── supabase/migrations/003_imports.sql          # v2.11: imports table + career_items.import_id
 ├── src/
 │   ├── middleware.ts          # route protection
 │   ├── app/
@@ -250,7 +252,8 @@ Persona: **Mira** (fictional), 33, AI Quality Analyst in Hamburg, Germany, activ
 ## BLOCK C: Data Model
 
 ```
-auth.users 1──N career_items (user_id)
+auth.users 1──N career_items (user_id)       imports 1──N career_items (import_id, SET NULL)
+auth.users 1──N imports (user_id)
 auth.users 1──N documents (user_id)          career_items 1──N documents (career_item_id)
 auth.users 1──N vacancies (user_id)
 auth.users 1──N applications (user_id)       vacancies 1──N applications (vacancy_id)
@@ -361,6 +364,8 @@ create index llm_calls_user_idx on llm_calls(user_id, created_at desc);
 
 -- RLS: owner-scoped, LEAST-PRIVILEGE. Absent policies are deliberate (CLAUDE.md
 -- "Data access rules"): documents has no UPDATE (re-embed = delete-then-insert);
+-- imports (added in 003) has no DELETE -- deleting a source would strip provenance
+-- from the items pointing at it;
 -- resume_versions and llm_calls are append-only (no UPDATE/DELETE);
 -- vacancies/applications have no user DELETE in MVP (erasure = account deletion;
 -- FK cascades are not blocked by RLS).
@@ -391,7 +396,7 @@ begin
 end $$;
 
 -- > Decision: Supabase-linter hardening (extensions schema, SET search_path, `to authenticated`,
--- `(select auth.uid())` wrapping) is DEFERRED to a future 003 migration (002 is audit retention). None is security-relevant
+-- `(select auth.uid())` wrapping) is DEFERRED to a future 004 migration (002 is audit retention, 003 is imports). None is security-relevant
 -- under this RLS design (anon has no policies → denied; auth.uid() is null for anon); search_path
 -- has a real HNSW-inlining tradeoff; scale is tiny. Revisit only if the linter matters pre-deploy.
 
@@ -433,6 +438,32 @@ select cron.schedule(
 --   where jobid = (select jobid from cron.job where jobname = 'purge-auth-audit-log')
 --   order by end_time desc limit 3;
 ```
+
+### Migration `supabase/migrations/003_imports.sql` (v2.11; run in SQL editor after 002)
+```sql
+create table imports (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null check (char_length(name) between 1 and 120),
+  target_role text check (char_length(target_role) <= 120),
+  source_kind text check (source_kind in ('pdf','paste')),
+  created_at timestamptz not null default now()
+);
+create index imports_user_idx on imports(user_id, created_at desc);
+
+alter table imports enable row level security;
+create policy "imports_select_own" on imports for select using (auth.uid() = user_id);
+create policy "imports_insert_own" on imports for insert with check (auth.uid() = user_id);
+create policy "imports_update_own" on imports for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+alter table career_items add column import_id uuid references imports(id) on delete set null;
+create index career_items_import_idx on career_items(user_id, import_id);
+```
+> Why (v2.11, from the owner's first live use): a career item recorded THAT it came from an import (`source = 'import'`) but not WHICH one. After two or three resumes the base is a flat list with no way to tell which document a fact came from or what role that document targeted. Provenance is not derivable after the fact — nothing in `career_items` carries it — so it is stored at save time. One row per import RUN, not per file: the same PDF imported twice is two runs and the user needs to tell them apart.
+> Decision (no DELETE policy): the least-privilege matrix gains `imports S/I/U`. Deleting a SOURCE is out of scope, and the absent policy is the point — a user who could delete an import row would silently strip the provenance from every item pointing at it, turning a fact with a known origin back into a fact with none, which is the defect this table exists to fix. Renaming and re-targeting are what UPDATE is for. Account deletion still removes everything via the FK cascade to `auth.users`, so the right to erasure is unaffected (cascades are not blocked by RLS).
+> Decision (`ON DELETE SET NULL`, not CASCADE, on `career_items.import_id`): if an import row ever does go, the ITEMS must not go with it. A career item is the user's real experience; the import is only how it arrived, and deleting the paperwork must never delete the history. The column stays nullable for the same reason — a hand-created item has no import, and every item predating this migration has none either.
+> Decision (`source_kind` nullable): specified without NOT NULL and implemented that way. The app always sets it, so a null means a row that did not come through the import flow.
+> Consequence: the Supabase-linter hardening deferred in v2.2 moves from a future `003` to a future `004`.
 
 ### Seed example (core table `career_items`)
 ```sql
