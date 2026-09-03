@@ -17,8 +17,9 @@ export default function PrivacyPage() {
         <h2 className="text-lg font-medium">What is stored, and where</h2>
         <p className="text-muted-foreground text-sm">
           {APP_NAME} stores the email address you sign up with, together with your career items,
-          job postings, scans, generated resumes and per-call AI usage metadata, in a Supabase
-          Postgres database hosted in the EU (Frankfurt). Rows are scoped to your account.
+          the name and optional target role you give each resume you import, job postings, scans,
+          generated resumes and per-call AI usage metadata, in a Supabase Postgres database hosted
+          in the EU (Frankfurt). Rows are scoped to your account.
         </p>
       </section>
 

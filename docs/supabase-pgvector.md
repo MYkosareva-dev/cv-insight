@@ -67,6 +67,22 @@ The operator class must match the query operator: `vector_cosine_ops` for `<=>`.
 - Table `documents`: one row per career-item chunk; `content` stores
   `title + "\n\n" + chunk` so items stay findable by name; RLS owner-scoped, no UPDATE
   policy (re-embedding is delete-then-insert).
+> **ANNOTATION — delete-then-insert is the WRITE shape, not the call order.** Reading
+> "delete-then-insert" as a sequence is how the destructive version gets written:
+> delete the stale rows, then embed. If the paid embedding call then fails, the item
+> has ZERO rows — it has dropped out of `match_documents` entirely, and every later
+> scan reports its content as a `gap`, which is the app stating a finding about data
+> it never searched. `reindexCareerItem` in `lib/retrieval.ts` therefore embeds FIRST
+> and holds the vectors, and only then deletes and inserts; an embed failure changes
+> nothing and the previous chunks stay searchable, which is what the "index will
+> update on next edit" warning actually promises. The write is still
+> delete-then-insert because there is no UPDATE policy — only the sequencing relative
+> to the paid call matters.
+> **ANNOTATION — chunks per item are capped at 2** (`MAX_CHUNKS_PER_ITEM` in
+> `lib/chunking.ts`). Not a tuning choice: rule B9 caps 200 `career_items` AND 500
+> `documents` as independent numbers, and 200 x 2 = 400 is what keeps the document
+> ceiling unreachable through the item ceiling. Overflow is merged into the last
+> chunk rather than dropped.
 - `match_documents` filters by `auth.uid()` inside the body AND relies on RLS
   (security invoker) — both must stay true (defense in depth).
 - Index: HNSW with `vector_cosine_ops` (chosen over IVFFlat — data grows row by row

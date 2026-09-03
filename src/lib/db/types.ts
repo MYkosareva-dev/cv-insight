@@ -1,6 +1,6 @@
 import 'server-only';
 
-/** Row shapes for the six tables in supabase/migrations/001_init.sql. */
+/** Row shapes for the seven owned tables: `001_init.sql` plus `imports` from `003_imports.sql`. */
 
 export type CareerItemType =
   | 'role'
@@ -18,8 +18,31 @@ export type CareerItem = {
   content: string;
   period: string | null;
   source: 'manual' | 'import';
+  /**
+   * The import RUN this item came from, or null (SPEC v2.11).
+   *
+   * Nullable and `ON DELETE SET NULL`: a hand-created item has no import, every
+   * item predating 003 has none, and if an import row ever goes the item must
+   * survive it — the item is the user's real experience, the import only records
+   * how it arrived.
+   */
+  import_id: string | null;
   created_at: string;
   updated_at: string;
+};
+
+/**
+ * One import RUN (SPEC v2.11) — not one file. The same PDF imported twice is two
+ * rows, because the user needs to tell those runs apart.
+ */
+export type Import = {
+  id: string;
+  user_id: string;
+  /** The user's own label, defaulted to "Resume N" and editable before saving. */
+  name: string;
+  target_role: string | null;
+  source_kind: 'pdf' | 'paste';
+  created_at: string;
 };
 
 export type DocumentRow = {

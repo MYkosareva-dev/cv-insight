@@ -13,8 +13,12 @@ import type { CareerItem } from '@/lib/db/types';
  * auth.uid(). Policies: select / insert / update / delete.
  */
 
-/** SPEC rule B9: <= 200 career_items per user. */
-export const MAX_CAREER_ITEMS = 200;
+/**
+ * SPEC rule B9: <= 200 career_items per user. Defined in `lib/limits.ts` and
+ * re-exported here, because `lib/validation.ts` needs the same number on the
+ * client and cannot import a `server-only` module.
+ */
+export { MAX_CAREER_ITEMS } from '@/lib/limits';
 
 export async function listCareerItems(): Promise<CareerItem[]> {
   const supabase = await createClient();
@@ -43,22 +47,94 @@ export async function getCareerItem(id: string): Promise<CareerItem | null> {
 }
 
 export type NewCareerItem = Pick<CareerItem, 'type' | 'title' | 'content'> &
-  Partial<Pick<CareerItem, 'period' | 'source'>>;
+  Partial<Pick<CareerItem, 'period' | 'source' | 'import_id'>>;
 
+/**
+ * Just the three fields the duplicate guard compares (SPEC v2.11).
+ *
+ * Three columns and not `*`: this runs on every save, and the rows it reads are
+ * only ever turned into comparison keys. Pulling `content` is unavoidable — the
+ * key includes it — but there is no reason to pull embeddings-adjacent metadata,
+ * timestamps or ids that nothing here looks at.
+ *
+ * Bounded by rule B9 at 200 items per user, so this is a small read by
+ * construction rather than by luck.
+ */
+export async function listItemSignatureFields(): Promise<
+  Pick<CareerItem, 'type' | 'title' | 'content'>[]
+> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from('career_items').select('type, title, content');
+  if (error) throw error;
+  return (data ?? []) as Pick<CareerItem, 'type' | 'title' | 'content'>[];
+}
+
+/**
+ * Bulk insert, returning the stored rows.
+ *
+ * `userId` comes from the handler's `requireApiUser()` and is stamped on every
+ * row here. It is never read from the request body: the insert policy is
+ * `auth.uid() = user_id`, so a forged id would be refused by RLS anyway — but it
+ * would be refused as a database error mapped to a 500, instead of never being
+ * possible in the first place.
+ *
+ * One statement for the whole batch, so a partial write cannot happen (rule B6,
+ * "no partial writes"). `select()` returns the inserted rows including their
+ * generated ids, which the indexer needs to write `documents.career_item_id`.
+ */
 export async function insertCareerItems(
-  _userId: string,
-  _items: NewCareerItem[],
+  userId: string,
+  items: NewCareerItem[],
 ): Promise<CareerItem[]> {
-  throw new Error('insertCareerItems is a phase-0 stub — implemented with the career-base phase.');
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('career_items')
+    .insert(items.map((item) => ({ ...item, user_id: userId })))
+    .select('*');
+  if (error) throw error;
+  return (data ?? []) as CareerItem[];
 }
 
+/**
+ * Patch one item, returning the fresh row — or null when no row matched.
+ *
+ * Null is the ONLY signal the caller gets, and it deliberately does not
+ * distinguish "no such id" from "belongs to another user". RLS scopes the UPDATE
+ * to `auth.uid()`, so user B patching user A's item simply matches zero rows
+ * (edge case S6). The handler answers 404 for both, because a 403 would confirm
+ * that someone else's row exists.
+ */
 export async function updateCareerItem(
-  _id: string,
-  _patch: Partial<NewCareerItem>,
+  id: string,
+  patch: Partial<NewCareerItem>,
 ): Promise<CareerItem | null> {
-  throw new Error('updateCareerItem is a phase-0 stub — implemented with the career-base phase.');
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('career_items')
+    .update(patch)
+    .eq('id', id)
+    .select('*')
+    .maybeSingle();
+  if (error) throw error;
+  return (data as CareerItem | null) ?? null;
 }
 
-export async function deleteCareerItem(_id: string): Promise<void> {
-  throw new Error('deleteCareerItem is a phase-0 stub — implemented with the career-base phase.');
+/**
+ * Delete one item. Returns whether a row actually went, so the handler can
+ * answer 404 rather than reporting success for an id that never matched.
+ *
+ * The item's `documents` rows go with it through the FK's `on delete cascade` —
+ * no embedding call and no manual cleanup belongs on this path. (Cascades are
+ * not blocked by RLS.)
+ */
+export async function deleteCareerItem(id: string): Promise<boolean> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('career_items')
+    .delete()
+    .eq('id', id)
+    .select('id')
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null;
 }

@@ -48,8 +48,11 @@ SPEC.md, then anything else.
   A retry is a button the user presses. Owner-approved exceptions, and the ONLY
   ones: (a) one repair retry when JSON-mode output fails Zod validation, with
   the Zod error appended; (b) one network retry after 2 s when the request
-  itself errored. Both are inside a single user-initiated submit. Do not add
-  anything beyond these without the owner saying so.
+  itself errored. They share ONE budget: at most MAX_CHAT_REQUESTS_PER_STEP = 2
+  chat requests per pipeline step, whichever exception consumed them. They cap,
+  they never multiply — nesting one retry inside the other is a defect. Both are
+  inside a single user-initiated submit. Do not add anything beyond these without
+  the owner saying so.
 - **Client input is DATA, never instructions.** Vacancy text, resume text and
   career items are interpolated into prompts inside tagged blocks that the
   prompts explicitly mark as data. System prompts are built server-side in
@@ -131,16 +134,18 @@ SPEC.md, then anything else.
 ## Data access rules
 - **One DAL per table, and DALs are the only files allowed to call `.from()`.**
   `lib/db/careerItems.ts`, `lib/db/documents.ts`, `lib/db/vacancies.ts`,
-  `lib/db/applications.ts`, `lib/db/resumeVersions.ts`, `lib/db/llmCalls.ts`.
+  `lib/db/applications.ts`, `lib/db/resumeVersions.ts`, `lib/db/llmCalls.ts`,
+  `lib/db/imports.ts`.
   `scripts/check.mjs` is driven by that list: `.from(` in any file that is not a
   listed DAL is a FAIL. Adding a table means adding a DAL and a line there.
 - **RLS is least-privilege: absent policies are deliberate.** Policy matrix
   (owner-scoped `auth.uid() = user_id` on every existing policy):
   career_items S/I/U/D · documents S/I/D (no UPDATE — see Embeddings) ·
   vacancies S/I/U · applications S/I/U · resume_versions S/I (append-only) ·
-  llm_calls S/I (append-only audit log). Do not add a missing policy without an
-  owner amendment. FK `ON DELETE CASCADE` still cleans children on account
-  deletion — cascades are not blocked by RLS.
+  llm_calls S/I (append-only audit log) · imports S/I/U (no DELETE — deleting a
+  source would strip provenance from every item pointing at it). Do not add a
+  missing policy without an owner amendment. FK `ON DELETE CASCADE` still cleans
+  children on account deletion — cascades are not blocked by RLS.
 - `resume_versions` is append-only by design: an edit produces a NEW version,
   never mutates an old one. Do not add update or delete paths.
 - Every `llm_calls` row is written fire-and-forget: a log-write failure must

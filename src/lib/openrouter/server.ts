@@ -1,7 +1,9 @@
 import 'server-only';
 
+import { costUsdMicro, normalizeModelId } from '@/lib/pricing';
+
 /**
- * CONNECTION module — phase 0 stub.
+ * CONNECTION module.
  *
  * This file speaks to the two OpenRouter endpoints and has NO opinion about who
  * may use it. The authorization opinion lives in the two gates:
@@ -9,9 +11,14 @@ import 'server-only';
  *   - `lib/retrieval.ts` — embeddings (indexing, matching, re-scoring)
  *
  * No page, component or route handler may import this module directly
- * (CLAUDE.md, "AI model calls"). `scripts/check.mjs` enforces that.
+ * (CLAUDE.md, "AI model calls"). `scripts/check.mjs` enforces that (R5 pins the
+ * host to this file, R6 pins the import to the two gates).
  *
- * Nothing here calls the network yet — phase 0 is scaffolding only.
+ * It also writes NO `llm_calls` row. `llm_calls.user_id` is NOT NULL and this
+ * module has no way to learn who the user is without acquiring exactly the auth
+ * opinion it is defined not to have. So it reports what happened — on success in
+ * `ConnectionResult`, on failure in `OpenRouterError` — and the gates, which do
+ * know the user, write the row either way (rule B8).
  */
 
 export const CHAT_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
@@ -42,13 +49,35 @@ export const MODEL_BY_STEP = {
   generate: 'anthropic/claude-sonnet-4.6',
 } as const satisfies Partial<Record<LlmStep, string>>;
 
-/** USD per 1M tokens (SPEC Block F, Cost). Used to compute micro-USD integers. */
-export const PRICE_USD_PER_MTOK: Record<string, { in: number; out: number }> = {
-  'anthropic/claude-sonnet-4.6': { in: 3, out: 15 },
-  'anthropic/claude-haiku-4.5': { in: 1, out: 5 },
-  'google/gemini-2.5-flash': { in: 0.3, out: 2.5 },
-  'openai/text-embedding-3-small': { in: 0.02, out: 0 },
-};
+/**
+ * Output ceiling per step (SPEC Block F, amended v2.10).
+ *
+ * Block F's original snippet read `step === 'generate' ? 2500 : 1200`, written for
+ * `parse_vacancy` and `judge` — both of which return one small JSON object. It does
+ * not fit `import_resume`: US-1 targets ~14 career items whose `content` may reach
+ * 4,000 characters each, so 1,200 output tokens (≈4,800 characters TOTAL) truncates
+ * the JSON, Zod rejects it, the one repair retry truncates identically, and the
+ * user gets a 502 on the app's very first flow. A per-step map instead of a
+ * ternary, so the next step to need its own ceiling states it here rather than
+ * inheriting a number chosen for something else.
+ */
+export const MAX_TOKENS_BY_STEP = {
+  import_resume: 8000,
+  parse_vacancy: 1200,
+  judge: 1200,
+  generate: 2500,
+} as const satisfies Partial<Record<LlmStep, number>>;
+
+/**
+ * Prices and the micro-USD arithmetic live in `lib/pricing.ts` and are
+ * re-exported here, so existing importers of the connection are unaffected.
+ *
+ * They moved out because they had to be TESTABLE: `tests/` is in scope for
+ * check.mjs R6, so a unit test could never import this module. The cost path's
+ * one piece of pure arithmetic being the one piece with no test is exactly how
+ * the provider-prefix lookup bug survived to a real e2e run.
+ */
+export { PRICE_USD_PER_MTOK, costUsdMicro, normalizeModelId } from '@/lib/pricing';
 
 export type ChatMessage = { role: 'system' | 'user'; content: string };
 
@@ -72,54 +101,352 @@ export type ConnectionResult<T> = {
 };
 
 /**
- * $0.0431 → 43100. Stored as an integer; formatted only at display.
+ * A call that did not produce a usable response.
  *
- * Two ways a 0 could lie, both closed:
- *   - An unrecognised slug: OpenRouter fallback routing can return a variant
- *     the price table does not list. The missing price is shouted at the log
- *     AND carried back as costKnown=false, so /quality shows unknown pricing
- *     rather than a free call.
- *   - Sub-micro rounding: embeddings price at $0.02/Mtok, so a short embed
- *     costs a fraction of one micro-dollar and Math.round would floor it to 0
- *     with costKnown=true — the exact "this call was free" reading the flag
- *     exists to prevent. Math.ceil instead: a priced call is at least 1
- *     micro-USD. Over-reporting a rounding crumb is the honest direction.
+ * GATE-INTERNAL. It never escapes `lib/chat.ts` or `lib/retrieval.ts`: both catch
+ * it and rethrow `AiUnavailableError` from `lib/errors.ts`. That is not a style
+ * preference — a route handler that wanted to `instanceof` this class would have
+ * to import the connection module, which is exactly what check.mjs R6 forbids, so
+ * letting it escape would break the chokepoint at prebuild.
+ *
+ * It carries what a failed `llm_calls` row needs (rule B8: every request writes a
+ * row, INCLUDING failures). Without `attemptedModel` and `latencyMs` on the error
+ * the gate could only log `model=''` and `latency=0`, and /quality would show
+ * failures it cannot attribute to a model.
+ *
+ * `retryable` marks the ONE case CLAUDE.md exception (b) covers: "the request
+ * itself errored" — a transport throw or the 60 s abort. A response that arrived
+ * carrying a non-2xx status is NOT that case, however tempting a 429 or 503 looks:
+ * the service answered. Asking again would be a third retry, and metered calls get
+ * no ladders.
  */
-export function costUsdMicro(
-  model: string,
-  tokensIn: number,
-  tokensOut: number,
-): { costUsdMicro: number; costKnown: boolean } {
-  const price = PRICE_USD_PER_MTOK[model];
-  if (!price) {
-    console.error(
-      `[openrouter] no price entry for model "${model}" — llm_calls row written ` +
-        'with cost_usd_micro=0 and cost_known=false. Add it to PRICE_USD_PER_MTOK.',
-    );
-    return { costUsdMicro: 0, costKnown: false };
+export class OpenRouterError extends Error {
+  readonly attemptedModel: string;
+  readonly latencyMs: number;
+  readonly retryable: boolean;
+  readonly status: number | null;
+
+  constructor(args: {
+    message: string;
+    attemptedModel: string;
+    latencyMs: number;
+    retryable: boolean;
+    status?: number | null;
+  }) {
+    super(args.message);
+    this.name = 'OpenRouterError';
+    this.attemptedModel = args.attemptedModel;
+    this.latencyMs = args.latencyMs;
+    this.retryable = args.retryable;
+    this.status = args.status ?? null;
   }
-  const usd = (tokensIn * price.in + tokensOut * price.out) / 1_000_000;
-  // ceil, not round — see the sub-micro note above. A zero here means the call
-  // genuinely consumed no tokens, never that it was too cheap to count.
-  return { costUsdMicro: Math.ceil(usd * 1_000_000), costKnown: true };
 }
 
-const NOT_IMPLEMENTED = 'OpenRouter connection is a phase-0 stub — not implemented yet.';
+/** What the response said about who served the call and what it cost. */
+export type ServedUsage = {
+  model: string;
+  fallbackUsed: boolean;
+  tokensIn: number;
+  tokensOut: number;
+};
+
+/**
+ * A call that was BILLED and still produced nothing usable.
+ *
+ * The distinction matters for one reason: money. A transport failure spent
+ * nothing, so its `llm_calls` row is honestly `tokens=0, cost=0`. A 200 whose
+ * body carries no content consumed real tokens and OpenRouter charged for them —
+ * logging THAT as a zero-cost row under-reports spend, and both rule B8 and DoD
+ * item 7 rest on /quality being truthful about cost. So this subclass carries the
+ * real `usage` through the failure path and the gate writes `ok=false` with the
+ * actual tokens, model and fallback flag.
+ */
+export class OpenRouterUsageError extends OpenRouterError {
+  readonly usage: ServedUsage;
+
+  constructor(args: {
+    message: string;
+    attemptedModel: string;
+    latencyMs: number;
+    status?: number | null;
+    usage: ServedUsage;
+  }) {
+    super({
+      message: args.message,
+      attemptedModel: args.attemptedModel,
+      latencyMs: args.latencyMs,
+      // Billed and empty is not "the request errored": it answered. No retry.
+      retryable: false,
+      status: args.status ?? null,
+    });
+    this.name = 'OpenRouterUsageError';
+    this.usage = args.usage;
+  }
+}
+
+/**
+ * Did the FALLBACK model serve this call, rather than the primary?
+ *
+ * Compared through `normalizeModelId` — the same normalization the price lookup
+ * uses, and for the same reason. Two ways a naive comparison lies:
+ *   - a routing suffix (`…haiku-4.5:beta`, a dated snapshot) is the SAME model
+ *     serving, not the fallback;
+ *   - a provider namespace may simply be absent from the response. That is not
+ *     hypothetical: the embeddings endpoint demonstrably echoes
+ *     `text-embedding-3-small` for a request sent as
+ *     `openai/text-embedding-3-small`, which is exactly how the price table came
+ *     to miss on every embed row. If the chat endpoint ever does the same, a
+ *     prefix-sensitive comparison would report `fallback_used=true` on every
+ *     successful primary call.
+ *
+ * That second failure is worse than the price one it mirrors. A missed price at
+ * least announces itself through `cost_known=false`; a wrong fallback flag is
+ * indistinguishable from the truth, so /quality's fallback rate — the one number
+ * that says the primary model is having a bad day — would read 100% with nothing
+ * anywhere to contradict it.
+ */
+function isFallback(servedModel: string, primaryModel: string): boolean {
+  return normalizeModelId(servedModel) !== normalizeModelId(primaryModel);
+}
+
+/** Authorization header. The key is read here and nowhere else in this module. */
+function authHeaders(): HeadersInit {
+  const key = process.env.OPENROUTER_API_KEY;
+  // Names the variable, never a value — not even truncated or masked.
+  if (!key) throw new Error('OPENROUTER_API_KEY is not set');
+  return { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
+}
+
+/**
+ * The only failure shape the single network retry may cover: a `fetch` rejection
+ * or the abort from `AbortSignal.timeout` (edge case N5). A `fetch` that RESOLVES
+ * with a non-2xx status is handled at the call site and is never retryable.
+ */
+function asRetryable(err: unknown, attemptedModel: string, latencyMs: number): OpenRouterError {
+  const aborted = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+  return new OpenRouterError({
+    message: aborted ? `request aborted after ${REQUEST_TIMEOUT_MS} ms` : 'request failed',
+    attemptedModel,
+    latencyMs,
+    retryable: true,
+  });
+}
+
+type ChatResponse = {
+  model?: string;
+  choices?: { message?: { content?: string | null } }[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
+};
 
 /** POST /chat/completions with `models: [primary, FALLBACK_MODEL]` routing. */
-export async function chatCompletion(_args: {
+export async function chatCompletion(args: {
   step: LlmStep;
   primaryModel: string;
   messages: ChatMessage[];
   jsonMode: boolean;
 }): Promise<ConnectionResult<string>> {
-  throw new Error(NOT_IMPLEMENTED);
+  const { step, primaryModel, messages, jsonMode } = args;
+  const startedAt = Date.now();
+
+  const body: Record<string, unknown> = {
+    // OpenRouter's own fallback routing. This is ONE request that the service may
+    // route to the second entry, not a retry, so it does not count against the
+    // metered-call rules — and the response tells us which model answered.
+    models: [primaryModel, FALLBACK_MODEL],
+    messages,
+    max_tokens: MAX_TOKENS_BY_STEP[step as keyof typeof MAX_TOKENS_BY_STEP] ?? 1200,
+    temperature: step === 'generate' ? 0.4 : 0,
+  };
+  // P1/P3/P4 are JSON mode; P2 (generate) returns plain text.
+  if (jsonMode) body.response_format = { type: 'json_object' };
+
+  let res: Response;
+  try {
+    res = await fetch(CHAT_ENDPOINT, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw asRetryable(err, primaryModel, Date.now() - startedAt);
+  }
+
+  const latencyMs = Date.now() - startedAt;
+
+  if (!res.ok) {
+    // The response BODY is deliberately not read into the error: a 4xx from
+    // OpenRouter echoes the offending request back, and the request is the prompt
+    // — which contains resume or vacancy text. It must never reach an error
+    // message, a log line or an HTTP body (CLAUDE.md, Privacy).
+    throw new OpenRouterError({
+      message: `chat completions responded ${res.status}`,
+      attemptedModel: primaryModel,
+      latencyMs,
+      retryable: false,
+      status: res.status,
+    });
+  }
+
+  let json: ChatResponse;
+  try {
+    json = (await res.json()) as ChatResponse;
+  } catch {
+    throw new OpenRouterError({
+      message: 'chat completions returned a body that is not JSON',
+      attemptedModel: primaryModel,
+      latencyMs,
+      retryable: false,
+      status: res.status,
+    });
+  }
+
+  const served = json.model ?? primaryModel;
+  const tokensIn = json.usage?.prompt_tokens ?? 0;
+  const tokensOut = json.usage?.completion_tokens ?? 0;
+  const content = json.choices?.[0]?.message?.content;
+
+  if (typeof content !== 'string' || content.trim() === '') {
+    // A 200 with no content is a failed call that would otherwise be logged as a
+    // success and then explode in the caller's Zod parse. It was still BILLED,
+    // so the gate needs the real usage to log an honest row — see UsageOnError.
+    throw new OpenRouterUsageError({
+      message: 'chat completions returned no content',
+      attemptedModel: served,
+      latencyMs,
+      status: res.status,
+      usage: {
+        model: served,
+        fallbackUsed: isFallback(served, primaryModel),
+        tokensIn,
+        tokensOut,
+      },
+    });
+  }
+
+  const { costUsdMicro: cost, costKnown } = costUsdMicro(served, tokensIn, tokensOut);
+
+  return {
+    data: content,
+    model: served,
+    fallbackUsed: isFallback(served, primaryModel),
+    tokensIn,
+    tokensOut,
+    costUsdMicro: cost,
+    costKnown,
+    latencyMs,
+  };
 }
 
-/** POST /embeddings, model EMBEDDING_MODEL, batch <= EMBEDDING_BATCH_SIZE. */
-export async function createEmbeddings(_args: {
+type EmbeddingsResponse = {
+  model?: string;
+  data?: { index?: number; embedding?: number[] }[];
+  usage?: { prompt_tokens?: number; total_tokens?: number };
+};
+
+/**
+ * POST /embeddings, model EMBEDDING_MODEL, batch <= EMBEDDING_BATCH_SIZE.
+ *
+ * NO `models` fallback array here, and that is a decision rather than an omission.
+ * CLAUDE.md names a fallback for every step, but the only fallback available is a
+ * CHAT model, and any different embedding model means a different vector space —
+ * for every candidate, a different dimension too. `documents.embedding` is
+ * `vector(1536)` and the rule above it is absolute: never change the embedding
+ * model without dropping and re-embedding every row, because mixing two models'
+ * vectors breaks retrieval SILENTLY. Cosine distance still returns numbers; they
+ * just stop meaning anything. A failed embedding call is visible and recoverable;
+ * a silently poisoned index is neither.
+ *
+ * There is also NO retry on this endpoint, ever. The recovery path is the one the
+ * embeddings rules already specify: the save succeeds, the user sees a warning,
+ * and the next edit re-indexes.
+ */
+export async function createEmbeddings(args: {
   step: Extract<LlmStep, 'embed' | 'rescore'>;
   inputs: string[];
 }): Promise<ConnectionResult<number[][]>> {
-  throw new Error(NOT_IMPLEMENTED);
+  const { inputs } = args;
+  if (inputs.length === 0) throw new Error('createEmbeddings called with no inputs');
+  if (inputs.length > EMBEDDING_BATCH_SIZE) {
+    // The gate batches; arriving here with more means the batching was bypassed.
+    throw new Error(
+      `createEmbeddings received ${inputs.length} inputs, over the ${EMBEDDING_BATCH_SIZE} batch limit`,
+    );
+  }
+
+  const startedAt = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(EMBEDDINGS_ENDPOINT, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ model: EMBEDDING_MODEL, input: inputs }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw asRetryable(err, EMBEDDING_MODEL, Date.now() - startedAt);
+  }
+
+  const latencyMs = Date.now() - startedAt;
+
+  const fail = (message: string) =>
+    new OpenRouterError({
+      message,
+      attemptedModel: EMBEDDING_MODEL,
+      latencyMs,
+      retryable: false,
+      status: res.status,
+    });
+
+  // Body deliberately unread — it echoes the inputs, which are career-item text.
+  if (!res.ok) throw fail(`embeddings responded ${res.status}`);
+
+  let json: EmbeddingsResponse;
+  try {
+    json = (await res.json()) as EmbeddingsResponse;
+  } catch {
+    throw fail('embeddings returned a body that is not JSON');
+  }
+
+  const rows = json.data ?? [];
+  if (rows.length !== inputs.length) {
+    throw fail(`embeddings returned ${rows.length} vectors for ${inputs.length} inputs`);
+  }
+
+  // Ordered by the response's own `index`, never by array position: the API does
+  // not promise input order, and a silently permuted batch would attach each
+  // vector to the WRONG chunk — an index that looks healthy and retrieves
+  // nonsense, with nothing anywhere reporting a fault.
+  const vectors: number[][] = new Array<number[]>(inputs.length);
+  rows.forEach((row, position) => {
+    const index = row.index ?? position;
+    const embedding = row.embedding;
+    if (!Array.isArray(embedding) || embedding.length !== EMBEDDING_DIMENSIONS) {
+      // Asserted, not trusted: `documents.embedding` is vector(1536), and a wrong
+      // width means the model or its config changed underneath us. A failed save
+      // beats a table holding two vector spaces.
+      const width = Array.isArray(embedding) ? String(embedding.length) : 'no';
+      throw fail(`embedding ${index} has ${width} dimensions, expected ${EMBEDDING_DIMENSIONS}`);
+    }
+    if (index < 0 || index >= inputs.length || vectors[index] !== undefined) {
+      throw fail(`embeddings returned an out-of-range or duplicate index ${index}`);
+    }
+    vectors[index] = embedding;
+  });
+
+  const tokensIn = json.usage?.prompt_tokens ?? json.usage?.total_tokens ?? 0;
+  const served = json.model ?? EMBEDDING_MODEL;
+  const { costUsdMicro: cost, costKnown } = costUsdMicro(served, tokensIn, 0);
+
+  return {
+    data: vectors,
+    model: served,
+    // No fallback exists for this endpoint by design — see the note above.
+    fallbackUsed: false,
+    tokensIn,
+    tokensOut: 0,
+    costUsdMicro: cost,
+    costKnown,
+    latencyMs,
+  };
 }

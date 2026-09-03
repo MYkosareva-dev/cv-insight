@@ -88,6 +88,7 @@ const DAL_FILES = [
   'src/lib/db/applications.ts',
   'src/lib/db/resumeVersions.ts',
   'src/lib/db/llmCalls.ts',
+  'src/lib/db/imports.ts',
 ];
 
 /** The connection module — the only file allowed to name the OpenRouter host. */

@@ -107,6 +107,16 @@ export const AUTH = {
   signUpFailed: 'Sign-up failed. Try again.',
 } as const;
 
+/**
+ * The PDF dropzone label (SPEC Block E). One string, two screens: the /scan
+ * resume-source panel and the /career import dialog. Promoted out of SCAN so
+ * neither screen reads the other's constant and neither copy can drift.
+ */
+export const PDF_DROPZONE = 'Drag & drop or choose a .pdf file, max 5 MB';
+
+/** PDF upload ceiling, in bytes (Block F / edge case L5). 413 before any parsing. */
+export const MAX_PDF_BYTES = 5 * 1024 * 1024;
+
 export const SCAN = {
   analyze: 'Analyze',
   analyzing: 'Analyzing…',
@@ -117,7 +127,7 @@ export const SCAN = {
   goToCareerBase: 'Go to Career base',
   aiUnavailable: 'AI service is unavailable. Your vacancy was saved — retry from Applications.',
   noRequirements: "We couldn't find concrete requirements in this posting.",
-  dropzone: 'Drag & drop or choose a .pdf file, max 5 MB',
+  dropzone: PDF_DROPZONE,
 } as const;
 
 export const CAREER = {
@@ -129,11 +139,146 @@ export const CAREER = {
     "We couldn't read text from this PDF. It may be scanned — paste the text instead.",
   fileTooLarge: 'This file is over 5 MB.',
   noItemsFound: 'No career items found — is this a resume?',
+  /**
+   * Edge case D3, verbatim: ONE item saved whose re-index failed. Kept exactly as
+   * SPEC writes it, and used only where it is literally true — a single-item edit,
+   * or a one-item save.
+   */
   indexWarning: 'Item saved, search index will update on next edit.',
+  /**
+   * The bulk shape of the same state (SPEC v2.10). A 14-item import whose
+   * indexing failed is not "Item saved", and singular copy on a bulk path
+   * describes a state the user is not in.
+   */
+  indexWarningBulk: (count: number) =>
+    `${count} items saved, but the search index will update on your next edit.`,
+  /**
+   * And the third state, which a boolean could not express: SOME items indexed.
+   * Failure granularity is one batch and a batch never splits an item, so each
+   * item is either fully searchable or not indexed at all — never half. Naming
+   * the count is the only honest option, because the alternative is reporting a
+   * partial failure as either a total one or a success.
+   */
+  indexWarningPartial: (failed: number) =>
+    `Saved. ${failed} item${failed === 1 ? '' : 's'} will be added to the search index on your next edit.`,
   titleRequired: 'Title is required, max 200 characters.',
   contentRequired: 'Content is required, max 4000 characters.',
   limitReached: 'Career base limit reached (200 items). Delete unused items first.',
+
+  // --- Import dialog (Block E: Dialog, tabs Upload PDF / Paste text, review list) ---
+  dialogTitle: 'Import resume',
+  dialogDescription:
+    'CV Insight reads the text and splits it into reusable career items. Nothing is saved until you review them.',
+  tabUpload: 'Upload PDF',
+  tabPaste: 'Paste text',
+  dropzone: PDF_DROPZONE,
+  choosePdf: 'Choose a .pdf file',
+  pastePlaceholder: 'Paste your resume text here.',
+  notPdf: 'Only .pdf files are supported.',
+  extract: 'Extract items',
+  extracting: 'Reading your resume…',
+  importFailed: 'Import failed — try again.',
+  /**
+   * The extraction was bounded before the model saw it (S7). Said out loud
+   * rather than left as "fewer items than my CV has, and no reason given" —
+   * silently dropping part of someone's career history is the same defect the
+   * chunker refuses when it merges overflow instead of discarding it.
+   */
+  truncated: 'This resume is very long — only its first part was read. Check for missing items.',
+  /** US-1 step 3: "Review 14 extracted items". */
+  reviewHeading: (count: number) => `Review ${count} extracted item${count === 1 ? '' : 's'}`,
+  reviewHint: 'Edit anything that looks wrong, then uncheck what you do not want to keep.',
+  /** Block E: "[Save 14 items to base]". */
+  saveToBase: (count: number) => `Save ${count} item${count === 1 ? '' : 's'} to base`,
+  saving: 'Saving…',
+  nothingSelected: 'Select at least one item to save.',
+  saved: (count: number) => `${count} item${count === 1 ? '' : 's'} added to your career base.`,
+  saveFailed: 'Could not save — try again.',
+
+  // --- Import identity and the saved step (SPEC v2.11) ---
+  /**
+   * The step indicator, verbatim as specified: "1 Paste -> 2 Review -> 3 Saved".
+   * "Paste" names the primary path (paste is now the default tab) rather than
+   * branching per tab, so the indicator does not change shape mid-flow.
+   */
+  steps: ['Paste', 'Review', 'Saved'] as const,
+  fieldName: 'Name this resume',
+  /** Default label for a run: "Resume 1", "Resume 2", … Editable before saving. */
+  defaultName: (n: number) => `Resume ${n}`,
+  nameRequired: 'Name is required, max 120 characters.',
+  fieldTargetRole: 'Target role (optional)',
+  targetRolePlaceholder: 'AI Automation Engineer',
+  targetRoleTooLong: 'Target role is limited to 120 characters.',
+  nameHint: 'Career items remember which resume they came from.',
+  /**
+   * The saved step. The "· M skipped as duplicates" half renders only when
+   * something was actually skipped — "Saved 14 items · 0 skipped as duplicates"
+   * would report a state the user is not in, and this app writes the copy for
+   * the state it is describing.
+   */
+  savedSummary: (saved: number, skipped: number) => {
+    const head = `Saved ${saved} item${saved === 1 ? '' : 's'}`;
+    return skipped === 0 ? head : `${head} · ${skipped} skipped as duplicates`;
+  },
+  /**
+   * The whole batch was already in the base. Not an error and not a silent
+   * no-op: the user asked for something, the app did nothing, and it says why.
+   */
+  allDuplicates: (skipped: number) =>
+    `Nothing new to save — all ${skipped} item${skipped === 1 ? '' : 's'} are already in your career base.`,
+  done: 'Done',
+  importAnother: 'Import another',
+  /** Provenance chip on a card: "from: Resume 2 · AI Automation Engineer". */
+  fromImport: (name: string, targetRole: string | null) =>
+    targetRole ? `from: ${name} · ${targetRole}` : `from: ${name}`,
+
+  // --- Cards (Block E: title, type Badge, period, 2-line preview, Edit/Delete) ---
+  itemCount: (count: number) => `${count} item${count === 1 ? '' : 's'}`,
+  edit: 'Edit',
+  delete: 'Delete',
+  cancel: 'Cancel',
+  save: 'Save',
+  editTitle: 'Edit career item',
+  fieldType: 'Type',
+  fieldTitle: 'Title',
+  fieldPeriod: 'Period',
+  fieldContent: 'Content',
+  periodPlaceholder: '01/2025 – present',
+  deleteTitle: 'Delete this career item?',
+  /**
+   * Names the CONSEQUENCE for search, because that is the part a user cannot
+   * see: the item's `documents` rows go with it via FK cascade, so anything
+   * generated afterwards can no longer draw on this experience.
+   */
+  deleteBody:
+    'The item and its search index entries are removed. Resumes you already generated are not changed.',
+  deleteConfirm: 'Delete item',
+  deleting: 'Deleting…',
+  deleted: 'Career item deleted.',
+  deleteFailed: 'Could not delete — try again.',
+  updated: 'Career item updated.',
+  updateFailed: 'Could not save changes — try again.',
 } as const;
+
+/** Human labels for `career_items.type`, used by the Badge and the group headings. */
+export const CAREER_ITEM_TYPE_LABEL = {
+  role: 'Role',
+  project: 'Project',
+  achievement: 'Achievement',
+  skill_block: 'Skills',
+  education: 'Education',
+  certification: 'Certification',
+} as const;
+
+/** Group order on /career — most load-bearing experience first (Block E grouping). */
+export const CAREER_ITEM_TYPE_ORDER = [
+  'role',
+  'project',
+  'achievement',
+  'skill_block',
+  'education',
+  'certification',
+] as const;
 
 export const RESULT = {
   generate: 'Generate tailored resume',
@@ -243,4 +388,20 @@ export const ERROR_CODES = {
 export const ERROR_MESSAGES = {
   DAILY_LIMIT: 'Daily AI limit reached (50 calls). Try again tomorrow.',
   VACANCY_LENGTH: 'Vacancy text must be between 100 and 20000 characters.',
+  /**
+   * The 502 body for any step (SPEC v2.10). Deliberately NOT `SCAN.aiUnavailable`,
+   * which is the Block E toast for a scan and promises "Your vacancy was saved" —
+   * true there, and a lie on the career-import path where no vacancy exists. The
+   * API message says only what is true everywhere; each screen still renders its
+   * own copy for its own state.
+   */
+  AI_UNAVAILABLE: 'AI service is unavailable. Try again.',
+  /**
+   * Rule B9's OTHER ceiling. "Career base limit reached (200 items)" is false when
+   * the 500-document cap is what tripped, and a reachable state with no true words
+   * is the defect this constant removes. Chunking is bounded so this is normally
+   * unreachable (see lib/chunking.ts), which makes it a real safety net rather
+   * than routine copy.
+   */
+  DOCUMENT_LIMIT: 'Search-index limit reached (500 entries). Delete unused items first.',
 } as const;
