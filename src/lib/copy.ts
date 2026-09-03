@@ -26,7 +26,7 @@ export const APP_NAME = 'CV Insight';
  * `cron.schedule` returning a job id proves the job is scheduled, not that the
  * `auth` schema (owned by `supabase_auth_admin`) will let it delete anything.
  */
-export const AUDIT_RETENTION_VERIFIED = false;
+export const AUDIT_RETENTION_VERIFIED = true;
 
 /**
  * The /privacy erasure paragraph, in its two states (SPEC v2.9). The retention
