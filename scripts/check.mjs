@@ -35,15 +35,16 @@
  *       session httpOnly, it must be repeated at each call site, and a third
  *       site that forgets it downgrades the cookie SILENTLY — no error, no test
  *       failure. Pinning the call sites is what makes that impossible.
- *   R12 an audit-retention period in user-facing copy while
- *       docs/eval/audit-retention-evidence.md is absent or records no succeeded
- *       run. The claim and its proof ship together or not at all: a pg_cron job
- *       scheduled against the `auth` schema (owned by supabase_auth_admin) can
- *       fail with permission denied every night and leave no user-visible trace,
- *       so a page saying "deleted automatically" would be the app promising an
- *       erasure nothing performs. A source comment saying "do not deploy this"
- *       is itself a configured mechanism, not a working one — this is the
- *       working one.
+ *   R12 AUDIT_RETENTION_VERIFIED set true in lib/copy.ts while
+ *       docs/eval/audit-retention-evidence.md is missing, still carries its
+ *       placeholder, or is too small to be a real run. That constant is the only
+ *       thing that lets /privacy state a retention period, so the claim and its
+ *       proof ship together or not at all: a pg_cron job scheduled against the
+ *       `auth` schema (owned by supabase_auth_admin) can fail with permission
+ *       denied every night and leave no user-visible trace, so a page saying
+ *       "deleted automatically" would be the app promising an erasure nothing
+ *       performs. A source comment saying "do not deploy this" is itself a
+ *       configured mechanism, not a working one — this is the working one.
  *   R13 a backticked repo path in a docs/ shelf reference that does not resolve
  *       against the tree. Three consecutive keyword sweeps declared docs/ clean
  *       while an annotation described a boot-time guard in `lib/supabase/env.ts`,
@@ -138,16 +139,22 @@ const failures = [];
 /**
  * Strip block and line comments, so prose about a rule never trips it.
  *
- * `//` is NOT a comment in markdown. Applying the line-comment pass to a .md file
- * blanked everything after any bare `//` in prose, which hid the rest of the line
- * from R13 — a stale path could sit behind one and never be seen. Block comments
- * stay stripped for .md, because SPEC and CLAUDE quote code samples that contain
- * them and other rules read those files.
+ * MARKDOWN IS NOT STRIPPED AT ALL. Neither `//` nor comments exist there,
+ * and pretending they do blinded the rules that read `.md`:
+ *  - `//` blanked the rest of any prose line containing one;
+ *  - worse, a backticked glob such as `lib/db/*` opened a FAKE block comment
+ *    that closed at a real `*​/` in a later code sample, blanking 148 lines of
+ *    one shelf doc and 22 of another — so R13 was blind across most of the
+ *    file class it exists to police. A bogus annotation failed the build at
+ *    line 5 of that doc and passed at line 200.
+ * A .md file is prose plus fenced samples; every rule that reads one wants the
+ * text as written.
  */
 function stripComments(text, isMarkdown = false) {
-  const noBlocks = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
-  if (isMarkdown) return noBlocks;
-  return noBlocks.replace(/(^|[^:])\/\/.*$/gm, '$1');
+  if (isMarkdown) return text;
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
 const isMarkdown = (abs) => rel(abs).endsWith('.md');
@@ -481,47 +488,38 @@ scanLines(
 //      Matched on comment-STRIPPED text, so the block comment archiving the strong
 //      sentence (and this rule's own prose) never trips it — what a reader sees is
 //      what is judged.
-//      FAIL-CLOSED AND DELIBERATELY OVER-INCLUSIVE (SPEC v2.8). The first version
-//      keyed the noun on the word "audit" and the period on the literal "90 days".
-//      Both were too narrow, and the gap was not hypothetical: the app's own shipped
-//      dialog says "Some AUTHENTICATION records", which a rule looking for "audit"
-//      cannot see, and "90-day" is not "90 days". A rule that only recognises one
-//      blessed sentence protects that sentence, not the claim.
-//      So: ANY period expression near ANY of this app's retention vocabulary. If it
-//      over-matches somewhere benign, rephrase the copy or add the evidence — do NOT
-//      narrow the rule. A false positive costs one edit; a false negative ships a
-//      promise nothing performs.
-//      The evidence file must contain a line matching `status: succeeded`, ANCHORED.
-//      A substring test for "succeeded" was satisfied by a file reading "has NOT
-//      succeeded", which is the same species of paper mechanism this rule exists to
-//      prevent.
+//      A SWITCH, NOT A SCANNER (SPEC v2.9). Two earlier versions tried to read the
+//      page and decide whether it stated a period. That cannot be made to work:
+//      `{90} days`, `<strong>90</strong> days`, "eighteen months" and "2160 hours"
+//      are the same promise and no regex closes the set, while the anchored
+//      evidence format it demanded matched no output psql actually emits — so the
+//      guard was generating its own defects and asking for hand-typed proof.
+//      Now there is nothing to match. `lib/copy.ts` exports one boolean, the
+//      /privacy paragraph is a ternary on it, and this rule only asks whether the
+//      evidence behind a `true` is real. A boolean has no vocabulary to go blind on.
 const RETENTION_EVIDENCE = 'docs/eval/audit-retention-evidence.md';
-/** The vocabulary this app actually uses for the thing being retained. */
-const RETENTION_NOUN = '(?:audit|authentication\\s+record|retention|log\\s+entr)';
-/** number + unit: digits or words, hyphenated or spaced, singular or plural. */
-const PERIOD_WORD =
-  '(?:one|two|three|four|five|six|seven|eight|nine|ten|twelve|fourteen|fifteen|twenty|' +
-  'thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)';
-const PERIOD = `(?:\\d+|${PERIOD_WORD})[-\\s]*(?:day|week|month|year)s?\\b`;
-const RETENTION_EVIDENCE_LINE = /^\s*status\s*:\s*succeeded\b/im;
+const RETENTION_SWITCH_FILE = 'src/lib/copy.ts';
+const RETENTION_PLACEHOLDER = '<PASTE RUN OUTPUT HERE>';
+const RETENTION_MIN_BYTES = 200;
 scanFiles(
-  `R12 an audit-retention period ships without ${RETENTION_EVIDENCE}`,
-  (abs) => (rel(abs).startsWith('src/') && CODE_EXT.test(rel(abs))) || rel(abs) === 'README.md',
+  `R12 AUDIT_RETENTION_VERIFIED is true without real evidence in ${RETENTION_EVIDENCE}`,
+  (abs) => rel(abs) === RETENTION_SWITCH_FILE,
   (raw, stripped) => {
-    // The noun and the period within one sentence-ish window, either order.
-    const claim =
-      new RegExp(`${RETENTION_NOUN}[\\s\\S]{0,300}?${PERIOD}`, 'i').test(stripped) ||
-      new RegExp(`${PERIOD}[\\s\\S]{0,300}?${RETENTION_NOUN}`, 'i').test(stripped);
-    if (!claim) return null;
+    const on = /AUDIT_RETENTION_VERIFIED\s*(?::\s*boolean\s*)?=\s*true\b/.test(stripped);
+    if (!on) return null;
     const evidence = path.join(ROOT, RETENTION_EVIDENCE);
-    if (existsSync(evidence) && RETENTION_EVIDENCE_LINE.test(readFileSync(evidence, 'utf8'))) {
-      return null;
+    const fix =
+      `paste the verbatim cron.job_run_details output into ${RETENTION_EVIDENCE} ` +
+      '(any format the client produced), in this same commit — or set it back to false';
+    if (!existsSync(evidence)) return `is true but ${RETENTION_EVIDENCE} does not exist; ${fix}`;
+    const body = readFileSync(evidence, 'utf8');
+    if (body.includes(RETENTION_PLACEHOLDER)) {
+      return `is true but ${RETENTION_EVIDENCE} still carries its placeholder; ${fix}`;
     }
-    return (
-      'states an audit-retention period that nothing has been shown to perform - ' +
-      `either use the SPEC fallback wording or add ${RETENTION_EVIDENCE} ` +
-      "with a 'status: succeeded' line from cron.job_run_details, in this same commit"
-    );
+    if (Buffer.byteLength(body, 'utf8') <= RETENTION_MIN_BYTES) {
+      return `is true but ${RETENTION_EVIDENCE} is too small to be a real run; ${fix}`;
+    }
+    return null;
   },
 );
 
@@ -630,6 +628,6 @@ console.log(
     NL + '  next.config.* clean of secrets and env injection; no getSession() in src/;' +
     NL + '  service-role key pinned to lib/supabase/admin.ts; createServerClient pinned to' +
     NL + '  server.ts + middleware.ts with shared cookieOptions, no createBrowserClient;' +
-    NL + '  no audit-retention period without its evidence file; every backticked' +
-    NL + '  repo path in the docs/ shelf resolves against the tree.',
+    NL + '  AUDIT_RETENTION_VERIFIED only with real evidence behind it; every' +
+    NL + '  backticked repo path in the docs/ shelf resolves against the tree.',
 );
