@@ -1,0 +1,125 @@
+Phase 3 — Playwright suite, verbatim run output (auth + career + scan).
+
+This file exists because SPEC Block F states that manual live verification is
+not accepted as evidence — the spec run is. A spec FILE is cron.job; this is
+cron.job_run_details.
+
+Command:      npx playwright test
+Date:         2026-09-03 13:41:12 UTC
+Branch:       phase-3-scan
+Commit:       99c5967  docs: SPEC v2.12 - the scan phase's declared deviations
+Working tree: CLEAN — the commit above is exactly the code that was tested
+              (docs/openrouter-processing.md is the owner's own untracked file
+              and is not part of this branch)
+Against:      npm run dev on http://localhost:3000 (real Supabase project,
+              EU-Frankfurt) and real OpenRouter calls
+
+The scan cases spend real money: each one imports a resume (one import_resume
+call) and runs one scan (one parse_vacancy call plus the embedding requests).
+That is the point — SPEC's US-2 acceptance is "Real LLM call happens
+server-side; response visible to the user", and a mocked model cannot show it.
+
+Note: the suite creates real accounts with unique throwaway addresses and
+removes each one through the app's own deletion flow in afterEach, so the
+teardown doubles as US-6 erasure evidence.
+
+Case 24 is SKIPPED here and run separately below. The AI-unavailable path needs
+a server whose model calls FAIL, and the OpenRouter call is server-side — no
+browser script can make it fail. Skipping visibly, rather than passing while
+unable to run, is the reason it is a test.skip on an env flag.
+
+The "destination stream closed early" lines are a Next dev-mode artefact of a
+client navigating away mid-stream (the scan's redirect, and the deletion
+redirect in the teardown). No user-visible effect; recorded as NIT p3-7 in
+docs/backlog.md rather than left unexplained in this file.
+
+----------------------------------------------------------------------
+
+npm notice run cv-insight@0.1.0 npx
+npm notice run playwright test
+[WebServer] npm notice run cv-insight@0.1.0 dev
+[WebServer] npm notice run next dev
+[WebServer] ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.
+[WebServer] 
+[WebServer]   To migrate automatically, run:
+[WebServer]   npx @next/codemod@canary middleware-to-proxy .
+[WebServer] 
+[WebServer]   Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+[WebServer] ⚠ Slow filesystem detected. The benchmark took 225ms. If \\?\D:\Claude BAI\3_sprint\mkosar-AFA.BAI.3.8\.next\dev is a network drive, consider moving it to a local folder.
+[WebServer] See more: https://nextjs.org/docs/app/guides/local-development
+
+Running 24 tests using 1 worker
+
+  ok  1 [chromium] › tests\e2e\auth.spec.ts:122:3 › auth › sign-up lands on /career (2.3s)
+  ok  2 [chromium] › tests\e2e\auth.spec.ts:129:3 › auth › sign-in lands on /scan, sign-out returns to /login (2.8s)
+  ok  3 [chromium] › tests\e2e\auth.spec.ts:142:3 › auth › a signed-in user is bounced off /login and /signup (2.4s)
+  ok  4 [chromium] › tests\e2e\auth.spec.ts:150:3 › auth › a visitor is redirected off member routes with no data flash (981ms)
+  ok  5 [chromium] › tests\e2e\auth.spec.ts:163:3 › auth › /privacy is public and reachable from both layouts (2.2s)
+  ok  6 [chromium] › tests\e2e\auth.spec.ts:178:3 › auth › wrong password shows the exact copy and no other outcome (3.5s)
+  ok  7 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a malformed email (468ms)
+  ok  8 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a too-short password (460ms)
+  ok  9 [chromium] › tests\e2e\auth.spec.ts:225:3 › auth › native validation never pre-empts our copy (428ms)
+  ok 10 [chromium] › tests\e2e\auth.spec.ts:241:3 › auth › a duplicate email is reported as such (3.4s)
+  ok 11 [chromium] › tests\e2e\auth.spec.ts:252:3 › auth › the session cookie is httpOnly, SameSite=Lax and capped at 30 days (1.6s)
+  ok 12 [chromium] › tests\e2e\auth.spec.ts:296:3 › auth › account deletion removes the user and returns to /login with the toast (12.5s)
+  ok 13 [chromium] › tests\e2e\career.spec.ts:228:3 › career base › every career endpoint refuses a signed-out caller with 401 (1.0s)
+  ok 14 [chromium] › tests\e2e\career.spec.ts:254:3 › career base › a new account sees the exact empty state (2.0s)
+  ok 15 [chromium] › tests\e2e\career.spec.ts:260:3 › career base › a scanned PDF shows the exact 422 copy, pre-opens the paste tab, and saves nothing (2.7s)
+  ok 16 [chromium] › tests\e2e\career.spec.ts:296:3 › career base › a text-layer PDF imports, reviews and saves, and a second import ADDS (9.3s)
+  ok 17 [chromium] › tests\e2e\career.spec.ts:329:3 › career base › re-importing the SAME text saves nothing and reports every skip (8.1s)
+  ok 18 [chromium] › tests\e2e\career.spec.ts:354:3 › career base › a metered Save spends once even when double-clicked (8.7s)
+  ok 19 [chromium] › tests\e2e\scan.spec.ts:208:3 › scan › both scan endpoints refuse a signed-out caller with 401 (841ms)
+  ok 20 [chromium] › tests\e2e\scan.spec.ts:238:3 › scan › an empty career base blocks the Career-base source with the exact notice (2.1s)
+  ok 21 [chromium] › tests\e2e\scan.spec.ts:251:3 › scan › the applications list starts empty with the exact copy (2.2s)
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  ok 22 [chromium] › tests\e2e\scan.spec.ts:257:3 › scan › a pasted resume scans, scores, and renders coverage, keywords and base matches (15.2s)
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  ok 23 [chromium] › tests\e2e\scan.spec.ts:402:3 › scan › a career-base scan says the base is the source, instead of an empty tab (13.6s)
+  -  24 [chromium] › tests\e2e\scan.spec.ts:444:3 › scan › an AI failure saves the vacancy as a draft and says so
+
+  1 skipped
+  23 passed (1.7m)
+
+======================================================================
+RUN 2 — the AI-unavailable path (US-2 step 5, edge cases N2/N3/N5)
+======================================================================
+
+Against a dev server started with a deliberately invalid model key, so every
+OpenRouter call fails for real:
+
+    OPENROUTER_API_KEY=<invalid> npx next dev -p 3100
+    E2E_AI_DOWN=1 E2E_BASE_URL=http://localhost:3100 npx playwright test scan -g "AI failure"
+
+Same branch, same commit, same clean tree. What the case asserts, and therefore
+what this run proves:
+  - POST /api/scan answers 502 with code AI_UNAVAILABLE and the message
+    "AI service is unavailable. Your vacancy was saved — retry from
+    Applications." — the endpoint-specific string, which is true here because
+    the vacancy and a draft application are written BEFORE the model call;
+  - that message appears as a toast and NOT inline (Block E's error state for
+    this screen is a toast);
+  - the row exists on /applications as a draft, with no score ("—") and the
+    Position cell reading "Not analysed yet";
+  - the detail screen shows "This scan has not been analysed yet" plus
+    [Run analysis] — never an empty coverage table, which would read as
+    "no gaps found";
+  - pressing [Run analysis] posts { applicationId } and nothing else, spends one
+    request, and gets the same honest 502 back rather than a spinner or a
+    silent retry ladder.
+
+----------------------------------------------------------------------
+
+npm notice run cv-insight@0.1.0 npx
+npm notice run playwright test tests/e2e/scan.spec.ts -g AI failure
+
+Running 1 test using 1 worker
+
+  ok 1 [chromium] › tests\e2e\scan.spec.ts:444:3 › scan › an AI failure saves the vacancy as a draft and says so (5.3s)
+
+  1 passed (6.1s)
