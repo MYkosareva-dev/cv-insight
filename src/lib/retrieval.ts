@@ -25,9 +25,25 @@ import {
  * GATE — embeddings, and the ORCHESTRATOR for vector search and indexing.
  *
  * Every embedding call (indexing, matching, re-scoring) goes through here, and
- * the gate calls getUser() FIRST. Unlike `lib/chat.ts` this also guards spends
- * that happen as a SIDE EFFECT of saving a career item, which is why the two
- * gates are separate files (CLAUDE.md, "AI model calls").
+ * EVERY exported function calls getUser() FIRST — no exceptions, including the
+ * two that index. Unlike `lib/chat.ts` this also guards spends that happen as a
+ * SIDE EFFECT of saving a career item, which is why the two gates are separate
+ * files (CLAUDE.md, "AI model calls").
+ *
+ * NO EXPORT TAKES A USER ID. The verified session is the only source of it, and
+ * that omission is the design rather than a convenience: an id passed in as an
+ * argument can disagree with the session, so the chokepoint would have moved out
+ * of this module and into the discipline of every future caller — which is the
+ * arrangement the rule replaces. RLS would still refuse a foreign `documents`
+ * insert, but only AFTER the paid embedding call had gone out, so trusting an
+ * argument here costs real money on a path that then reports itself as a routine
+ * indexing failure.
+ *
+ * Two of the four exports must ALSO never throw, because indexing may never fail
+ * a save that already succeeded (CLAUDE.md, Embeddings). They reconcile that with
+ * the rule above by refusing rather than raising: no verified user means nothing
+ * is embedded, nothing is written, and the outcome says so — which the caller
+ * already surfaces as the non-blocking index warning.
  *
  * The `match_documents` call itself lives in `lib/db/documents.ts`, because
  * that DAL owns every route to the `documents` table (SPEC v1.9 Block A). This
@@ -209,10 +225,22 @@ function rowsFor(
  * Failure granularity is one BATCH, and a batch never splits an item, so an
  * item is either fully searchable or not in `documents` at all.
  */
-export async function indexCareerItems(
-  userId: string,
-  items: IndexableItem[],
-): Promise<IndexOutcome> {
+export async function indexCareerItems(items: IndexableItem[]): Promise<IndexOutcome> {
+  /**
+   * getUser() FIRST, before a single chunk is embedded — and by REFUSING, not
+   * raising. A throw here would be the one thing this function may never do: the
+   * career items are already written by the time it runs, so an exception would
+   * turn a successful save into an error response and lose work the user has
+   * already done. Refusing spends nothing, writes nothing, and is reported
+   * through the warning channel that already exists for an unindexed item.
+   */
+  let userId: string;
+  try {
+    userId = (await requireUser()).id;
+  } catch {
+    return { indexed: 0, failed: items.length };
+  }
+
   const groups = items
     .map((item) => ({ item, chunks: chunksForItem(item.title, item.content) }))
     .filter((group) => group.chunks.length > 0);
@@ -257,7 +285,18 @@ export async function indexCareerItems(
  * UPDATE policy and RLS would refuse one. Only the sequencing relative to the
  * paid call changed.
  */
-export async function reindexCareerItem(userId: string, item: IndexableItem): Promise<boolean> {
+export async function reindexCareerItem(item: IndexableItem): Promise<boolean> {
+  // getUser() FIRST, and refusing rather than raising — same reasoning as
+  // indexCareerItems: `false` means "not searchable", which is exactly what an
+  // unverified caller should achieve, and the PATCH that called this has already
+  // written the row.
+  let userId: string;
+  try {
+    userId = (await requireUser()).id;
+  } catch {
+    return false;
+  }
+
   const chunks = chunksForItem(item.title, item.content);
   if (chunks.length === 0) return false;
 

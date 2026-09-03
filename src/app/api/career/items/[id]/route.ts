@@ -68,7 +68,7 @@ export async function PATCH(request: Request, { params }: Params) {
      * (CLAUDE.md, Embeddings), not an optimisation.
      */
     const textChanged = after.title !== before.title || after.content !== before.content;
-    const reindexed = textChanged ? await reindexCareerItem(after.user_id, after) : true;
+    const reindexed = textChanged ? await reindexCareerItem(after) : true;
 
     revalidatePath('/career');
 

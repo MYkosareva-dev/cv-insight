@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     );
 
     // Indexing is a side effect of the save and never a precondition for it.
-    const index = await indexCareerItems(user.id, saved);
+    const index = await indexCareerItems(saved);
 
     // US-1: "Saved items appear in the career base list without page reload."
     // /career is a Server Component, so the client refresh needs the cached
