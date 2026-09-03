@@ -24,7 +24,11 @@ import { WEAK_CRITERION_SCORE, groundingFailed } from '@/lib/judge';
  * a reader can always tell the app's copy from the reviewer's output, and
  * nothing after a heading is ever treated as an instruction (edge case S2).
  *
- * A Server Component: no state, no handlers, no JavaScript shipped.
+ * No state and no handlers of its own — but it is imported by the editor, which
+ * is a client component, so it compiles into the client bundle. It reads only
+ * `lib/judge`'s pure exports and `lib/copy`, neither of which touches a secret or
+ * a DAL; being presentational is what keeps it that way, and it is not a server
+ * boundary.
  */
 export function JudgeCard({
   report,

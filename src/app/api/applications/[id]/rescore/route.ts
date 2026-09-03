@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { requireApiUser } from '@/lib/auth/requireApiUser';
 import { RESULT } from '@/lib/copy';
 import { editorTextCorpus, scoreAgainstCorpus } from '@/lib/coverage';
+import { renderableScore } from '@/lib/scoring';
 import { getApplication } from '@/lib/db/applications';
 import { getVacancy } from '@/lib/db/vacancies';
 import { NotFoundError, ValidationError, apiErrorResponse } from '@/lib/errors';
@@ -43,8 +44,12 @@ import { resumeContentSchema } from '@/lib/validation';
  */
 
 /**
- * One embeddings run over the requirements plus the resume's units. No chat
- * call, so nothing here can take 60 s twice.
+ * The requirements and the resume's units, embedded together. USUALLY one
+ * request and not guaranteed to be: `embedFor` splits at
+ * `EMBEDDING_BATCH_SIZE`, so a long resume or a many-requirement posting costs a
+ * second — which is a second `rescore` row in `llm_calls`, and the reason to say
+ * so rather than to write "one" and be wrong on a big input. No chat call
+ * either way, so nothing here can take 60 s twice.
  */
 export const maxDuration = 60;
 
@@ -92,9 +97,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       aiUnavailableMessage: RESULT.rescoreFailed,
     });
 
+    /**
+     * RULE B1b, THROUGH THE SAME FUNCTION EVERY OTHER SCREEN USES. `matchScore`
+     * returns a hard 0 when there are no MUST requirements AND no keywords —
+     * arithmetic, not a judgement — and B1b says that 0 must RENDER as "—",
+     * because the app measured nothing. SPEC v2.12 note 10 states the client
+     * contract in as many words: a caller reading `matchScore` applies
+     * `renderableScore()` rather than printing it.
+     *
+     * Applied HERE rather than in the browser, so the endpoint cannot hand a
+     * client a number the rest of the app would refuse to show. Without it the
+     * ring flips from "—" to a red 0% on [Re-score] for a nice-only posting with
+     * no keywords — the app reporting a measurement it did not take, which is
+     * the exact defect B1b exists to prevent, and a second rule for a score that
+     * Block E says must render by one.
+     */
     // The same body shape as /api/scan, so one client renderer reads both.
     return NextResponse.json({
-      matchScore,
+      matchScore: renderableScore({ match_score: matchScore, coverage }),
       coverage: coverage.entries,
       keywords: coverage.keywords,
     });

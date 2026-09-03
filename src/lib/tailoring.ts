@@ -111,30 +111,40 @@ export async function retrieveItemsFor(
 /**
  * P2/P3's `{{parsedRequirementsJson}}` — what the posting asks for, as data.
  *
- * THE VACANCY'S KEYWORD LIST IS DELIBERATELY NOT IN IT, and this is a defect
- * found by running the pipeline rather than by reading it. An earlier version
- * included `parsed.keywords`, and against the Hiredbuddy case the generator
- * pasted the whole list into a SKILLS line: "ms office, google suite, labelbox,
- * supervisely" — four tools the career base does not contain, claimed as skills.
- * That is rule B4 ("the generator may use a vacancy keyword only if supported by
- * retrieved chunks") broken by the app's own prompt, and it is the exact
- * invention rule B2 exists to catch.
+ * THE VACANCY'S KEYWORD LIST GOES TO THE REVIEWER AND NOT TO THE WRITER, and
+ * that split is a defect found by running the pipeline rather than by reading it
+ * (SPEC v2.16). An earlier version gave both prompts `parsed.keywords`, and
+ * against the Hiredbuddy case the generator pasted the whole list into a SKILLS
+ * line: "ms office, google suite, labelbox, supervisely" — four tools the career
+ * base does not contain, claimed as skills. That is rule B4 ("the generator may
+ * use a vacancy keyword only if supported by retrieved chunks") broken by the
+ * app's own prompt, and it is the exact invention rule B2 exists to catch.
  *
- * The cause was not the model's alone. A tidy list of skill terms next to an
+ * The cause was not the model's alone. A tidy list of skill terms beside an
  * instruction to use the vacancy's exact spelling is an invitation to reproduce
- * it, and Block F's own template asks for "Vacancy requirements" — the
- * requirements, which each state what is wanted in a sentence a writer has to
- * check against the items before answering. The per-requirement `keyword` stays
- * out for the same reason.
+ * it, and Block F's own P2 template asks for "Vacancy requirements" — sentences
+ * a writer has to check against the career items before answering. So P2 gets
+ * the requirements and nothing else, and its rule 3 ("use the vacancy's exact
+ * keyword spelling where the career items honestly support the skill") is
+ * satisfied from the requirement TEXT, which is a verbatim-derived sentence of
+ * the posting.
  *
- * The judge is still the gate. This removes the invitation; it does not replace
- * the check.
+ * P3 KEEPS THE LIST, because the reviewer cannot do its job without it: criterion
+ * 2 is "of vacancy keywords honestly supported by career items, how many appear
+ * in the resume", and a judge scoring that against a list it was never given
+ * would be inventing the denominator — which is what `missingHonest` then
+ * renders to the user and feeds into a paid revision. The asymmetry is the point:
+ * a checklist in front of a WRITER is an instruction to fill it in, and the same
+ * checklist in front of a REVIEWER is what it is measuring against. Rule B4 is
+ * the constraint on the writer, and giving the list only to the party enforcing
+ * it is the arrangement that keeps the rule enforceable.
  */
-function requirementsJson(parsed: ParsedVacancy): string {
+function requirementsJson(parsed: ParsedVacancy, withKeywords: boolean): string {
   return JSON.stringify({
     title: parsed.title,
     company: parsed.company,
     requirements: parsed.requirements.map((r) => ({ text: r.text, kind: r.kind })),
+    ...(withKeywords ? { keywords: parsed.keywords } : {}),
   });
 }
 
@@ -165,7 +175,8 @@ export async function generateResume(args: {
   ledger: CallLedger;
 }): Promise<string> {
   const prompt = fillPrompt(P2_GENERATE, {
-    parsedRequirementsJson: requirementsJson(args.parsed),
+    // The WRITER gets no keyword list — see `requirementsJson`.
+    parsedRequirementsJson: requirementsJson(args.parsed, false),
     retrievedChunksJson: itemsJson(args.items),
     revisionFeedbackBlock: revisionFeedbackBlock(args.findings),
   });
@@ -212,7 +223,8 @@ export async function judgeResume(args: {
 }): Promise<JudgeReport> {
   const prompt = fillPrompt(P3_JUDGE, {
     resumeText: args.resumeText,
-    parsedRequirementsJson: requirementsJson(args.parsed),
+    // The REVIEWER does: P3 criterion 2 scores against exactly this list.
+    parsedRequirementsJson: requirementsJson(args.parsed, true),
     retrievedChunksJson: itemsJson(args.items),
   });
   const { data } = await runChatJson({
@@ -263,9 +275,14 @@ export type GenerateOutcome = {
  *     throwing it away to report "nothing was saved" would take their money and
  *     the work. The card then says the check did not run, which is the third
  *     state, not a pass.
+ *  5. The REWRITE is refused, for either of those reasons, after the first draft
+ *     has been generated and judged. Same answer as 4 and for the same reason:
+ *     the original is returned and saved with its honest card, because there is
+ *     a resume by then and it is the one the user paid for.
  *
- * The generate step's OWN failure is different and does propagate: there is no
- * resume, nothing is saved, and US-4's error path is the honest answer.
+ * The FIRST generate step's failure is the one case that does propagate, and the
+ * difference is not arbitrary: there is no resume yet, so nothing is thrown away,
+ * and US-4's error path ("nothing was saved") is a true sentence.
  */
 export async function generateWithJudge(args: {
   parsed: ParsedVacancy;
@@ -287,7 +304,34 @@ export async function generateWithJudge(args: {
     return { original: { content, judge }, revision: null, revisionWithheld: true };
   }
 
-  const revised = await generateResume({ ...args, findings });
+  /**
+   * BRANCH 5, and it is the same argument as branch 4 one step later: the
+   * REWRITE can be refused after the first draft has been generated, judged and
+   * billed twice. Rule B7's cap is checked per step against committed rows, so a
+   * user at 48 calls passes step 1 (48+0), passes step 2 (48+1) and is refused on
+   * step 3 (48+2 = 50) — and letting that throw would discard a resume they have
+   * already paid for, to report "Generation failed — nothing was saved".
+   *
+   * A generate failure on the FIRST step still propagates, and the difference is
+   * not arbitrary: there is no resume then, so there is nothing to lose. Here
+   * there is one, and it is the one the user gets.
+   */
+  let revised: string;
+  try {
+    revised = await generateResume({ ...args, findings });
+  } catch (err) {
+    if (err instanceof DailyLimitError || err instanceof AiUnavailableError) {
+      console.error('[tailoring] the revision did not run', {
+        name: err instanceof Error ? err.name : typeof err,
+      });
+      // Not `revisionWithheld`: that names a reviewer who gave no reason. This
+      // is a rewrite that was earned, had findings to work from, and could not
+      // be bought. The card shows the original's own honest verdict either way.
+      return { original: { content, judge }, revision: null, revisionWithheld: false };
+    }
+    throw err;
+  }
+
   const revisedJudge = await judgeOrNull(args, revised);
   return {
     original: { content, judge },

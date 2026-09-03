@@ -127,11 +127,16 @@ export type CoverageEntry = {
    * own edited line, echoed back to the browser it came from in the same
    * request.
    *
-   * Absent on every scan-written row, and never a career-base chunk: retrieved
-   * chunks are data for a model call and are never echoed to the client
-   * (CLAUDE.md, Retrieval). A re-score is not stored, so this field reaches the
-   * database on no path at all — it is part of the shape because both screens
-   * render the same coverage table.
+   * NEVER A CAREER-BASE CHUNK: retrieved chunks are data for a model call and
+   * are never echoed to the client (CLAUDE.md, Retrieval), so on the scan path
+   * this is always `null`.
+   *
+   * It IS written to the database — the scan builds every entry through the same
+   * function and `updateApplication` stores the map — with a null on every row.
+   * That is worth stating precisely rather than as "it never reaches the
+   * database", which was the earlier and wrong version of this note: what makes
+   * the field safe is that the only path that ever fills it is the re-score, and
+   * the re-score stores nothing.
    */
   matchedText?: string | null;
 };

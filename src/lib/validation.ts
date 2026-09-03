@@ -464,10 +464,18 @@ export type PatchApplication = z.infer<typeof patchApplicationSchema>;
 // ---------------------------------------------------------------------------
 
 /**
- * `resume_versions.content` — the column's own CHECK, as the bound every editor
- * surface enforces (Block C). Edge case L3 keeps a generated resume under it via
- * `max_tokens`; this is what keeps an EDITED one under it, and it answers with
- * copy rather than with a Postgres constraint error mapped to a 500.
+ * The editor's bounds.
+ *
+ * The UPPER one is `resume_versions.content`'s own CHECK
+ * (`char_length(content) <= 15000`, Block C). Edge case L3 keeps a generated
+ * resume under it via `max_tokens`; this keeps an EDITED one under it, and
+ * answers with copy rather than with a Postgres constraint error mapped to a 500.
+ *
+ * The LOWER one is this app's rule and NOT a constraint — the column has no
+ * minimum. It matches the scan's own `MIN_SCAN_RESUME_CHARS`, because a text too
+ * short to scan is also too short to score, judge or export honestly, and
+ * because US-5's "Resume text is empty" has to mean something more useful than
+ * "zero characters".
  */
 export const MIN_RESUME_CHARS = 100;
 export const MAX_RESUME_CHARS = 15_000;

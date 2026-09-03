@@ -299,6 +299,18 @@ export function insufficientSignal(args: {
  * and the table counts the PASTE, so "Covered" beside "Labelbox: 0 in resume" is
  * reachable and both statements are true of their own corpus (backlog p3-24).
  *
+ * WHICH CORPUS, AS OF v2.16. `baseText` is "the corpus the coverage decision is
+ * made against", and until Phase 4 there was only one — the career base — so the
+ * parameter was named and documented for it. `/api/applications/[id]/rescore`
+ * adds a second: the resume in the EDITOR, which is what that run's retrieval
+ * ranked over, so it is what this gate reads there. The rule is unchanged and is
+ * the one that matters — the gate asks whether the body of text the decision is
+ * made against actually NAMES the thing — and it is `lib/coverage.ts` that binds
+ * the two together, by passing the corpus it just searched. What is still
+ * forbidden is passing the SOURCE on a scan whose corpus is the base: a
+ * one-page paste that omits Python would then refuse a tool the base really
+ * holds, which is the gate lying in the other direction.
+ *
  * THE DIRECTION OF ERROR THIS LEAVES OPEN, named rather than discovered later:
  * the gate matches FORMS. A base writing "Microsoft Office", "PostgreSQL" or
  * "NodeJS" does not satisfy a posting saying "MS Office", "Postgres" or
@@ -356,11 +368,16 @@ export function coverageStatusFor(args: {
   /** v2.15: the verbatim names that satisfy it, any one of them. */
   terms?: readonly string[];
   /**
-   * v2.15: the CAREER BASE text, which is the corpus the coverage decision is
-   * made against. NOT `sourceText` — for a pasted resume those are different
-   * bodies of text, and searching the paste would make the gate lie in the
-   * other direction: it would refuse a tool the base really holds because the
-   * one-page resume the user pasted happened not to mention it.
+   * v2.15: THE CORPUS THE COVERAGE DECISION IS MADE AGAINST — the same body of
+   * text this run's retrieval ranked over, which `lib/coverage.ts` supplies as
+   * `CoverageCorpus.corpusText`.
+   *
+   * For a scan that is the career base, and passing `sourceText` there would
+   * make the gate lie in the other direction: it would refuse a tool the base
+   * really holds because the one-page resume the user pasted happened not to
+   * mention it. For a re-score (v2.16) the corpus IS the editor's text, so the
+   * two coincide — not an exception to the rule but the rule applied to a
+   * different corpus.
    */
   baseText?: string;
 }): { status: 'covered' | 'gap_in_resume_covered_by_base' | 'gap'; missingTerm: string | null } {

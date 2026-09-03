@@ -157,10 +157,13 @@ export function bestVersion<T extends { judge: Rubric | null }>(original: T, rev
  * both are deliberate acts.
  *
  * Ordering is by `created_at desc`, so the `ai_revision`/`ai` pair of one run are
- * adjacent. Two inserts in the same run could in principle share a timestamp and
- * come back in either order; the pair is then compared the same way whichever way
- * round it arrives, because `bestVersion` is symmetric on grounding and breaks a
- * rubric tie toward the revision.
+ * adjacent. THIS RELIES ON THE TWO `created_at` VALUES BEING DISTINCT: the pair
+ * is compared only when the revision comes back first, so if the two inserts
+ * ever shared a timestamp and arrived ai-first, the original would be returned
+ * without the comparison. They are separate transactions and `now()` differs
+ * between them, which is why this is a stated dependency rather than a defect —
+ * but it is a dependency, not the symmetry an earlier version of this comment
+ * claimed.
  */
 export function openingVersion<T extends { source: 'ai' | 'ai_revision' | 'user'; judge: Rubric | null }>(
   versionsNewestFirst: readonly T[],

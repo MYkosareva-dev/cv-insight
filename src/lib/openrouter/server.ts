@@ -63,8 +63,19 @@ export const MODEL_BY_STEP = {
  */
 export const MAX_TOKENS_BY_STEP = {
   import_resume: 8000,
-  parse_vacancy: 1200,
-  judge: 1200,
+  /**
+   * v2.16 — 1200 -> 3000. Raised for the reason `import_resume` was raised in
+   * v2.10, and found the same way: by watching a real run rather than by
+   * reading. A judge report is not one small object. `judgeReportSchema` permits
+   * fifty grounding violations, each with a `claim` and an `issue`, plus a
+   * 4,000-character `evidence` string and three more lists — and the one thing
+   * an output-token cut produces is a TRUNCATED JSON, which is non-empty, so it
+   * comes back as a success, fails Zod, and spends the single repair retry at
+   * the SAME ceiling to truncate at the same place. Two Haiku calls, a 502, and
+   * on `/judge` nothing saved. The retry budget is for output the model got
+   * wrong, not for output the app refused to let it finish.
+   */
+  judge: 3000,
   generate: 2500,
 } as const satisfies Partial<Record<LlmStep, number>>;
 

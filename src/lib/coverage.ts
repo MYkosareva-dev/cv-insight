@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { chunkContent, titleOf } from '@/lib/chunking';
+import { MAX_EPHEMERAL_CHUNKS, chunkContent, titleOf } from '@/lib/chunking';
 import { ERROR_MESSAGES } from '@/lib/copy';
 import type { CoverageEntry, CoverageMap, KeywordRow, ParsedVacancy } from '@/lib/db/types';
 import { AiUnavailableError, ServerError } from '@/lib/errors';
@@ -90,10 +90,11 @@ export type CoverageCorpus = {
 /**
  * The career base, through pgvector — the Phase 3 path, unchanged.
  *
- * One batched embeddings run for all the requirements, then one
- * `match_documents` RPC per requirement. The RPC is a database call and not a
- * spend; the batching is what keeps a fifteen-requirement posting to one metered
- * round trip.
+ * The requirements are embedded in ONE batched call — `embedFor` splits at
+ * `EMBEDDING_BATCH_SIZE`, so a posting whose parse exceeds that many
+ * requirements costs a second request rather than one per requirement, which is
+ * what the batching exists to prevent. Then one `match_documents` RPC per
+ * requirement: a database call, not a spend.
  */
 export function careerBaseCorpus(args: {
   baseText: string;
@@ -153,7 +154,12 @@ export function careerBaseCorpus(args: {
  * The splitter is `chunkContent` — the same semantic units the career base is
  * indexed with (SPEC v2.14), so a requirement is compared against one claim on
  * each side rather than against a whole document on one and a bullet on the
- * other.
+ * other. It is given `MAX_EPHEMERAL_CHUNKS` and NOT the chunker's default:
+ * `MAX_CHUNKS_PER_ITEM` is rule B9's storage ceiling divided by the item cap,
+ * and applying a storage bound to a corpus that is never stored would force
+ * 400–750-character chunks on a long resume — coarse enough, by v2.14's own
+ * measurement, to win comparisons it should lose, and to make a long resume
+ * score differently from a short one for no reason at all.
  */
 export function editorTextCorpus(args: {
   content: string;
@@ -165,7 +171,7 @@ export function editorTextCorpus(args: {
     // requirement to be "hidden" from.
     corpusIsSource: true,
     async match(requirementTexts) {
-      const units = chunkContent(args.content);
+      const units = chunkContent(args.content, MAX_EPHEMERAL_CHUNKS);
       if (units.length === 0) {
         // A measured emptiness, not a failure: there is nothing in the editor to
         // match against, so every requirement is honestly a gap at similarity 0.

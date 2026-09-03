@@ -7,10 +7,18 @@ cron.job_run_details.
 Command:      npx playwright test
 Date:         2026-09-03 UTC
 Branch:       phase-4-generate
-Commit:       (this run) test(e2e): the US-4/US-5 path against the Hiredbuddy case
+Commit:       (this run) fix: close the architect pass on the Phase 4 diff
 Working tree: CLEAN for src/ and tests/ - the commit above is exactly the code
-              that was tested. The SPEC amendment and this file are the only
-              things committed after it, and neither is loaded at runtime.
+              that was tested. Only this file and the docs beside it are
+              committed after it, and none of them is loaded at runtime.
+
+THIS RUN REPLACES an earlier one recorded against "test(e2e): the US-4/US-5 path
+against the Hiredbuddy case". It was re-run because the architect's diff review
+changed things a model can SEE: the vacancy keyword list now goes to P3 and not
+to P2, `MAX_TOKENS_BY_STEP.judge` went 1200 -> 3000, and the re-score's chunker
+stopped borrowing a storage cap. A re-run was the only way to know what those did
+- the argument that they are improvements is cheap to make and easy to get wrong,
+and a run is neither.
 Against:      npm run dev on http://localhost:3000, started and torn down by
               Playwright itself (real Supabase project, EU-Frankfurt) and real
               OpenRouter calls.
@@ -86,29 +94,52 @@ personal data and neither of which belongs in a log (CLAUDE.md, Privacy).
 
 From THIS run:
 
-  [phase-4] run: {"versions":2,"autoRevised":true,"revisionNotBetter":true,
+  [phase-4] run: {"versions":2,"autoRevised":true,"revisionNotBetter":false,
                   "revisionWithheld":false,
-                  "verdicts":[{"source":"ai","verdict":"revise","grounding":"fail","violations":2},
+                  "verdicts":[{"source":"ai","verdict":"revise","grounding":"fail","violations":3},
                               {"source":"ai_revision","verdict":"revise","grounding":"fail","violations":2}]}
-  [phase-4] rescore: {"stored":"57%","live":"65%","entries":8}
+  [phase-4] header: {"literalNamePlaceholder":false}
+  [phase-4] rescore: {"stored":"57%","live":"62%","entries":8}
   [phase-4] grounding gate: {"verdict":"revise","grounding":"fail","violations":5,
-                             "scores":{"keywordCoverage":2,"relevance":1,"atsFormat":4}}
+                             "scores":{"keywordCoverage":3,"relevance":1,"atsFormat":4}}
 
 Read against the declared budget:
 
   * TWO versions, not three. The first draft was judged `revise` on grounding,
-    rule B3's single revision ran with the reviewer's two specific violations in
-    hand, the rewrite was judged again and STILL came back `revise`. The run
-    stopped there and returned the better of the two with its honest card, which
-    is Block D #5's own instruction. A loop would have shown up here as a third
-    version and did not.
+    rule B3's single revision ran with the reviewer's three specific violations
+    in hand, the rewrite was judged again and still came back `revise` - with
+    TWO violations rather than three, so the rewrite improved the draft without
+    clearing it. The run stopped there and returned the better of the two with
+    its honest card, which is Block D #5's own instruction. A loop would have
+    shown up here as a third version and did not.
   * FOUR chat calls for that run (generate, judge, generate, judge) - the middle
-    figure of the declared 2 / 4 / 8.
-  * `revisionNotBetter: true` - `bestVersion` kept the FIRST draft, because the
-    rewrite did not improve on it. Both rows exist either way, and the card says
-    which one the reader is looking at.
-  * The re-score moved 57% -> 65% on the SAME vacancy after two lines were added
+    figure of the declared 2 / 4 / 8. NO repair retry was logged, unlike the
+    pre-fix run; `MAX_TOKENS_BY_STEP.judge` at 1200 was the likely cause of that
+    one, and it is 3000 now (backlog p4-2).
+  * `revisionNotBetter: false` - `bestVersion` chose the REVISION this time,
+    because it carried fewer violations. The earlier run went the other way and
+    kept the first draft. Both rows exist either way, and the card says which one
+    the reader is looking at.
+  * The re-score moved 57% -> 62% on the SAME vacancy after two lines were added
     to the editor, with no chat call.
+
+    THE DELTA IS NOT ATTRIBUTABLE TO THE EDIT, and saying so is the point of
+    writing it down. The two numbers measure different corpora: the stored one
+    ranks the requirements against the CAREER BASE through match_documents over
+    the whole index, the live one against the ~20 ephemeral units of a single
+    resume. Rule B1's thresholds were calibrated in coverage-thresholds.md
+    against the first corpus only. So some of the 8 points is the edit and some
+    of it is the change of corpus, and this run recorded no re-score of the
+    UNEDITED draft that would separate them. What the run does establish is that
+    the endpoint measures the editor's text - every re-scored entry names no
+    career item, and the similarities are not the stored ones re-served, both of
+    which the spec asserts. Calibrating the second corpus is backlog p4-11.
+
+    Across four runs of this case the live number came out 57%, 58%, 65% and 62%
+    against the same stored 57% - including one that matched it exactly, two real
+    measurements of different text rounding to the same integer. That is why the
+    spec does not assert inequality: it would have failed on a day the app was
+    right.
 
 From an EARLIER run of the same spec, on the same fixture, recorded because it
 is the other DoD branch and a model decides which one happens:
@@ -138,5 +169,16 @@ into a resume grounded in a base that contains none of it. The cause was in this
 branch's prompt assembly, not in the model alone: `parsedRequirementsJson`
 carried `parsed.keywords`, and a tidy list of skill terms beside an instruction
 to use the vacancy's exact spelling is an invitation to reproduce it. Block F's
-template asks for "Vacancy requirements"; the keyword list is now out of it, and
-the assertion is permanent.
+template asks P2 for "Vacancy requirements"; the keyword list is out of the
+WRITER'S prompt and stays in the REVIEWER'S, which is the party rule B4 is
+enforced by (SPEC v2.16, endpoint #5 note 13). The assertion is permanent and has
+passed on every run since.
+
+ONE MORE OBSERVATION, recorded because it was seen once and is not reproducible.
+That same first failing run emitted the literal token `NAME` as the resume's
+first line - P2 rule 4's layout placeholder rather than a name - which would then
+have become the export filename. It has not recurred, and the cause is real
+whether or not it shows: the career base is a list of jobs and skills and carries
+no name anywhere, so a grounded generator has nothing to put there. Refusing to
+invent one is correct behaviour; the fix is to ASK for a name, and that is
+backlog p4-7. The spec now logs a boolean for it on every run.

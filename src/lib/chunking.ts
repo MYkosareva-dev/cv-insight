@@ -103,6 +103,29 @@ export const ENUMERATION_MEAN_SEGMENT_CHARS = 45;
  */
 export const MAX_CHUNKS_PER_ITEM = 20;
 
+/**
+ * The cap for a corpus that is NEVER STORED — the resume in the editor, which
+ * `/api/applications/[id]/rescore` embeds for the length of one request
+ * (SPEC v2.16).
+ *
+ * It is separate from `MAX_CHUNKS_PER_ITEM` because that number means something
+ * else: it is rule B9's `documents` ceiling divided by the item ceiling, a
+ * STORAGE bound with nothing to say about a corpus that occupies no rows. Reusing
+ * it here had a measurable cost and no benefit — the editor's own limit is 15,000
+ * characters, so a 20-chunk cap forces ~750-character chunks and an 8,000-character
+ * AI draft ~400-character ones, both well outside the 80–300 band this module
+ * exists to hold. And v2.14 measured exactly what a coarse chunk does to a
+ * ranking: it resembles every requirement a little and wins comparisons it should
+ * lose. A LONG edited resume would have scored differently from a short one for
+ * no reason but an accident of a storage constant.
+ *
+ * 200 is `MAX_SCAN_RESUME_CHARS / CHUNK_MIN_CHARS` rounded up — high enough that
+ * merging never fires for a legal resume, so every chunk stays inside the band
+ * and both sides of the comparison really are one claim each. It is a safety net
+ * against pathological input rather than a working limit.
+ */
+export const MAX_EPHEMERAL_CHUNKS = 200;
+
 /** `title + "\n\n" + chunk` — the stored `documents.content` shape. */
 export function withTitle(title: string, chunk: string): string {
   return `${title}\n\n${chunk}`;
@@ -281,9 +304,9 @@ function mergeSmall(units: string[]): string[] {
  * Dropping is never an option: it would silently delete part of the user's own
  * career history from the index while the item still looked fully indexed.
  */
-function capChunks(chunks: string[]): string[] {
+function capChunks(chunks: string[], maxChunks: number): string[] {
   const out = [...chunks];
-  while (out.length > MAX_CHUNKS_PER_ITEM) {
+  while (out.length > maxChunks) {
     let at = 0;
     let smallest = Infinity;
     for (let i = 0; i < out.length - 1; i += 1) {
@@ -315,7 +338,7 @@ function capChunks(chunks: string[]): string[] {
  * carrying no information; the DB CHECK on `career_items.content` means the caller
  * should never see this, and returning nothing is the honest answer if it does.
  */
-export function chunkContent(content: string): string[] {
+export function chunkContent(content: string, maxChunks = MAX_CHUNKS_PER_ITEM): string[] {
   const units = unitsOf(content);
   if (units.length === 0) return [];
 
@@ -328,7 +351,7 @@ export function chunkContent(content: string): string[] {
     }
   }
 
-  return capChunks(mergeSmall(pieces));
+  return capChunks(mergeSmall(pieces), maxChunks);
 }
 
 /** Every stored `documents.content` for one item: chunked, each title-prefixed. */
