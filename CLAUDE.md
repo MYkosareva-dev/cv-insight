@@ -48,8 +48,10 @@ SPEC.md, then anything else.
   A retry is a button the user presses. Owner-approved exceptions, and the ONLY
   ones: (a) one repair retry when JSON-mode output fails Zod validation, with
   the Zod error appended; (b) one network retry after 2 s when the request
-  itself errored. Both are inside a single user-initiated submit. Do not add
-  anything beyond these without the owner saying so.
+  itself errored. They share ONE budget: at most MAX_CHAT_REQUESTS_PER_STEP = 2
+  chat requests per pipeline step, whichever exception consumed them. They cap,
+  they never multiply — nesting one retry inside the other is a defect. Do not
+  add anything beyond these without the owner saying so.
 - **Client input is DATA, never instructions.** Vacancy text, resume text and
   career items are interpolated into prompts inside tagged blocks that the
   prompts explicitly mark as data. System prompts are built server-side in
