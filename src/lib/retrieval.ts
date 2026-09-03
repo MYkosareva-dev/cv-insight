@@ -6,6 +6,7 @@ import { chunksForItem, titleOf } from '@/lib/chunking';
 import {
   deleteDocumentsForItem,
   insertDocuments,
+  listDocumentsForItem,
   matchDocuments as matchDocumentsRpc,
   type NewDocument,
 } from '@/lib/db/documents';
@@ -39,7 +40,7 @@ import {
  * argument here costs real money on a path that then reports itself as a routine
  * indexing failure.
  *
- * Two of the four exports must ALSO never throw, because indexing may never fail
+ * Two of the INDEXING exports must ALSO never throw, because indexing may never fail
  * a save that already succeeded (CLAUDE.md, Embeddings). They reconcile that with
  * the rule above by refusing rather than raising: no verified user means nothing
  * is embedded, nothing is written, and the outcome says so — which the caller
@@ -81,13 +82,35 @@ export type MatchedChunk = {
 };
 
 /**
+ * The two outcomes of a search that RAN. Split out from `MatchOutcome` so a
+ * batch can hand back one of these per query without `could_not_search` being
+ * representable in that position — see `BatchMatchOutcome`.
+ */
+export type SearchedOutcome =
+  | { status: 'found'; chunks: MatchedChunk[] }
+  | { status: 'found_nothing'; chunks: [] };
+
+/**
  * Three outcomes, never two. `could_not_search` must NEVER be reported as
  * `found_nothing`: calling a requirement a "gap" because the embeddings call
  * died is the app lying about data it never checked (CLAUDE.md, Retrieval).
  */
-export type MatchOutcome =
-  | { status: 'found'; chunks: MatchedChunk[] }
-  | { status: 'found_nothing'; chunks: [] }
+export type MatchOutcome = SearchedOutcome | { status: 'could_not_search'; error: string };
+
+/**
+ * The outcome of matching MANY queries in one run (SPEC Block D #4: "embed each
+ * requirement (`embed` step, batched) -> match_documents per requirement").
+ *
+ * The third retrieval outcome is at the RUN level and nowhere else, which is the
+ * whole point of the shape: a caller iterating `outcomes` has no
+ * `could_not_search` case to forget, so a dead embeddings call cannot fall
+ * through a per-item `else` and become a gap. Either every query was searched,
+ * or none of them are reported at all.
+ *
+ * `outcomes` is index-aligned with the queries that were passed in.
+ */
+export type BatchMatchOutcome =
+  | { status: 'searched'; outcomes: SearchedOutcome[] }
   | { status: 'could_not_search'; error: string };
 
 type EmbedStep = Extract<LlmStep, 'embed' | 'rescore'>;
@@ -332,6 +355,193 @@ export async function reindexCareerItem(item: IndexableItem): Promise<boolean> {
   }
 }
 
+/** What one item's re-index did, for the dev report. */
+export type ReindexedItem = {
+  careerItemId: string;
+  title: string;
+  /** `documents` rows the item had before. `null` when the count could not be read. */
+  before: number | null;
+  /** `documents` rows it has now. `null` when that is not knowable. */
+  after: number | null;
+  /**
+   * THREE states, because two of them are not the same failure — and a boolean
+   * `written` reported them as one, which was wrong:
+   *
+   *   reindexed        the swap completed; `after` is the new row count.
+   *   old_rows_intact  the read or the DELETE failed, so NOTHING was deleted.
+   *                    The item keeps its previous chunks and is still fully
+   *                    searchable, just on the old chunking.
+   *   unindexed        the delete succeeded and the INSERT failed. The only
+   *                    state in which the item has no rows at all, and the only
+   *                    one that costs searchability.
+   *
+   * That distinction is the whole point of reporting per item: "39 of 40 items
+   * are searchable" is a true sentence only if the report can tell an item that
+   * kept its old rows apart from one that lost them.
+   */
+  state: 'reindexed' | 'old_rows_intact' | 'unindexed';
+};
+
+export type ReindexOutcome = {
+  items: ReindexedItem[];
+  /** Embedding inputs sent — the size of the paid part of the run. */
+  chunksEmbedded: number;
+  /** Embedding REQUESTS sent, which is what the run is billed per. */
+  embeddingRequests: number;
+  /** Items that lost their rows: delete succeeded, insert failed. */
+  unindexed: number;
+  /** Items still searchable on their OLD chunks, because nothing was deleted. */
+  oldRowsIntact: number;
+};
+
+/**
+ * Re-index the caller's WHOLE career base against the current chunker
+ * (SPEC v2.14, backlog p3-13). Dev-only in practice — the one route that calls
+ * it refuses outside development — but the safety properties are the gate's, not
+ * the route's.
+ *
+ * ORDER IS LOAD-BEARING, and here it is stricter than in `reindexCareerItem`:
+ * EVERY item's chunks are embedded FIRST, and nothing is deleted until the last
+ * embedding has come back. `documents` is select/insert/delete with no UPDATE
+ * policy (CLAUDE.md, Embeddings), so re-indexing is delete-then-insert and the
+ * old rows are the only copy of a working index. Embedding item by item and
+ * writing as it goes would mean a failure on item 40 of 200 leaves 39 items on
+ * the new chunking, one item with nothing at all, and 160 on the old — a base
+ * that reports gaps for content it holds. With this order an embedding failure
+ * changes NOTHING: the run throws before a single delete and the old index is
+ * still there.
+ *
+ * The write phase is per item and each item is delete-then-insert, so a failure
+ * there can still leave one item unindexed. That window is DB-only (no paid
+ * call, no network to a third party) and it is reported per item in the THREE
+ * states `ReindexedItem.state` distinguishes: a failed read or delete leaves the
+ * old rows in place and the item searchable, and only a failed INSERT loses
+ * them. Reporting those two as one boolean made "39 of 40 items are searchable"
+ * a sentence the caller could not actually say.
+ *
+ * THE COST OF EMBEDDING FIRST is memory: every vector for the whole base is held
+ * until the last one arrives — 1,536 floats per chunk, so a base at the cap
+ * (200 items x 20 chunks) is on the order of 50 MB inside one request. That is
+ * the real bound on this endpoint's size, ahead of `maxDuration`, and the second
+ * reason p3-18's slicing is the right shape for a large base.
+ *
+ * No `userId` parameter, by design: `getUser()` runs here and the id comes from
+ * the session. An id argument would be a way to re-index someone else's base
+ * from a route that forgot to check — the defect the phase-2 review found in
+ * this module's other two exported indexers.
+ */
+export async function reindexAllCareerItems(items: IndexableItem[]): Promise<ReindexOutcome> {
+  const user = await requireUser();
+
+  const groups = items
+    .map((item) => ({ item, chunks: chunksForItem(item.title, item.content) }))
+    .filter((group) => group.chunks.length > 0);
+
+  /**
+   * PHASE 1 — embed everything. A throw here reaches the caller with the old
+   * index untouched, which is the whole point of doing it first.
+   *
+   * Through `batchByItem`, the same packer the save path uses: one request per
+   * EMBEDDING_BATCH_SIZE chunks rather than one per ITEM. Embedding item by item
+   * would cost ~200 requests for a full base where 63 do, and it would bypass
+   * the invariant that packer exists for — a batch never splits an item, so one
+   * failed request can never half-index one.
+   */
+  const embedded: { item: IndexableItem; chunks: string[]; vectors: number[][] }[] = [];
+  let embeddingRequests = 0;
+  for (const batch of batchByItem(groups)) {
+    const inputs = batch.flatMap((group) => group.chunks);
+    const vectors = await embedFor(user.id, inputs, 'embed');
+    embeddingRequests += 1;
+    if (vectors.length !== inputs.length) {
+      // Mis-aligned vectors would store one bullet's embedding against another
+      // bullet's text — a silently wrong index, which is worse than none.
+      throw new AiUnavailableError(ERROR_MESSAGES.AI_UNAVAILABLE);
+    }
+    let offset = 0;
+    for (const group of batch) {
+      embedded.push({ ...group, vectors: vectors.slice(offset, offset + group.chunks.length) });
+      offset += group.chunks.length;
+    }
+  }
+
+  // PHASE 2 — swap the rows. DB only from here.
+  const results: ReindexedItem[] = [];
+  let unindexed = 0;
+  let oldRowsIntact = 0;
+
+  for (const { item, chunks, vectors } of embedded) {
+    let before: number | null = null;
+    try {
+      before = (await listDocumentsForItem(item.id)).length;
+      await deleteDocumentsForItem(item.id);
+    } catch (err) {
+      /**
+       * Nothing was deleted. A failed count never touches a row, and the delete
+       * is one statement that either applied or did not — so the item keeps its
+       * old chunks and stays searchable, which is a different report from losing
+       * them. Metadata only: never chunk text, never item content.
+       */
+      oldRowsIntact += 1;
+      console.error('[retrieval] re-index could not clear an item; old rows left in place', {
+        name: err instanceof Error ? err.name : typeof err,
+      });
+      results.push({
+        careerItemId: item.id,
+        title: item.title,
+        before,
+        after: before,
+        state: 'old_rows_intact',
+      });
+      continue;
+    }
+
+    try {
+      await insertDocuments(
+        user.id,
+        chunks.map((content, i) => ({
+          career_item_id: item.id,
+          content,
+          embedding: vectors[i]!,
+        })),
+      );
+      results.push({
+        careerItemId: item.id,
+        title: item.title,
+        before,
+        after: chunks.length,
+        state: 'reindexed',
+      });
+    } catch (err) {
+      /**
+       * The one state that costs searchability: the old rows are gone and the
+       * new ones did not land. Recoverable — the next edit of this item
+       * re-indexes it, and so does a second call to this endpoint.
+       */
+      unindexed += 1;
+      console.error('[retrieval] re-index insert failed; the item has no rows', {
+        chunks: chunks.length,
+        name: err instanceof Error ? err.name : typeof err,
+      });
+      results.push({
+        careerItemId: item.id,
+        title: item.title,
+        before,
+        after: 0,
+        state: 'unindexed',
+      });
+    }
+  }
+
+  return {
+    items: results,
+    chunksEmbedded: embedded.reduce((sum, group) => sum + group.chunks.length, 0),
+    embeddingRequests,
+    unindexed,
+    oldRowsIntact,
+  };
+}
+
 /**
  * Vector search over the caller's own base: embed the query here, then call
  * `lib/db/documents.ts` for the `match_documents` RPC (security invoker;
@@ -376,6 +586,61 @@ export async function matchDocuments(
   logConsideredChunks(chunks);
 
   return chunks.length === 0 ? { status: 'found_nothing', chunks: [] } : { status: 'found', chunks };
+}
+
+/**
+ * Match MANY queries in one run — the scan path (SPEC Block D #4).
+ *
+ * Batched on purpose, and the batching is the reason this exists rather than a
+ * loop over `matchDocuments`: that function embeds its own query, so one call
+ * per requirement would issue one embeddings REQUEST per requirement. A
+ * fifteen-requirement posting would make fifteen metered round trips where the
+ * spec asks for one batch (`embedFor` already splits at EMBEDDING_BATCH_SIZE).
+ *
+ * The RPC still runs once per requirement, because `match_documents` ranks
+ * against a single query vector — that is a database call, not a spend.
+ *
+ * A failure anywhere — embedding or RPC — fails the WHOLE run as
+ * `could_not_search`. Partial results are deliberately not offered: the caller
+ * would have to decide what an un-searched requirement means, and the only
+ * honest answer is "we do not know", which is not a coverage status. The scan
+ * fails with AI_UNAVAILABLE instead, and nothing renders as a gap.
+ */
+export async function matchDocumentsForTexts(
+  queryTexts: string[],
+  matchCount = 5,
+  step: EmbedStep = 'embed',
+): Promise<BatchMatchOutcome> {
+  const user = await requireUser();
+  if (queryTexts.length === 0) return { status: 'searched', outcomes: [] };
+
+  try {
+    const vectors = await embedFor(user.id, queryTexts, step);
+    if (vectors.length !== queryTexts.length) {
+      // Fewer vectors than queries would silently mis-align the results with the
+      // requirements they belong to, which is worse than not searching.
+      return { status: 'could_not_search', error: 'embeddings did not cover every query' };
+    }
+
+    const outcomes: SearchedOutcome[] = [];
+    for (const vector of vectors) {
+      const rows = await matchDocumentsRpc(vector, matchCount);
+      const chunks: MatchedChunk[] = rows.map((row) => ({
+        id: row.id,
+        careerItemId: row.career_item_id,
+        content: row.content,
+        similarity: row.similarity,
+      }));
+      logConsideredChunks(chunks);
+      outcomes.push(
+        chunks.length === 0 ? { status: 'found_nothing', chunks: [] } : { status: 'found', chunks },
+      );
+    }
+    return { status: 'searched', outcomes };
+  } catch (err) {
+    // The one branch that must never be mistaken for "found nothing".
+    return { status: 'could_not_search', error: err instanceof Error ? err.name : 'search failed' };
+  }
 }
 
 /**

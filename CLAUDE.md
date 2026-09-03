@@ -204,6 +204,17 @@ SPEC.md, then anything else.
   something happens automatically needs evidence of it having happened at least
   once (a succeeded run, a fixture that fired), and a user-facing promise may not
   ship ahead of that evidence.
+- Never terminate processes by image name (`taskkill /IM`, `killall`, `pkill -f
+  node`). Stop only the processes this session started, by their own PID or through
+  the runner that started them. The machine runs other work.
+- When you start a long-running process, record its PID at the moment you start it
+  and stop it by that PID. Selecting processes to kill by a command-line pattern is
+  the same mistake as selecting them by image name: the pattern is a guess about
+  what else is running.
+- Save a subagent's report to docs/reviews/ verbatim in the same run that produced
+  it, before acting on it. A report summarized from memory loses the parts nobody
+  thought to keep — severity labels, exact quotes, the reasoning behind a verdict —
+  and those are unrecoverable once the run ends.
 
 ## Git workflow
 - Never commit directly to main. Every phase/feature starts a NEW branch from

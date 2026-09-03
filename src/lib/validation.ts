@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { AUTH, CAREER, SCAN } from '@/lib/copy';
+import { APPLICATION_STATUS_ORDER, AUTH, CAREER, RESULT, SCAN, VACANCY_LENGTH } from '@/lib/copy';
 import { MAX_CAREER_ITEMS } from '@/lib/limits';
 
 /**
@@ -238,6 +238,227 @@ export const patchCareerItemSchema = z
   .refine((patch) => Object.keys(patch).length > 0, { message: 'Nothing to update.' });
 
 export type PatchCareerItem = z.infer<typeof patchCareerItemSchema>;
+
+// ---------------------------------------------------------------------------
+// Scan (SPEC US-2/US-3, Block D #4, Block F validation table)
+// ---------------------------------------------------------------------------
+
+/** Block F: vacancyText 100–20,000 characters. Also the /scan counter's ceiling. */
+export const MIN_VACANCY_CHARS = 100;
+export const MAX_VACANCY_CHARS = 20_000;
+
+/** Block F: sourceResumeText 100–15,000 characters (a scan source, not an import). */
+export const MIN_SCAN_RESUME_CHARS = 100;
+export const MAX_SCAN_RESUME_CHARS = 15_000;
+
+/**
+ * P1's output shape (prompt in `lib/prompts.ts`), validated before anything is
+ * stored or scored.
+ *
+ * String bounds are deliberately GENEROUS rather than P1's stated niceties.
+ * P1 asks for requirement text ≤120 chars because a short line reads better in
+ * the coverage table, but enforcing that as a hard bound would spend the one
+ * repair retry on a formatting detail and end an otherwise perfect parse in a
+ * 502 (the `n-1` lesson in docs/backlog.md). What IS enforced is everything the
+ * app then relies on: the shapes, the `must`/`nice` enum, and ceilings high
+ * enough to be about protecting the database rather than about style.
+ *
+ * Missing arrays are accepted as empty instead of failing: a model that omits
+ * `keywords` has produced a usable parse with no keywords, which rule B1 already
+ * has an answer for (K = 0, and B1b when there are also no MUST requirements).
+ */
+export const parsedVacancySchema = z.object({
+  title: z.string().max(300),
+  company: z
+    .string()
+    .max(300)
+    .nullish()
+    .transform((v) => (v && v.trim().length > 0 ? v.trim() : null)),
+  requirements: z
+    .array(
+      z.object({
+        text: z.string().min(1).max(1_000),
+        kind: z.enum(['must', 'nice']),
+        keyword: z.string().max(200),
+        /**
+         * What kind of evidence would PROVE this requirement (SPEC v2.15, rule
+         * B1's lexical gate). Defaults to `general` on a missing or unknown
+         * value, and that default is the safe direction: `general` keeps the
+         * purely semantic decision, while a wrong `tool` invents a gap. The
+         * prompt is told the same asymmetry in the same words.
+         */
+        evidence: z
+          .enum(['tool', 'credential', 'general'])
+          .nullish()
+          .transform((v) => v ?? 'general'),
+        /**
+         * The verbatim names that would satisfy a `tool` or `credential`
+         * requirement, ANY ONE of them being enough. Bounded like the keyword
+         * list and trimmed of blanks — a blank term would match nothing and
+         * would turn every such requirement into a permanent gap.
+         */
+        terms: z
+          .array(z.string().max(200))
+          .max(20)
+          .nullish()
+          .transform((v) => (v ?? []).map((t) => t.trim()).filter((t) => t.length > 0)),
+      }),
+    )
+    .max(200)
+    .nullish()
+    .transform((v) => v ?? []),
+  keywords: z
+    .array(z.string().max(200))
+    .max(400)
+    .nullish()
+    .transform((v) => uniqueKeywords(v ?? [])),
+});
+
+export type ParsedVacancyInput = z.infer<typeof parsedVacancySchema>;
+
+/**
+ * Trimmed, non-empty, first-spelling-wins deduplication, case-insensitive.
+ *
+ * P1 asks for deduplicated keywords and usually obliges, but the keywords table
+ * counts occurrences: a list that says "Docker" twice would render two identical
+ * rows, and K in rule B1 would weight that skill twice. The FIRST spelling is
+ * kept because it is the one the posting used, which is what the "In vacancy"
+ * column is counting.
+ */
+export function uniqueKeywords(keywords: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of keywords) {
+    const keyword = raw.trim();
+    if (!keyword) continue;
+    const key = keyword.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(keyword);
+  }
+  return out;
+}
+
+/**
+ * `POST /api/scan` — a NEW scan. SPEC Block D #4, verbatim in structure, with
+ * every bound carrying copy from `lib/copy.ts` instead of raw Zod text.
+ *
+ * Both bounds of each field get their own message: "at least 100 characters" is
+ * the wrong sentence for a 25,000-character paste (edge case S7), and raw Zod
+ * text ("Too big: expected string to have <=20000 characters") would render in
+ * the app's own voice.
+ */
+export const scanSchema = z
+  .object({
+    vacancyText: z
+      .string()
+      .min(MIN_VACANCY_CHARS, SCAN.vacancyRequired)
+      .max(MAX_VACANCY_CHARS, VACANCY_LENGTH),
+    resumeSource: z.enum(['career_base', 'resume_version', 'paste', 'file']),
+    sourceResumeText: z
+      .string()
+      .min(MIN_SCAN_RESUME_CHARS, SCAN.resumeRequired)
+      .max(MAX_SCAN_RESUME_CHARS, SCAN.resumeTruncated)
+      .nullable(),
+    resumeVersionId: z.uuid().nullable(),
+  })
+  /**
+   * SPEC's own refine names `paste` only, because `file` was assumed to arrive
+   * as multipart — which it does, and where the extraction fills the field. A
+   * JSON body CLAIMING `file` with no text is the same missing input, and
+   * without this it would reach the source resolver as a server-side anomaly
+   * and answer 500 for what is a malformed request (SPEC v2.12).
+   */
+  .refine(
+    (v) =>
+      v.resumeSource === 'career_base' ||
+      v.resumeSource === 'resume_version' ||
+      !!v.sourceResumeText,
+    { message: SCAN.resumeRequired, path: ['sourceResumeText'] },
+  );
+
+export type ScanRequest = z.infer<typeof scanSchema>;
+
+/**
+ * `POST /api/scan` — RE-RUNNING an existing draft (SPEC v2.12).
+ *
+ * The body is the application id and nothing else. Everything the re-run needs
+ * is already on the row: the vacancy text, the resume source and, for a paste or
+ * an upload, the source text the first attempt stored. Accepting those from the
+ * client instead would let a caller change what was analysed while claiming to
+ * retry it, and would put the same personal data on the wire a second time.
+ *
+ * This is what makes `SCAN.aiUnavailable` ("retry from Applications") a true
+ * sentence: a metered retry the user presses, which is the only kind of retry
+ * CLAUDE.md allows beyond the two in-request exceptions.
+ */
+export const rescanSchema = z.object({ applicationId: z.uuid() });
+
+/**
+ * Which of the two shapes a body is CLAIMING to be, decided before either
+ * schema runs.
+ *
+ * Deliberately not `z.union([rescanSchema, scanSchema])`. A Zod union reports a
+ * failure as one top-level `invalid_union` issue whose message is the literal
+ * "Invalid input", so every Block F string on this endpoint would be replaced by
+ * that — and edge case S7 requires the EXACT copy ("Vacancy text must be between
+ * 100 and 20000 characters."), which Block D quotes verbatim as the canonical
+ * error body. Branching first keeps `issues[0].message` the field's own message.
+ */
+export function isRescanBody(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && 'applicationId' in body;
+}
+
+/**
+ * The same 15,000-character ceiling applied to text that came out of a PDF
+ * rather than a textarea, and reported rather than applied in silence.
+ *
+ * The twin of `importedResumeText`, and separate for the same reason: a PASTE
+ * that is too long is the user's own doing and gets a 400 they can act on, while
+ * an extraction they never saw is truncated — the user did nothing wrong, and
+ * the first 15,000 characters are the part that matters. Scoring half a resume
+ * while showing a number with no hint that the input was cut is the defect this
+ * flag exists to prevent.
+ */
+export function scanResumeText(extracted: string): { text: string; truncated: boolean } {
+  if (extracted.length <= MAX_SCAN_RESUME_CHARS) return { text: extracted, truncated: false };
+  return { text: extracted.slice(0, MAX_SCAN_RESUME_CHARS), truncated: true };
+}
+
+// ---------------------------------------------------------------------------
+// Applications (Block D #8 — the PATCH half)
+// ---------------------------------------------------------------------------
+
+/**
+ * `applications.status`, single-sourced from the list the Select renders
+ * (`APPLICATION_STATUS_ORDER` in lib/copy.ts) so the control and the endpoint
+ * cannot offer different values. The DB CHECK constraint is the third guard
+ * underneath.
+ */
+/** Block F: application notes ≤ 2,000 characters. */
+export const MAX_NOTES_CHARS = 2_000;
+
+export const applicationStatusSchema = z.enum(APPLICATION_STATUS_ORDER);
+
+/**
+ * `PATCH /api/applications/[id]` — status and notes, both optional, at least one
+ * required.
+ *
+ * The refine is not ceremony: without it `{}` is a valid body that updates
+ * nothing and returns 200, so a caller cannot tell a no-op from a save. Notes
+ * may be the empty string — clearing them is a real edit — but not longer than
+ * the column's own CHECK, so the bound answers with copy the field renders
+ * instead of a Postgres error mapped to a 500.
+ */
+export const patchApplicationSchema = z
+  .object({
+    status: applicationStatusSchema.optional(),
+    notes: z.string().max(MAX_NOTES_CHARS, RESULT.notesTooLong).optional(),
+  })
+  .refine((patch) => Object.keys(patch).length > 0, { message: 'Nothing to update.' });
+
+export type PatchApplication = z.infer<typeof patchApplicationSchema>;
+
 
 /** Which fields of a career item can carry an inline message (Block F). */
 export type ItemFieldErrors = Partial<Record<'title' | 'content', string>>;
