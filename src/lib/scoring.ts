@@ -43,12 +43,38 @@ export function isCovered(bestSimilarity: number): boolean {
  * would silently never count toward K.
  */
 export function keywordPresent(resumeText: string, keyword: string): boolean {
+  return keywordCount(resumeText, keyword) > 0;
+}
+
+/**
+ * The B1a boundary as a regex, built once and used by both the presence test and
+ * the count. `flags` is the only difference between them, so the boundary rule
+ * cannot drift between "does it appear" and "how often".
+ *
+ * Returns null for a blank keyword — there is nothing to look for.
+ */
+function keywordRegex(keyword: string, flags: string): RegExp | null {
   const trimmed = keyword.trim();
-  if (!trimmed) return false;
+  if (!trimmed) return null;
   const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const lead = /^\w/.test(trimmed) ? '\\b' : '';
   const tail = /\w$/.test(trimmed) ? '\\b' : '';
-  return new RegExp(`${lead}${escaped}${tail}`, 'i').test(resumeText);
+  return new RegExp(`${lead}${escaped}${tail}`, flags);
+}
+
+/**
+ * How many times a keyword appears — the Block E keywords table's two columns
+ * ("In resume", "In vacancy"), under the SAME B1a boundary rule as `keywordPresent`,
+ * so a keyword can never count 0 occurrences while reading as present.
+ *
+ * Non-overlapping matches, which is what `g` gives and what a reader of the
+ * table expects: "AI" in "AI/AI" is two, and there is no case in this app where
+ * counting one occurrence twice would be the honest number.
+ */
+export function keywordCount(text: string, keyword: string): number {
+  const pattern = keywordRegex(keyword, 'gi');
+  if (!pattern) return 0;
+  return (text.match(pattern) ?? []).length;
 }
 
 export function keywordShare(resumeText: string, keywords: string[]): number {
@@ -109,9 +135,86 @@ export function matchScore(args: {
  */
 export function insufficientSignal(args: {
   mustBestSimilarities: number[];
-  keywords: string[];
+  /**
+   * Only the LENGTH is read — "were any keywords extracted at all" — so the
+   * element type is deliberately open: callers hold either the parser's plain
+   * strings or the stored keyword rows, and neither should have to be reshaped
+   * to ask this question.
+   */
+  keywords: readonly unknown[];
 }): boolean {
   return args.mustBestSimilarities.length === 0 && args.keywords.length === 0;
+}
+
+/**
+ * The Block D coverage status for one requirement, from the two things that
+ * decide it: what the career base returned, and whether the requirement's
+ * keyword is in the resume SOURCE the user chose.
+ *
+ *   covered                        base covers it AND the source resume says so
+ *   gap_in_resume_covered_by_base  base covers it, the source resume does not
+ *   gap                            the base does not cover it
+ *
+ * `sourceIsBase` collapses the middle status, and that is not a shortcut: when
+ * the career base IS the scan's source, a requirement covered by the base cannot
+ * be missing from the source, because they are the same body of text. US-3's
+ * "hidden matches" are hidden relative to a DIFFERENT resume; against the base
+ * itself there is nothing to hide.
+ *
+ * Pure and here rather than in the route, because it is rule B1's coverage
+ * threshold applied to rule B1a's keyword test — both of which live in this file.
+ */
+export function coverageStatusFor(args: {
+  bestSimilarity: number;
+  keyword: string;
+  sourceText: string;
+  sourceIsBase: boolean;
+}): 'covered' | 'gap_in_resume_covered_by_base' | 'gap' {
+  const { bestSimilarity, keyword, sourceText, sourceIsBase } = args;
+  if (!isCovered(bestSimilarity)) return 'gap';
+  if (sourceIsBase) return 'covered';
+  /**
+   * P1 can return a requirement with an empty `keyword`. There is then nothing
+   * to search the resume for, and "covered by your base but missing from your
+   * resume" would be a claim about a test that never ran — so the middle status
+   * is withheld rather than asserted. The base covered the requirement; that
+   * much was measured.
+   */
+  if (keyword.trim().length === 0) return 'covered';
+  return keywordPresent(sourceText, keyword) ? 'covered' : 'gap_in_resume_covered_by_base';
+}
+
+/**
+ * THE score a screen may render, decided in one place (Block E: "Same rule
+ * everywhere a score renders").
+ *
+ * Three inputs, three ways to end up with no number:
+ *   - `matchScore === null` — the parse produced 0 requirements (N4), or the
+ *     analysis never ran at all (a draft).
+ *   - rule B1b — 0 MUST requirements AND 0 keywords extracted, so the stored 0
+ *     means "measured nothing" rather than "measured, scored zero".
+ * Everything else is a real number and renders with its band colour.
+ *
+ * It takes the STORED coverage map, so `/applications` and `/applications/[id]`
+ * cannot disagree: the list would otherwise need the vacancy's keyword list to
+ * apply B1b and would show a red 0 next to the detail page's "—".
+ */
+export function renderableScore(application: {
+  match_score: number | null;
+  coverage: {
+    entries: { kind: 'must' | 'nice'; similarity: number }[];
+    keywords: unknown[];
+  } | null;
+}): number | null {
+  const { match_score: score, coverage } = application;
+  if (score === null || coverage === null) return null;
+  const mustBestSimilarities = coverage.entries
+    .filter((entry) => entry.kind === 'must')
+    .map((entry) => entry.similarity);
+  if (insufficientSignal({ mustBestSimilarities, keywords: coverage.keywords })) {
+    return null;
+  }
+  return score;
 }
 
 export type ScoreBand = 'low' | 'mid' | 'high';

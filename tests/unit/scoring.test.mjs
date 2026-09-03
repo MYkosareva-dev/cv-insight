@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
 import {
+  coverageStatusFor,
   insufficientSignal,
+  keywordCount,
   keywordPresent,
   keywordShare,
   matchScore,
+  renderableScore,
   scoreBand,
 } from '../../src/lib/scoring.ts';
 
@@ -161,5 +164,138 @@ describe('keywordShare and scoreBand', () => {
     assert.equal(scoreBand(69), 'mid');
     assert.equal(scoreBand(70), 'high');
     assert.equal(scoreBand(100), 'high');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3: the keyword COUNTS, the coverage status, and the one render rule
+// ---------------------------------------------------------------------------
+
+describe('keywordCount — the Block E keywords table', () => {
+  test('counts occurrences under the same B1a boundary as keywordPresent', () => {
+    assert.equal(keywordCount('Docker, then more Docker, then dockerfile', 'Docker'), 2);
+    assert.equal(keywordCount('Shipped on .NET and .NET 8', '.NET'), 2);
+    assert.equal(keywordCount('nothing here', 'Docker'), 0);
+  });
+
+  test('case-insensitive, like K in rule B1', () => {
+    assert.equal(keywordCount('docker DOCKER Docker', 'Docker'), 3);
+  });
+
+  test('keywordPresent is exactly "count > 0" — the two can never disagree', () => {
+    for (const [text, keyword] of [
+      ['I used Docker daily', 'Docker'],
+      ['dockerfile only', 'Docker'],
+      ['Built services in C++', 'C++'],
+      ['scored ABC++ here', 'C++'],
+      ['anything', '   '],
+    ]) {
+      assert.equal(keywordPresent(text, keyword), keywordCount(text, keyword) > 0);
+    }
+  });
+
+  test('a blank keyword counts nothing rather than matching everywhere', () => {
+    assert.equal(keywordCount('any text at all', ''), 0);
+    assert.equal(keywordCount('any text at all', '   '), 0);
+  });
+});
+
+describe('coverageStatusFor — the three Block D statuses', () => {
+  const base = { keyword: 'Docker', sourceText: 'I used Docker daily', sourceIsBase: false };
+
+  test('below the 0.60 threshold is a gap, whatever the resume says', () => {
+    assert.equal(coverageStatusFor({ ...base, bestSimilarity: 0.59 }), 'gap');
+    assert.equal(coverageStatusFor({ ...base, bestSimilarity: 0 }), 'gap');
+  });
+
+  test('covered by the base AND present in the source resume is "covered"', () => {
+    assert.equal(coverageStatusFor({ ...base, bestSimilarity: 0.6 }), 'covered');
+    assert.equal(coverageStatusFor({ ...base, bestSimilarity: 0.91 }), 'covered');
+  });
+
+  test('covered by the base but absent from the source is the US-3 hidden match', () => {
+    assert.equal(
+      coverageStatusFor({ ...base, sourceText: 'no tooling mentioned', bestSimilarity: 0.81 }),
+      'gap_in_resume_covered_by_base',
+    );
+  });
+
+  test('when the base IS the source, the middle status cannot occur', () => {
+    // Nothing covered by the base can be "missing from the source" when they
+    // are the same body of text.
+    assert.equal(
+      coverageStatusFor({ ...base, sourceText: '', sourceIsBase: true, bestSimilarity: 0.81 }),
+      'covered',
+    );
+    assert.equal(
+      coverageStatusFor({ ...base, sourceText: '', sourceIsBase: true, bestSimilarity: 0.4 }),
+      'gap',
+    );
+  });
+
+  test('no keyword to look for never becomes a claim of absence', () => {
+    // The parser can emit an empty keyword. "Not in your resume" would then be
+    // a statement about a search that was never performed.
+    assert.equal(
+      coverageStatusFor({ ...base, keyword: '', sourceText: 'anything', bestSimilarity: 0.8 }),
+      'covered',
+    );
+  });
+});
+
+describe('renderableScore — one rule everywhere a score renders', () => {
+  const entry = (kind, similarity) => ({
+    requirement: 'r',
+    kind,
+    status: 'covered',
+    careerItemId: null,
+    careerItemTitle: null,
+    similarity,
+  });
+
+  test('a scan that never ran shows no number', () => {
+    assert.equal(renderableScore({ match_score: null, coverage: null }), null);
+    assert.equal(
+      renderableScore({ match_score: 68, coverage: null }),
+      null,
+      'coverage null means nothing was measured, whatever the score column says',
+    );
+  });
+
+  test('rule B1b: 0 MUST requirements and 0 keywords is "—", not a hard 0', () => {
+    assert.equal(
+      renderableScore({ match_score: 0, coverage: { entries: [entry('nice', 0.2)], keywords: [] } }),
+      null,
+    );
+  });
+
+  test('a real measurement renders its number', () => {
+    assert.equal(
+      renderableScore({
+        match_score: 68,
+        coverage: { entries: [entry('must', 0.87)], keywords: [{ keyword: 'Docker' }] },
+      }),
+      68,
+    );
+  });
+
+  test('a nice-only posting WITH keywords still has a computable score (B1)', () => {
+    assert.equal(
+      renderableScore({
+        match_score: 50,
+        coverage: { entries: [entry('nice', 0.7)], keywords: [{ keyword: 'Docker' }] },
+      }),
+      50,
+    );
+  });
+
+  test('a measured zero is reported as zero', () => {
+    assert.equal(
+      renderableScore({
+        match_score: 0,
+        coverage: { entries: [entry('must', 0.1)], keywords: [{ keyword: 'Docker' }] },
+      }),
+      0,
+    );
   });
 });
