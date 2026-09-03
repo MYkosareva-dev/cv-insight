@@ -117,3 +117,54 @@ Both are `scanFiles` over `SERVER_CLIENT_FILES`; deleting `src/middleware.ts` ma
 ---
 
 **Checked:** secrets ✓ · RLS ✓ (002 adds no policy; append-only tables untouched; `documents` still has no UPDATE) · chokepoints ✓ (`node scripts/check.mjs` → "check passed (13 rules)") · zod ✓ · llm_calls logging n/a (no model calls in this phase)
+
+---
+
+# Addendum — majors addressed before merge
+
+All four majors were fixed on `phase-1-auth` before the PR was opened, on the
+principle that a gate blind to the app's own shipped wording should not be merged
+and then described as working in a report that lives in the repo.
+
+Each of M1–M3 was first **reproduced against the real `scripts/check.mjs`** by
+mutating a throwaway copy of the tree — not accepted on reading — and each now
+fails closed. `SPEC.md` v2.8 declares R12 fail-closed and deliberately
+over-inclusive, and freezes R12/R13 for Phase 1; no new rule was added.
+
+| # | Finding | Fix | Commit |
+|---|---|---|---|
+| M1 | R12's noun pattern required the word `audit`, so it could not see the app's own shipped phrase "Some **authentication** records" | Noun widened to `audit \| authentication record \| retention \| log entr`. The claims in `src/lib/copy.ts` and SPEC that R12 fires there are now true. | `7025c8e` |
+| M2 | R12's period matcher only knew the literal `90 days`; the Playwright backstop had the identical hole | Any period expression: digits or words, hyphenated or spaced, day/week/month/year, singular or plural. `tests/e2e/auth.spec.ts` mirrors the same pattern. | `7025c8e` |
+| M3 | Evidence predicate was a substring test for `succeeded`, satisfied by a file reading "has **NOT** succeeded" | Anchored on `^\s*status:\s*succeeded\b`. The test named for this case passed only because its fixture happened not to contain the word; it now has the prose fixture that actually exercises it. | `7025c8e` |
+| M4 | The phase's stated acceptance evidence had no record in the repo of ever having run | `docs/eval/phase-1-e2e-run.txt` — verbatim output, 12/12 in 37.7s, with the command, date, branch and commit that produced it. | `8b5702d` |
+
+Two minors were also fixed, both because they break somewhere other than here:
+
+- **N1** — R13 used `existsSync`, which is case-insensitive on NTFS, so a doc naming
+  `Supabase/Server.ts` passed locally and would fail Vercel's Linux builder. Since
+  `check` is `prebuild`, that is a green local tree and a red deploy. Path segments
+  are now compared against real directory entries. (`7025c8e`)
+- **N4** — `stripComments` treated `//` as a comment in markdown, blanking the rest of
+  any line containing one and hiding stale paths from R13. Block comments still strip
+  for `.md`, because SPEC and CLAUDE quote code samples that contain them. (`7025c8e`)
+
+N2, N3, N5–N11 and the nits were left as recorded, per the owner's instruction.
+
+## The three review cases, before and after
+
+Same three mutations, same script, throwaway copies of the tree:
+
+```
+                                                    before   after
+M1  "authentication records ... for 90 days"        exit 0   exit 1
+M2  "audit records ... on a 90-day schedule"        exit 0   exit 1
+M3  claim + "has NOT succeeded" evidence file       exit 0   exit 1
+--  unmodified shipped tree                         exit 0   exit 0
+```
+
+Eight new fixtures cover them plus the spelled-out (`ninety days`) and
+different-unit (`three months`) forms, the anchored-status-line acceptance case,
+and the two minors.
+
+**Gates after the fixes:** `npm run check` 13 rules · `npm test` 79/79 ·
+`npm run build` · `npm run lint` · `npx playwright test` 12/12.
