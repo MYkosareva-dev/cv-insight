@@ -173,6 +173,13 @@ export const SCAN = {
   /** Block E: "shows 'Using all N items of your base'". */
   usingAllItems: (n: number) => `Using all ${n} item${n === 1 ? '' : 's'} of your base`,
   resumePlaceholder: RESUME_PASTE_PLACEHOLDER,
+  /**
+   * The paste box's own accessible name. Distinct from the TAB label: the tab
+   * panel already carries "Paste text" as its accessible name, so reusing it on
+   * the field inside would give two different controls one name — ambiguous for
+   * a screen reader, and for anything else addressing the field by name.
+   */
+  resumeTextLabel: 'Resume text',
   choosePdf: 'Choose a .pdf file',
   notPdf: NOT_PDF,
   unreadablePdf: UNREADABLE_PDF,

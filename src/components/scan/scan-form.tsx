@@ -100,15 +100,18 @@ export function ScanForm({
 
       if (!res.ok) {
         /**
-         * The server's own message. On AI_UNAVAILABLE that is the Block E toast
-         * ("…Your vacancy was saved — retry from Applications."), which is true
+         * The server's own message, as a TOAST and only as a toast — Block E's
+         * error state for this screen. On AI_UNAVAILABLE that message is
+         * "…Your vacancy was saved — retry from Applications.", which is true
          * because /api/scan writes the vacancy and a draft application BEFORE
-         * the model call. Rendering a local string here instead would be this
-         * screen guessing at what the server did.
+         * the model call; a local string here would be this screen guessing at
+         * what the server did.
+         *
+         * The inline slot below is for Block F's client-side validation ("inline,
+         * block submit"). Saying the same thing in both places would tell the
+         * user twice and imply two different problems.
          */
-        const detail = payload?.error?.message;
-        toast.error(detail ?? SCAN.aiUnavailable);
-        setError(detail ?? null);
+        toast.error(payload?.error?.message ?? SCAN.aiUnavailable);
         return;
       }
 
@@ -215,7 +218,7 @@ export function ScanForm({
                 value={resumeText}
                 rows={12}
                 placeholder={SCAN.resumePlaceholder}
-                aria-label={SCAN.tabPaste}
+                aria-label={SCAN.resumeTextLabel}
                 disabled={pending}
                 onChange={(e) => setResumeText(e.target.value)}
               />
