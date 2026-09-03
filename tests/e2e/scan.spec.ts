@@ -238,7 +238,6 @@ test.describe('scan', () => {
 
   test('an oversized vacancy is refused with the exact copy, before any spend', async ({
     page,
-    request,
   }) => {
     /**
      * Edge case S7. The message matters as much as the status: Block D quotes
@@ -247,9 +246,14 @@ test.describe('scan', () => {
      * why the endpoint tells its two body shapes apart before either schema
      * runs. Asserted through the API, since the textarea has no server round
      * trip to reach for a bound the client also blocks.
+     *
+     * `page.request` and not the `request` fixture: the fixture is a separate
+     * context with no session cookie, so it would answer 401 — `requireApiUser()`
+     * runs before the body is even read, which is the order the route wants and
+     * the wrong order for observing a validation message.
      */
     await signUp(page, uniqueEmail());
-    const res = await request.post('/api/scan', {
+    const res = await page.request.post('/api/scan', {
       data: {
         vacancyText: 'x'.repeat(20_001),
         resumeSource: 'career_base',
