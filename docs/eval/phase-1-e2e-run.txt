@@ -1,0 +1,38 @@
+Phase 1 — Playwright auth spec, verbatim run output.
+
+This file exists because SPEC Block F states that manual live verification is
+not accepted as evidence for the auth phase — the spec run is. By the same
+standard R12 applies to the audit purge, a spec FILE is cron.job; this is
+cron.job_run_details. Re-generate it by re-running the command below.
+
+Command:  npx playwright test
+Date:     2026-09-03 00:18:15 UTC
+Branch:   phase-1-auth
+Commit:   697d828
+Against:  npm run dev on http://localhost:3000 (real Supabase project, EU-Frankfurt)
+
+Note: the suite creates real accounts with unique throwaway addresses and
+removes each one through the app's own deletion flow in afterEach, so the
+teardown doubles as the US-6 erasure evidence.
+
+----------------------------------------------------------------------
+
+npm notice run cv-insight@0.1.0 npx
+npm notice run playwright test
+
+Running 12 tests using 1 worker
+
+  ok  1 [chromium] › tests\e2e\auth.spec.ts:122:3 › auth › sign-up lands on /career (4.7s)
+  ok  2 [chromium] › tests\e2e\auth.spec.ts:129:3 › auth › sign-in lands on /scan, sign-out returns to /login (2.9s)
+  ok  3 [chromium] › tests\e2e\auth.spec.ts:142:3 › auth › a signed-in user is bounced off /login and /signup (2.3s)
+  ok  4 [chromium] › tests\e2e\auth.spec.ts:150:3 › auth › a visitor is redirected off member routes with no data flash (1.0s)
+  ok  5 [chromium] › tests\e2e\auth.spec.ts:163:3 › auth › /privacy is public and reachable from both layouts (2.2s)
+  ok  6 [chromium] › tests\e2e\auth.spec.ts:178:3 › auth › wrong password shows the exact copy and no other outcome (3.2s)
+  ok  7 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a malformed email (513ms)
+  ok  8 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a too-short password (467ms)
+  ok  9 [chromium] › tests\e2e\auth.spec.ts:225:3 › auth › native validation never pre-empts our copy (441ms)
+  ok 10 [chromium] › tests\e2e\auth.spec.ts:241:3 › auth › a duplicate email is reported as such (3.1s)
+  ok 11 [chromium] › tests\e2e\auth.spec.ts:252:3 › auth › the session cookie is httpOnly, SameSite=Lax and capped at 30 days (1.7s)
+  ok 12 [chromium] › tests\e2e\auth.spec.ts:296:3 › auth › account deletion removes the user and returns to /login with the toast (13.1s)
+
+  12 passed (37.7s)
