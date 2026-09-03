@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { costUsdMicro } from '@/lib/pricing';
+
 /**
  * CONNECTION module.
  *
@@ -66,13 +68,16 @@ export const MAX_TOKENS_BY_STEP = {
   generate: 2500,
 } as const satisfies Partial<Record<LlmStep, number>>;
 
-/** USD per 1M tokens (SPEC Block F, Cost). Used to compute micro-USD integers. */
-export const PRICE_USD_PER_MTOK: Record<string, { in: number; out: number }> = {
-  'anthropic/claude-sonnet-4.6': { in: 3, out: 15 },
-  'anthropic/claude-haiku-4.5': { in: 1, out: 5 },
-  'google/gemini-2.5-flash': { in: 0.3, out: 2.5 },
-  'openai/text-embedding-3-small': { in: 0.02, out: 0 },
-};
+/**
+ * Prices and the micro-USD arithmetic live in `lib/pricing.ts` and are
+ * re-exported here, so existing importers of the connection are unaffected.
+ *
+ * They moved out because they had to be TESTABLE: `tests/` is in scope for
+ * check.mjs R6, so a unit test could never import this module. The cost path's
+ * one piece of pure arithmetic being the one piece with no test is exactly how
+ * the provider-prefix lookup bug survived to a real e2e run.
+ */
+export { PRICE_USD_PER_MTOK, costUsdMicro, normalizeModelId } from '@/lib/pricing';
 
 export type ChatMessage = { role: 'system' | 'user'; content: string };
 
@@ -94,40 +99,6 @@ export type ConnectionResult<T> = {
   costKnown: boolean;
   latencyMs: number;
 };
-
-/**
- * $0.0431 → 43100. Stored as an integer; formatted only at display.
- *
- * Two ways a 0 could lie, both closed:
- *   - An unrecognised slug: OpenRouter fallback routing can return a variant
- *     the price table does not list. The missing price is shouted at the log
- *     AND carried back as costKnown=false, so /quality shows unknown pricing
- *     rather than a free call.
- *   - Sub-micro rounding: embeddings price at $0.02/Mtok, so a short embed
- *     costs a fraction of one micro-dollar and Math.round would floor it to 0
- *     with costKnown=true — the exact "this call was free" reading the flag
- *     exists to prevent. Math.ceil instead: a priced call is at least 1
- *     micro-USD. Over-reporting a rounding crumb is the honest direction.
- */
-export function costUsdMicro(
-  model: string,
-  tokensIn: number,
-  tokensOut: number,
-): { costUsdMicro: number; costKnown: boolean } {
-  const price = PRICE_USD_PER_MTOK[model];
-  if (!price) {
-    console.error(
-      `[openrouter] no price entry for model "${model}" — llm_calls row written ` +
-        'with cost_usd_micro=0 and cost_known=false. Add it to PRICE_USD_PER_MTOK.',
-    );
-    return { costUsdMicro: 0, costKnown: false };
-  }
-  const usd = (tokensIn * price.in + tokensOut * price.out) / 1_000_000;
-  // ceil, not round — see the sub-micro note above. A zero here means the call
-  // genuinely consumed no tokens, never that it was too cheap to count.
-  return { costUsdMicro: Math.ceil(usd * 1_000_000), costKnown: true };
-}
-
 
 /**
  * A call that did not produce a usable response.

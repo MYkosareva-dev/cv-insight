@@ -108,6 +108,9 @@ cv-insight/
 │   │   │                        # node:test can load it (the retrieval gate cannot be imported).
 │   │   │                        # Owns MAX_CHUNKS_PER_ITEM — see the B9 note in Block F
 │   │   ├── pdf.ts               # unpdf text extraction; maps a scan AND a corrupt file to 422
+│   │   ├── pricing.ts           # the price table + micro-USD math. Pure, NOT server-only: it
+│   │   │                        # had to be testable, and tests/ is in R6 scope so a test can
+│   │   │                        # never import the connection where this used to live
 │   │   ├── db/limits.ts         # the two B9 ceilings as plain numbers — validation.ts needs them
 │   │   │                        # on the CLIENT and cannot import a server-only DAL
 │   │   ├── auth/requireApiUser.ts # API-side gate twin: getUser() → throws UnauthorizedError (401)
@@ -708,7 +711,8 @@ Models: `parse_vacancy`/`judge` → `anthropic/claude-haiku-4.5`; `generate` →
 > **v2.10 — no retry on the embeddings endpoint, ever**, and no `models` fallback array on it. The only fallback available is a CHAT model, and any other embedding model is a different vector space with a different dimension; `documents.embedding` is `vector(1536)` and mixing two models' vectors breaks retrieval SILENTLY (cosine distance still returns numbers, they just stop meaning anything). The recovery path is the one the embeddings rules already specify: the save succeeds, the user sees a warning, the next edit re-indexes.
 > **v2.10 — the network retry covers a request that ERRORED, and nothing else.** A `fetch` rejection or the 60 s abort, per CLAUDE.md exception (b). A response that arrived carrying a non-2xx status — 429, 402, 503 — is the service answering, not the request failing; retrying it would be a third retry and would buy the same refusal at the same price.
 
-Cost: computed from response `usage` × price table constant in `lib/openrouter/server.ts` (Sonnet 3/15, Haiku 1/5, Flash 0.30/2.50 USD per 1M; embeddings 0.02), stored as micro-USD.
+Cost: computed from response `usage` × the price table in `lib/pricing.ts` (Sonnet 3/15, Haiku 1/5, Flash 0.30/2.50 USD per 1M; embeddings 0.02), stored as micro-USD.
+> **v2.10 — the price lookup normalizes the model id, and the table moved to `lib/pricing.ts`.** The embeddings endpoint echoes the UPSTREAM model id, not the slug it was sent: `openai/text-embedding-3-small` goes out and `text-embedding-3-small` comes back. An exact-match table therefore missed on EVERY embedding call and wrote `cost_known=false, cost_usd_micro=0` — not a wrong price, but "we do not know what this cost" for a call priced in the table, with /quality's total understated. Exact match is still tried first, so a future entry that deliberately distinguishes two providers' builds of one model is never overridden. The table left the connection module because it had to be TESTABLE: `tests/` is in scope for R6, so no unit test may import `lib/openrouter/server.ts`, and the cost path's only piece of pure arithmetic being its only untested piece is exactly how this bug reached a live run. Found by the Phase-2 e2e run, not by reading a doc — which is the argument for `cost_known` existing at all.
 
 ### Prompt templates (literal; `{{...}}` interpolated server-side)
 **P1 — parse_vacancy (Haiku, JSON mode):**
