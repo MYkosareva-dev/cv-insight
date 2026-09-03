@@ -11,6 +11,8 @@ import { getApplication } from '@/lib/db/applications';
 import { insertResumeVersion } from '@/lib/db/resumeVersions';
 import { getVacancy } from '@/lib/db/vacancies';
 import { NotFoundError, ValidationError, apiErrorResponse } from '@/lib/errors';
+import { itemsCorpus } from '@/lib/generation';
+import { partitionMissingHonest } from '@/lib/judge';
 import { judgeResume, retrieveItemsFor } from '@/lib/tailoring';
 import { resumeContentSchema } from '@/lib/validation';
 
@@ -108,6 +110,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       source: version.source,
       content: version.content,
       judge,
+      // Split against the same items this review was made against — see the
+      // generate route for why the client never receives the raw list.
+      judgeTerms: partitionMissingHonest(
+        judge.keywordCoverage.missingHonest,
+        itemsCorpus(retrieved.items),
+      ),
     });
   } catch (err) {
     return apiErrorResponse(err);

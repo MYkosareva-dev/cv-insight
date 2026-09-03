@@ -9,6 +9,7 @@ import {
   MATCH_COUNT_FOR_GENERATE,
   MAX_GENERATION_ITEMS,
   distinctItemIds,
+  itemsCorpus,
   itemsPayload,
   vacancyQueryText,
 } from '@/lib/generation';
@@ -290,14 +291,21 @@ export async function generateWithJudge(args: {
   applicationId: string;
   ledger: CallLedger;
 }): Promise<GenerateOutcome> {
+  /**
+   * The corpus every claim about "what your base supports" is checked against —
+   * the items P2 and P3 were actually given. The reviewer's `missingHonest` is
+   * gated on it before a single term reaches the rewrite (SPEC v2.17).
+   */
+  const baseText = itemsCorpus(args.items);
+
   const content = await generateResume({ ...args, findings: [] });
   const judge = await judgeOrNull(args, content);
 
-  if (!judge || !needsRevision(judge as Rubric)) {
+  if (!judge || !needsRevision(judge as Rubric, baseText)) {
     return { original: { content, judge }, revision: null, revisionWithheld: false };
   }
 
-  const findings = revisionFindings(judge as Rubric);
+  const findings = revisionFindings(judge as Rubric, baseText);
   if (findings.length === 0) {
     // Unreachable while `needsRevision` requires findings; kept as the explicit
     // statement of branch 3 rather than as an implication of another function.

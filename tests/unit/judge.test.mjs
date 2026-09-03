@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
+import { keywordPresent } from '../../src/lib/scoring.ts';
 import {
   WEAK_CRITERION_SCORE,
   bestVersion,
@@ -8,6 +9,7 @@ import {
   judgeIssueCounts,
   needsRevision,
   openingVersion,
+  partitionMissingHonest,
   revisionFindings,
   rubricTotal,
   weakCriteria,
@@ -26,6 +28,23 @@ import {
  * verdict does not do so selectively, so both halves of P3's rule are computed
  * here from the report's own evidence, and `rubric.verdict` is input to nothing.
  */
+
+/**
+ * The career base these tests check terms against — deliberately the owner's own
+ * case in miniature. It mentions Docker and BPMN; it mentions NONE of Labelbox,
+ * Supervisely, MS Office or Google Suite, which are the four terms the live app
+ * listed under "Supported by your base, missing from the resume" on a screen
+ * that had already proved their absence two blocks above.
+ */
+const BASE = [
+  'AI Prompt Evaluator — Nordlicht Digital',
+  'Evaluated and annotated LLM outputs against scoring rubrics. Ran annotation',
+  'quality assurance and kept inter-annotator agreement above 0.85.',
+  '',
+  'Business Analyst — BotWorks Labs',
+  'Mapped as-is and to-be processes in BPMN. Built Python pipelines and ran them',
+  'in Docker for the weekly quality report.',
+].join('\n');
 
 /** A clean report. Each test spoils exactly the field it is about. */
 const approved = () => ({
@@ -108,7 +127,7 @@ describe('rule B3 — the revision is fed specific findings, or it does not happ
       verdict: 'fail',
       violations: [{ claim: 'Managed a 500k budget', issue: 'no item states a budget' }],
     };
-    const findings = revisionFindings(report);
+    const findings = revisionFindings(report, BASE);
     assert.equal(findings.length, 1);
     assert.match(findings[0], /Managed a 500k budget/);
     assert.match(findings[0], /no item states a budget/);
@@ -116,8 +135,9 @@ describe('rule B3 — the revision is fed specific findings, or it does not happ
 
   test('missingHonest carries rule B4 in words, not a bare keyword list', () => {
     const report = approved();
+    // Both are IN the base, so both survive the gate and reach the rewrite.
     report.keywordCoverage = { score: 2, missingHonest: ['Docker', 'BPMN'] };
-    const line = revisionFindings(report).find((f) => f.includes('Docker'));
+    const line = revisionFindings(report, BASE).find((f) => f.includes('Docker'));
     assert.ok(line, 'the missing keywords are passed on');
     // "fix all of them" against a bare list is an invitation to manufacture
     // support, which is the grounding violation B2 exists to catch arriving
@@ -130,7 +150,7 @@ describe('rule B3 — the revision is fed specific findings, or it does not happ
     const report = approved();
     report.grounding = { verdict: 'fail', violations: [] };
     report.feedbackForGenerator = ['   ', ''];
-    assert.deepEqual(revisionFindings(report), []);
+    assert.deepEqual(revisionFindings(report, BASE), []);
   });
 
   test('a revise verdict with NO findings does not earn a revision', () => {
@@ -139,8 +159,8 @@ describe('rule B3 — the revision is fed specific findings, or it does not happ
     const report = approved();
     report.grounding = { verdict: 'fail', violations: [] };
     assert.equal(withComputedVerdict(report).verdict, 'revise');
-    assert.equal(revisionFindings(report).length, 0);
-    assert.equal(needsRevision(report), false);
+    assert.equal(revisionFindings(report, BASE).length, 0);
+    assert.equal(needsRevision(report, BASE), false);
   });
 
   test('a revise verdict WITH findings earns one', () => {
@@ -149,13 +169,13 @@ describe('rule B3 — the revision is fed specific findings, or it does not happ
       verdict: 'fail',
       violations: [{ claim: 'PhD', issue: 'not in the base' }],
     };
-    assert.equal(needsRevision(report), true);
+    assert.equal(needsRevision(report, BASE), true);
   });
 
   test('an approved report never earns one, however much feedback it carries', () => {
     const report = approved();
     report.feedbackForGenerator = ['could be punchier'];
-    assert.equal(needsRevision(report), false);
+    assert.equal(needsRevision(report, BASE), false);
   });
 });
 
@@ -253,5 +273,97 @@ describe('judgeIssueCounts — the two Block E bars the judge owns', () => {
     report.relevance = { score: 1, evidence: 'generic' };
     report.atsFormat = { score: 4, issues: ['inconsistent dates'] };
     assert.deepEqual(judgeIssueCounts(report), { atsFormat: 1, quality: 3 });
+  });
+});
+
+describe('partitionMissingHonest — the base is the only source of truth', () => {
+  /**
+   * THE INVARIANT THIS FILE EXISTS FOR, from owner testing on the live app.
+   *
+   * The judge panel listed Labelbox, Supervisely, MS Office, Google Suite and
+   * "annotation tools" under "Supported by your base, missing from the resume",
+   * on a screen where rule B1's lexical gate had already rendered
+   * `no mention of "Labelbox"` two blocks above. The page asserted both that the
+   * base lacks a term and that the base supports it — and the second assertion
+   * told the user to write it into their resume, which is the keyword stuffing
+   * this phase removed from P2 arriving through the reviewer instead.
+   */
+  test('NO term under the supported-by-base header may fail the base literal check', () => {
+    const claimed = [
+      'data entry',
+      'spreadsheets',
+      'Labelbox',
+      'Supervisely',
+      'MS Office',
+      'Google Suite',
+      'annotation tools',
+      'BPMN',
+      'Docker',
+    ];
+    const { supported, notInBase } = partitionMissingHonest(claimed, BASE);
+
+    // The invariant, stated as the property and not as a list of expected terms:
+    // whatever survives must pass the SAME check the coverage gate applies.
+    for (const term of supported) {
+      assert.ok(
+        keywordPresent(BASE, term),
+        `"${term}" is offered as supported by the base and is not in it`,
+      );
+    }
+    // Nothing is silently dropped: every claimed term lands on exactly one side.
+    assert.equal(supported.length + notInBase.length, claimed.length);
+
+    // And the four the owner actually saw are on the honest side of the split.
+    for (const absent of ['Labelbox', 'Supervisely', 'MS Office', 'Google Suite']) {
+      assert.ok(notInBase.includes(absent), `${absent} must not be offered`);
+    }
+  });
+
+  test('it uses rule B1a boundaries, so the panel and the coverage gate agree', () => {
+    // `keywordPresent` is the same function `missingLexicalTerm` calls. A second
+    // implementation here would be a second opinion about one question.
+    const { supported } = partitionMissingHonest(['bpmn', 'DOCKER'], BASE);
+    assert.deepEqual(supported, ['bpmn', 'DOCKER'], 'the check is case-insensitive');
+
+    const { notInBase } = partitionMissingHonest(['ocker'], BASE);
+    assert.deepEqual(notInBase, ['ocker'], 'a substring is not a match');
+  });
+
+  test('blank terms are dropped from both sides rather than rendered', () => {
+    const { supported, notInBase } = partitionMissingHonest(['  ', ''], BASE);
+    assert.deepEqual(supported, []);
+    assert.deepEqual(notInBase, []);
+  });
+
+  test('an empty base supports nothing — never everything', () => {
+    const { supported, notInBase } = partitionMissingHonest(['Docker'], '');
+    assert.deepEqual(supported, []);
+    assert.deepEqual(notInBase, ['Docker']);
+  });
+
+  test('the REVISION prompt is bound by the same gate as the panel', () => {
+    // The panel was the visible half. The other half is that `missingHonest`
+    // feeds a paid rewrite: telling the generator a term is "supported by the
+    // career items" when the base never mentions it is asking for an invention,
+    // however carefully the surrounding sentence is worded.
+    const report = approved();
+    report.grounding = { verdict: 'fail', violations: [{ claim: 'x', issue: 'y' }] };
+    report.keywordCoverage = { score: 2, missingHonest: ['Labelbox', 'Docker'] };
+
+    const line = revisionFindings(report, BASE).find((f) => f.includes('vacancy keywords'));
+    assert.ok(line, 'the supported keyword still reaches the rewrite');
+    assert.match(line, /Docker/);
+    assert.ok(!line.includes('Labelbox'), 'a term the base never mentions must not be asked for');
+  });
+
+  test('a report whose ONLY finding is an unsupported keyword earns no revision', () => {
+    // Nothing actionable survives the gate, so the rewrite would be a paid call
+    // carrying no information — the same rule as a reviewer that gives no reason.
+    const report = approved();
+    report.grounding = { verdict: 'fail', violations: [] };
+    report.keywordCoverage = { score: 2, missingHonest: ['Labelbox'] };
+    assert.equal(withComputedVerdict(report).verdict, 'revise');
+    assert.equal(revisionFindings(report, BASE).length, 0);
+    assert.equal(needsRevision(report, BASE), false);
   });
 });

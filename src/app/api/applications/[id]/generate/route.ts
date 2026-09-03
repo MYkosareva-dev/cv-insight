@@ -19,7 +19,8 @@ import {
   ValidationError,
   apiErrorResponse,
 } from '@/lib/errors';
-import { bestVersion } from '@/lib/judge';
+import { itemsCorpus } from '@/lib/generation';
+import { bestVersion, partitionMissingHonest } from '@/lib/judge';
 import { type Draft, generateWithJudge, retrieveItemsFor } from '@/lib/tailoring';
 
 /**
@@ -180,6 +181,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       revisionWithheld: outcome.revisionWithheld,
       content: shown.content,
       judge: shown.judge,
+      /**
+       * The reviewer's `missingHonest`, SPLIT against the career base before it
+       * reaches a screen (SPEC v2.17). The stored report keeps the reviewer's own
+       * words — it is the record of what the review said — and the client is
+       * handed the partition rather than the raw list, so no render site can
+       * print "supported by your base" over a term the base does not contain.
+       */
+      judgeTerms: partitionMissingHonest(
+        shown.judge?.keywordCoverage.missingHonest ?? [],
+        itemsCorpus(retrieved.items),
+      ),
       versions: [original, revision].filter((v): v is ResumeVersion => v !== null),
     });
   } catch (err) {

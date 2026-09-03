@@ -27,6 +27,7 @@ export function ResumeEditor({
   onChange,
   versions,
   judge,
+  judgeTerms,
   autoRevised,
   revisionNotBetter,
   revisionWithheld,
@@ -40,6 +41,8 @@ export function ResumeEditor({
   onChange: (next: string) => void;
   versions: ResumeVersion[];
   judge: JudgeReport | null;
+  /** Already split against the career base — see `JudgeCard`. */
+  judgeTerms: { supported: string[]; notInBase: string[] };
   autoRevised: boolean;
   revisionNotBetter: boolean;
   revisionWithheld: boolean;
@@ -100,6 +103,7 @@ export function ResumeEditor({
 
       <JudgeCard
         report={judge}
+        terms={judgeTerms}
         autoRevised={autoRevised}
         revisionNotBetter={revisionNotBetter}
         revisionWithheld={revisionWithheld}

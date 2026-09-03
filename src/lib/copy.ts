@@ -560,7 +560,30 @@ export const RESULT = {
    * it is ever treated as an instruction.
    */
   violationsHeading: 'Unsupported claims',
+  /**
+   * The terms the reviewer says the base supports AND the base literally
+   * contains — every one of them checked with `keywordPresent`, the same
+   * function rule B1's lexical gate uses (SPEC v2.17).
+   *
+   * The check is not belt-and-braces. Owner testing found this section listing
+   * Labelbox, Supervisely, MS Office and Google Suite on a screen that said
+   * `no mention of "Labelbox"` two blocks above: the page asserting both that
+   * the base lacks a term and that the base supports it, with the second
+   * assertion telling the user to write it into their resume. That is the
+   * keyword stuffing this phase removed from P2, arriving through the reviewer
+   * instead of the writer.
+   */
   missingHonestHeading: 'Supported by your base, missing from the resume',
+  /**
+   * The other half of that split, and it needs its own words. These terms are
+   * asked for by the posting and are NOT in the career base, so the honest thing
+   * to say is that they are gaps — not suggestions. The hint exists because the
+   * heading alone, in a card full of "add these" material, would still read as
+   * an invitation.
+   */
+  notInBaseHeading: 'Asked for by the posting, and not in your career base',
+  notInBaseHint:
+    'These are gaps, not suggestions. Add one to your career base only if you have really done it — never straight into this resume.',
   atsIssuesHeading: 'Formatting issues',
   /**
    * The version was generated and the quality check did NOT run — the daily cap

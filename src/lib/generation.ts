@@ -132,6 +132,21 @@ export function itemsPayload(
 }
 
 /**
+ * The retrieved career items as ONE body of text — the corpus P2 and P3 were
+ * given, and therefore the corpus every claim about "what your base supports"
+ * has to be checked against (SPEC v2.17).
+ *
+ * It is the items and not the chunks, because the items are what the prompts
+ * saw: a term present in an item the retrieval selected is a term the generator
+ * could honestly reach for, and one that is not is an invention whoever asks for
+ * it. Same shape as the scan's own base corpus, so `keywordPresent` reads the
+ * two the same way.
+ */
+export function itemsCorpus(items: readonly { title: string; content: string }[]): string {
+  return items.map((item) => `${item.title}\n${item.content}`).join('\n\n');
+}
+
+/**
  * The name the export filename is built from: the resume's first non-empty line.
  *
  * P2 rule 4 puts NAME on the first line, so this reads what the generator was

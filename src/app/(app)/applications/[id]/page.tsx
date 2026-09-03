@@ -7,6 +7,9 @@ import { ResultWorkspace } from '@/components/applications/result-workspace';
 import { ScoreRing } from '@/components/applications/score';
 import { APPLICATIONS, APPLICATION_STATUS_LABEL, RESULT } from '@/lib/copy';
 import { getApplication } from '@/lib/db/applications';
+import { listCareerItems } from '@/lib/db/careerItems';
+import { itemsCorpus } from '@/lib/generation';
+import { openingVersion, partitionMissingHonest } from '@/lib/judge';
 import { listResumeVersions } from '@/lib/db/resumeVersions';
 import { getVacancy } from '@/lib/db/vacancies';
 import type { CoverageEntry, KeywordRow } from '@/lib/db/types';
@@ -64,6 +67,27 @@ export default async function ApplicationDetailPage({
    */
   const versions = await listResumeVersions(application.id);
 
+  /**
+   * The reviewer's "supported by your base" terms, CHECKED AGAINST THE BASE
+   * before they reach a screen (SPEC v2.17).
+   *
+   * Done here, on the server, for the version the editor opens with: the check
+   * is `keywordPresent` over the career base, and the base is not something to
+   * ship to a browser for one yes-or-no per term. The two endpoints that produce
+   * a fresh review compute the same partition with the same function, so there
+   * is exactly one definition of "is this term in the base" in the app.
+   *
+   * The WHOLE base and not the retrieved items: a stored report may have been
+   * written against a retrieval this page cannot reproduce, and the broader
+   * corpus is the conservative direction — it can only ever admit a term the
+   * user really does have somewhere.
+   */
+  const opening = openingVersion(versions);
+  const judgeTerms = partitionMissingHonest(
+    opening?.judge?.keywordCoverage.missingHonest ?? [],
+    opening?.judge ? itemsCorpus(await listCareerItems()) : '',
+  );
+
   return (
     <section className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
@@ -92,6 +116,7 @@ export default async function ApplicationDetailPage({
           rawText={vacancy.raw_text}
           sourceIsBase={application.resume_source === 'career_base'}
           versions={versions}
+          judgeTerms={judgeTerms}
         />
       ) : (
         /* Rail 280 px beside the content at 1280; stacked at 375 (Block E). */

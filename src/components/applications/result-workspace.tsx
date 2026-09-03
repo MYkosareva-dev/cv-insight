@@ -20,6 +20,33 @@ import type {
 import { judgeIssueCounts, openingVersion } from '@/lib/judge';
 
 /**
+ * `missingHonest`, split into what the career base literally contains and what
+ * it does not. Computed on the server by `partitionMissingHonest` and never
+ * derived here — the base is not on this side of the wire, which is the point.
+ */
+type JudgeTerms = { supported: string[]; notInBase: string[] };
+
+/** A review and the terms it may suggest. Never held apart — see the state below. */
+type Review = { report: JudgeReport | null; terms: JudgeTerms };
+
+/**
+ * Read the partition off an endpoint's response.
+ *
+ * An absent or malformed `judgeTerms` yields EMPTY lists rather than falling
+ * back to the report's own `missingHonest`: a missing partition means nothing
+ * checked those terms against the base, and the honest answer to "which terms
+ * does your base support" is then to suggest none. Falling back to the raw list
+ * is the one thing this whole mechanism exists to prevent.
+ */
+function termsOf(data: { judgeTerms?: unknown }): JudgeTerms {
+  const terms = data.judgeTerms as JudgeTerms | undefined;
+  return {
+    supported: Array.isArray(terms?.supported) ? terms.supported : [],
+    notInBase: Array.isArray(terms?.notInBase) ? terms.notInBase : [],
+  };
+}
+
+/**
  * The result screen's interactive half (SPEC Block E, US-3 step 4, US-4, US-5).
  *
  * ONE CLIENT BOUNDARY around the rail AND the tabs, which is what the phase
@@ -53,6 +80,7 @@ export function ResultWorkspace({
   rawText,
   sourceIsBase,
   versions: initialVersions,
+  judgeTerms: initialJudgeTerms,
 }: {
   applicationId: string;
   entries: CoverageEntry[];
@@ -63,6 +91,13 @@ export function ResultWorkspace({
   rawText: string;
   sourceIsBase: boolean;
   versions: ResumeVersion[];
+  /**
+   * The opening version's `missingHonest`, already split against the career base
+   * on the SERVER (SPEC v2.17). The base itself never comes to the browser: it
+   * can run to hundreds of kilobytes of the user's own history, and this page
+   * needs one yes-or-no per term rather than the corpus.
+   */
+  judgeTerms: JudgeTerms;
 }) {
   const router = useRouter();
 
@@ -87,7 +122,20 @@ export function ResultWorkspace({
   // generate response did — the newest row is not always that draft.
   const opening = openingVersion(initialVersions);
   const [content, setContent] = useState(opening?.content ?? '');
-  const [judge, setJudge] = useState<JudgeReport | null>(opening?.judge ?? null);
+  /**
+   * ONE piece of state for the report and its base-checked terms, deliberately.
+   *
+   * They were two `useState`s and that was a way to get them out of step: an
+   * action that set the report and forgot the terms would render one review's
+   * verdict beside another's suggestions — and the suggestions are the half that
+   * tells a user what to write into their resume. Held together, every setter
+   * has to supply both.
+   */
+  const [review, setReview] = useState<Review>({
+    report: opening?.judge ?? null,
+    terms: initialJudgeTerms,
+  });
+  const judge = review.report;
   /**
    * Derived from the ROWS, not from a response, so it survives a reload: a
    * revision happened if and only if there is an `ai_revision` row.
@@ -149,7 +197,7 @@ export function ResultWorkspace({
         const data = await res.json();
         setVersions(data.versions ?? []);
         setContent(data.content ?? '');
-        setJudge(data.judge ?? null);
+        setReview({ report: data.judge ?? null, terms: termsOf(data) });
         setRevisionNotBetter(Boolean(data.revisionNotBetter));
         setRevisionWithheld(Boolean(data.revisionWithheld));
         // A stale re-score belongs to the text that was in the editor before.
@@ -185,7 +233,7 @@ export function ResultWorkspace({
       () => post('judge', { content }),
       async (res) => {
         const data = await res.json();
-        setJudge(data.judge ?? null);
+        setReview({ report: data.judge ?? null, terms: termsOf(data) });
         // The reviewed text is its own version now, so the badges from the AI
         // pass no longer describe what is on screen.
         setRevisionNotBetter(false);
@@ -285,6 +333,7 @@ export function ResultWorkspace({
             onChange={setContent}
             versions={versions}
             judge={judge}
+            judgeTerms={review.terms}
             autoRevised={autoRevised}
             revisionNotBetter={revisionNotBetter}
             revisionWithheld={revisionWithheld}

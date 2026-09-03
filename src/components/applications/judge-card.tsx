@@ -24,6 +24,14 @@ import { WEAK_CRITERION_SCORE, groundingFailed } from '@/lib/judge';
  * a reader can always tell the app's copy from the reviewer's output, and
  * nothing after a heading is ever treated as an instruction (edge case S2).
  *
+ * `keywordCoverage.missingHonest` IS NOT READ FROM THE REPORT HERE, and the prop
+ * that replaces it is REQUIRED rather than optional — the type system is the
+ * mechanism (SPEC v2.17). A reviewer can be wrong about "supported by the career
+ * items", and when it is, this card was telling the user to write a term into
+ * their resume that their base does not contain. Every render site must hand in
+ * a partition computed against the base with `keywordPresent`, so there is no
+ * way to render this section from the raw list by forgetting to.
+ *
  * No state and no handlers of its own — but it is imported by the editor, which
  * is a client component, so it compiles into the client bundle. It reads only
  * `lib/judge`'s pure exports and `lib/copy`, neither of which touches a secret or
@@ -32,11 +40,18 @@ import { WEAK_CRITERION_SCORE, groundingFailed } from '@/lib/judge';
  */
 export function JudgeCard({
   report,
+  terms,
   autoRevised,
   revisionNotBetter,
   revisionWithheld,
 }: {
   report: JudgeReport | null;
+  /**
+   * `report.keywordCoverage.missingHonest`, already split against the career
+   * base by `partitionMissingHonest`. Required, and the only source this card
+   * has for those two sections.
+   */
+  terms: { supported: string[]; notInBase: string[] };
   /** Rule B3's rewrite ran on this application's latest AI pass. */
   autoRevised?: boolean;
   /** The rewrite ran and the FIRST draft is the one on screen (Block D #5). */
@@ -84,9 +99,11 @@ export function JudgeCard({
             heading={RESULT.violationsHeading}
             items={report.grounding.violations.map((v) => `${v.claim} — ${v.issue}`)}
           />
+          <Findings heading={RESULT.missingHonestHeading} items={terms.supported} />
           <Findings
-            heading={RESULT.missingHonestHeading}
-            items={report.keywordCoverage.missingHonest}
+            heading={RESULT.notInBaseHeading}
+            items={terms.notInBase}
+            hint={RESULT.notInBaseHint}
           />
           <Findings heading={RESULT.atsIssuesHeading} items={report.atsFormat.issues} />
         </>
@@ -124,11 +141,21 @@ function Row({ label, ok, value }: { label: string; ok: boolean; value: string }
 }
 
 /** A labelled list of the reviewer's own findings. Rendered only when there are any. */
-function Findings({ heading, items }: { heading: string; items: string[] }) {
+function Findings({
+  heading,
+  items,
+  hint,
+}: {
+  heading: string;
+  items: string[];
+  /** One sentence under the heading, where the list alone would be misread. */
+  hint?: string;
+}) {
   if (items.length === 0) return null;
   return (
     <div className="flex flex-col gap-1">
       <h4 className="text-xs font-medium uppercase">{heading}</h4>
+      {hint ? <p className="text-muted-foreground text-xs">{hint}</p> : null}
       <ul className="text-muted-foreground flex list-disc flex-col gap-1 pl-4 text-sm">
         {items.map((item, index) => (
           <li key={`${heading}-${index}`}>{item}</li>
