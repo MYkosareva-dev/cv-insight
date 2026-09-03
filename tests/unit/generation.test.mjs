@@ -6,8 +6,8 @@ import {
   MAX_GENERATION_ITEMS,
   MAX_ITEMS_CHARS,
   distinctItemIds,
+  itemsCorpus,
   itemsPayload,
-  resumeName,
   vacancyQueryText,
 } from '../../src/lib/generation.ts';
 import { MAX_CHUNKS_PER_ITEM } from '../../src/lib/chunking.ts';
@@ -129,16 +129,20 @@ describe('vacancyQueryText — what is actually embedded', () => {
   });
 });
 
-describe('resumeName — the name half of the export filename', () => {
-  test('is the first non-empty line, which P2 rule 4 makes the NAME', () => {
-    assert.equal(resumeName('\n\nMIRA STEINBERG\nAI Quality Analyst'), 'MIRA STEINBERG');
+describe('itemsCorpus — the corpus a "supported by your base" claim is checked against', () => {
+  test('is the items the prompts were actually given, title and content', () => {
+    const corpus = itemsCorpus([
+      { title: 'Data Quality Specialist — BotWorks Labs', content: 'Built Python pipelines.' },
+      { title: 'Skills', content: 'BPMN, SQL, spreadsheets.' },
+    ]);
+    assert.match(corpus, /BotWorks Labs/);
+    assert.match(corpus, /Python pipelines/);
+    assert.match(corpus, /BPMN/);
   });
 
-  test('a blank resume names nothing rather than inventing something', () => {
-    assert.equal(resumeName('   \n\n'), '');
-  });
-
-  test('a non-Latin name survives intact for exportFilename to handle', () => {
-    assert.equal(resumeName('МИРА ШТАЙНБЕРГ\nАналитик'), 'МИРА ШТАЙНБЕРГ');
+  test('an empty retrieval is an empty corpus, which supports nothing', () => {
+    // Never a corpus that matches everything: `keywordPresent` over '' is false
+    // for every term, so a claim about what the base supports fails closed.
+    assert.equal(itemsCorpus([]), '');
   });
 });

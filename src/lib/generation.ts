@@ -146,14 +146,14 @@ export function itemsCorpus(items: readonly { title: string; content: string }[]
   return items.map((item) => `${item.title}\n${item.content}`).join('\n\n');
 }
 
-/**
- * The name the export filename is built from: the resume's first non-empty line.
+/*
+ * `resumeName()` WAS HERE and is deliberately gone (SPEC v2.17).
  *
- * P2 rule 4 puts NAME on the first line, so this reads what the generator was
- * told to write rather than guessing. An edited resume that no longer starts
- * with a name yields whatever it does start with, which is still the user's own
- * heading — `exportFilename` drops an empty part rather than inventing one.
+ * It read the resume's first non-empty line to build the export filename, on the
+ * reasoning that P2 rule 4 puts NAME there. Owner testing found what that line
+ * actually held: "Data Annotator", the vacancy's job title, because the career
+ * base contains no person's name for the generator to use — so downloads arrived
+ * as `CV_Data_Annotator_….docx`. The filename now comes from the user's profile,
+ * and the function is removed rather than left unused, because the next reader
+ * looking for "the name of this resume" would find it and wire it back.
  */
-export function resumeName(content: string): string {
-  return content.split('\n').find((line) => line.trim().length > 0)?.trim() ?? '';
-}

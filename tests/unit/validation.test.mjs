@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { AUTH, RESULT, SCAN, VACANCY_LENGTH } from '../../src/lib/copy.ts';
+import { AUTH, RESULT, SCAN, SETTINGS, VACANCY_LENGTH } from '../../src/lib/copy.ts';
 import {
+  MAX_DISPLAY_NAME_CHARS,
   MAX_RESUME_CHARS,
   MAX_SCAN_RESUME_CHARS,
   credentialsSchema,
+  displayNameSchema,
   fieldErrorsOf,
   judgeReportSchema,
   parsedVacancySchema,
@@ -353,5 +355,42 @@ describe('resumeContentSchema — the editor body', () => {
     assert.equal(result.success, false);
     assert.equal(result.error.issues[0].message, RESULT.resumeTooLong);
     assert.equal(MAX_RESUME_CHARS, 15_000);
+  });
+});
+
+describe('displayNameSchema — the Settings field', () => {
+  test('a name is trimmed and kept', () => {
+    assert.equal(displayNameSchema.parse({ displayName: '  Mira Steinberg ' }).displayName,
+      'Mira Steinberg');
+  });
+
+  test('an EMPTY field is how a name is cleared, not an error', () => {
+    // A settings field a user cannot empty is one they cannot take back, and a
+    // name is personal data — removing it has to be as easy as giving it.
+    assert.equal(displayNameSchema.parse({ displayName: '' }).displayName, null);
+    assert.equal(displayNameSchema.parse({ displayName: '   ' }).displayName, null);
+  });
+
+  test('a blank is NULL and never an empty string', () => {
+    // The column would accept '' only by failing its own 1-120 CHECK; more to
+    // the point, a name that is present and blank is a third state nothing
+    // needs, and it would render as a resume with a blank first line rather than
+    // one asking to be filled in.
+    const parsed = displayNameSchema.parse({ displayName: '' });
+    assert.strictEqual(parsed.displayName, null);
+  });
+
+  test('the upper bound is the column CHECK, answered with copy', () => {
+    const result = displayNameSchema.safeParse({ displayName: 'x'.repeat(MAX_DISPLAY_NAME_CHARS + 1) });
+    assert.equal(result.success, false);
+    assert.equal(result.error.issues[0].message, SETTINGS.displayNameTooLong);
+    assert.equal(MAX_DISPLAY_NAME_CHARS, 120);
+  });
+
+  test('a non-Latin name is kept intact', () => {
+    assert.equal(
+      displayNameSchema.parse({ displayName: 'МИРА ШТАЙНБЕРГ' }).displayName,
+      'МИРА ШТАЙНБЕРГ',
+    );
   });
 });

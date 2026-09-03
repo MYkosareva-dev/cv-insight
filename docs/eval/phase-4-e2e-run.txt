@@ -174,11 +174,23 @@ WRITER'S prompt and stays in the REVIEWER'S, which is the party rule B4 is
 enforced by (SPEC v2.16, endpoint #5 note 13). The assertion is permanent and has
 passed on every run since.
 
-ONE MORE OBSERVATION, recorded because it was seen once and is not reproducible.
+ONE MORE OBSERVATION - AND THE CHECK THAT WAS MEANT TO TRACK IT WAS BROKEN.
 That same first failing run emitted the literal token `NAME` as the resume's
 first line - P2 rule 4's layout placeholder rather than a name - which would then
-have become the export filename. It has not recurred, and the cause is real
-whether or not it shows: the career base is a list of jobs and skills and carries
-no name anywhere, so a grounded generator has nothing to put there. Refusing to
-invent one is correct behaviour; the fix is to ASK for a name, and that is
-backlog p4-7. The spec now logs a boolean for it on every run.
+have become the export filename. This file previously reported that it "has not
+recurred", on the strength of a boolean the spec logged on every run. That
+boolean was worthless: the regex behind it was written into the file as
+`/^NAME<BS>/`, carrying a literal backspace byte where a `` word boundary was
+intended, so it could never match anything and reported `false` on every run
+regardless of what the resume said. The corruption came from a heredoc during
+authoring, it is fixed, and a sweep of the whole branch found no other file
+carrying a stray control byte.
+
+So the honest statement is that the placeholder was seen ONCE and was never
+afterwards MEASURED. The cause is real either way: the career base is a list of
+jobs and skills and carries no name anywhere, so a grounded generator has nothing
+to put on that line. Refusing to invent one is correct behaviour; the fix is to
+ASK for a name, and SPEC v2.17 does - a `profiles` row, a Settings field, and a
+visible `[YOUR NAME]` placeholder when it is unset. The e2e now asserts the
+placeholder's PRESENCE on the no-name path and its ABSENCE on the named one,
+which is a check that can fail.

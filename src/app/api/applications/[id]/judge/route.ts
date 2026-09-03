@@ -6,8 +6,9 @@ import { z } from 'zod';
 
 import { requireApiUser } from '@/lib/auth/requireApiUser';
 import { newCallLedger } from '@/lib/chat';
-import { RESULT } from '@/lib/copy';
+import { NAME_PLACEHOLDER, RESULT } from '@/lib/copy';
 import { getApplication } from '@/lib/db/applications';
+import { getDisplayName } from '@/lib/db/profiles';
 import { insertResumeVersion } from '@/lib/db/resumeVersions';
 import { getVacancy } from '@/lib/db/vacancies';
 import { NotFoundError, ValidationError, apiErrorResponse } from '@/lib/errors';
@@ -87,12 +88,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       throw new ValidationError(RESULT.generateNeedsBase);
     }
 
+    /**
+     * The judge is told the name for the same reason the writer is: it is a fact
+     * from the user's profile rather than from a career item, so without it the
+     * grounding gate would fire on the resume's own name line and rule B2 would
+     * make that failure uncompensatable.
+     */
+    const displayName = await getDisplayName();
+
     const judge = await judgeResume({
       parsed: vacancy.parsed,
       items: retrieved.items,
       resumeText: parsed.data.content,
       applicationId: id,
       ledger,
+      candidateName: displayName ?? NAME_PLACEHOLDER,
     });
 
     const version = await insertResumeVersion({

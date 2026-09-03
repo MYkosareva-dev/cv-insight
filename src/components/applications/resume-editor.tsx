@@ -4,9 +4,10 @@ import { Download, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
 
 import { JudgeCard } from '@/components/applications/judge-card';
 import { Badge } from '@/components/ui/badge';
+import { BusyDots } from '@/components/ui/busy-dots';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { RESULT } from '@/lib/copy';
+import { NAME_PLACEHOLDER, RESULT } from '@/lib/copy';
 import type { JudgeReport, ResumeVersion } from '@/lib/db/types';
 
 /**
@@ -63,7 +64,14 @@ export function ResumeEditor({
         </p>
         <Button variant="hero" onClick={onGenerate} disabled={pending !== null}>
           <Sparkles aria-hidden />
-          {pending === 'generate' ? RESULT.generating : RESULT.generate}
+          {pending === 'generate' ? (
+            <>
+              {RESULT.generating}
+              <BusyDots />
+            </>
+          ) : (
+            RESULT.generate
+          )}
         </Button>
       </div>
     );
@@ -82,6 +90,17 @@ export function ResumeEditor({
           onChange={(event) => onChange(event.target.value)}
           spellCheck={false}
         />
+        {/*
+          The name line is still the placeholder (SPEC v2.17). Said HERE, beside
+          the editable text, because this is the one place the user can fix it in
+          a second — and a resume that goes out with "[YOUR NAME]" at the top does
+          so because nobody mentioned it while it was still on screen.
+        */}
+        {content.includes(NAME_PLACEHOLDER) ? (
+          <p role="status" className="text-accent text-xs">
+            {RESULT.namePlaceholderNotice}
+          </p>
+        ) : null}
       </div>
 
       {/* Block E: [Re-score] outline green, [Check quality] outline violet,

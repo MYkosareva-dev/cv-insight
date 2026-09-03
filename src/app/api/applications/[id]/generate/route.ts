@@ -7,8 +7,9 @@ import { z } from 'zod';
 import { requireApiUser } from '@/lib/auth/requireApiUser';
 import { MAX_CHAT_REQUESTS_PER_GENERATE, withinBudget } from '@/lib/budget';
 import { newCallLedger } from '@/lib/chat';
-import { ERROR_MESSAGES, RESULT } from '@/lib/copy';
+import { ERROR_MESSAGES, NAME_PLACEHOLDER, RESULT } from '@/lib/copy';
 import { getApplication } from '@/lib/db/applications';
+import { getDisplayName } from '@/lib/db/profiles';
 import { insertResumeVersion } from '@/lib/db/resumeVersions';
 import { getVacancy } from '@/lib/db/vacancies';
 import type { ResumeVersion } from '@/lib/db/types';
@@ -131,11 +132,24 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       throw new ValidationError(RESULT.generateNeedsBase);
     }
 
+    /**
+     * THE NAME LINE (SPEC v2.17). The career base holds no person's name, so the
+     * app supplies one — and when the user has not saved one, it supplies a
+     * VISIBLE PLACEHOLDER rather than a substitute. Owner testing found the
+     * generator filling that line with the vacancy's job title, which is what an
+     * ATS parser reads as the candidate's name.
+     *
+     * Read under the user's own session through the DAL, so RLS scopes it; a
+     * missing profile is a normal answer and not an error.
+     */
+    const displayName = await getDisplayName();
+
     const outcome = await generateWithJudge({
       parsed: vacancy.parsed,
       items: retrieved.items,
       applicationId: id,
       ledger,
+      candidateName: displayName ?? NAME_PLACEHOLDER,
     });
 
     if (!withinBudget(ledger, MAX_CHAT_REQUESTS_PER_GENERATE)) {

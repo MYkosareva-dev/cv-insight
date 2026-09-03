@@ -1,6 +1,14 @@
 import { z } from 'zod';
 
-import { APPLICATION_STATUS_ORDER, AUTH, CAREER, RESULT, SCAN, VACANCY_LENGTH } from '@/lib/copy';
+import {
+  APPLICATION_STATUS_ORDER,
+  AUTH,
+  CAREER,
+  RESULT,
+  SCAN,
+  SETTINGS,
+  VACANCY_LENGTH,
+} from '@/lib/copy';
 import { MAX_CAREER_ITEMS } from '@/lib/limits';
 
 /**
@@ -458,6 +466,42 @@ export const patchApplicationSchema = z
   .refine((patch) => Object.keys(patch).length > 0, { message: 'Nothing to update.' });
 
 export type PatchApplication = z.infer<typeof patchApplicationSchema>;
+
+/**
+ * The display name (SPEC v2.17, Block E's Settings field).
+ *
+ * OPTIONAL, and the empty string is the way a user CLEARS it — a settings field
+ * they cannot empty is a field they cannot take back. So a blank input is
+ * transformed to null rather than refused, which is also what keeps the column
+ * from ever holding a present-and-empty name.
+ *
+ * The 120-character bound is the column's own CHECK, so the field answers with
+ * copy rather than with a Postgres constraint error mapped to a 500.
+ */
+export const MAX_DISPLAY_NAME_CHARS = 120;
+
+/**
+ * The Settings field's action state. It lives HERE and not beside the action for
+ * the same reason `AuthState` does: a `'use server'` module may export only
+ * async functions, so a type or a constant there is a build error.
+ *
+ * Two channels, not one. An error is a save that did not happen; a notice is one
+ * that did, and the two are different sentences with different consequences —
+ * collapsing them would make "Name removed." indistinguishable from a failure.
+ */
+export type DisplayNameState = { error: string | null; notice: string | null };
+
+export const EMPTY_DISPLAY_NAME_STATE: DisplayNameState = { error: null, notice: null };
+
+export const displayNameSchema = z.object({
+  displayName: z
+    .string()
+    .max(MAX_DISPLAY_NAME_CHARS, SETTINGS.displayNameTooLong)
+    .transform((v) => {
+      const trimmed = v.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }),
+});
 
 // ---------------------------------------------------------------------------
 // Phase 4 — generation, judging, re-scoring and export

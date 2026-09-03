@@ -1,23 +1,32 @@
 import { DeleteAccountDialog } from '@/components/delete-account-dialog';
+import { DisplayNameForm } from '@/components/display-name-form';
 import { Button } from '@/components/ui/button';
 import { signOutAction } from '@/lib/auth/actions';
 import { AUTH, SETTINGS } from '@/lib/copy';
+import { getDisplayName } from '@/lib/db/profiles';
 import { getUser } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Settings — CV Insight' };
 
 /**
- * Account screen (SPEC Block E): email read-only, sign out, danger zone.
+ * Account screen (SPEC Block E): display name, email read-only, sign out, danger
+ * zone.
  *
  * The (app) layout has already verified the session, so `user` is non-null by
  * the time this renders; the fallback is defensive, not a second gate.
+ *
+ * The display name (v2.17) is read through the DAL under the user's own session,
+ * so RLS scopes it — this page never asks for a name by id. `null` is a normal
+ * answer and renders an empty optional field, not an error.
  */
 export default async function SettingsPage() {
-  const user = await getUser();
+  const [user, displayName] = await Promise.all([getUser(), getDisplayName()]);
 
   return (
     <section className="flex max-w-xl flex-col gap-8">
       <h1 className="text-2xl font-semibold">{SETTINGS.title}</h1>
+
+      <DisplayNameForm displayName={displayName} />
 
       <div className="flex flex-col gap-1.5">
         <span className="text-sm font-medium">{SETTINGS.emailLabel}</span>

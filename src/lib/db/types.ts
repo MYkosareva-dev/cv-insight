@@ -1,6 +1,24 @@
 import 'server-only';
 
-/** Row shapes for the seven owned tables: `001_init.sql` plus `imports` from `003_imports.sql`. */
+/**
+ * Row shapes for the eight owned tables: `001_init.sql`, plus `imports` from
+ * `003_imports.sql` and `profiles` from `004_profiles.sql`.
+ */
+
+/**
+ * The user's own display name (SPEC v2.17, migration 004).
+ *
+ * One row per account, keyed BY the account. `display_name` is NULLABLE and the
+ * app is built for that: a name is personal data, so it is asked for and never
+ * required, and every reader treats "not set" as a normal state rather than as
+ * a missing value to substitute around.
+ */
+export type Profile = {
+  user_id: string;
+  display_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 export type CareerItemType =
   | 'role'

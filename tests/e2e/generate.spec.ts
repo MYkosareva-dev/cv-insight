@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { expect, test, type Page } from '@playwright/test';
 
-import { NO_SCORE, RESULT, SCAN } from '../../src/lib/copy';
+import { NAME_PLACEHOLDER, NO_SCORE, RESULT, SETTINGS, SCAN } from '../../src/lib/copy';
 
 /**
  * Phase-4 evidence: US-4 and US-5, end to end, against a real Supabase project
@@ -34,6 +34,9 @@ import { NO_SCORE, RESULT, SCAN } from '../../src/lib/copy';
  */
 
 const password = 'phase-4-e2e-password';
+
+/** The fictional persona's own name (SPEC Block B). Synthetic data only. */
+const DISPLAY_NAME = 'Mira Steinberg';
 
 /** Accounts created by the running test, removed through the app's own flow. */
 let created: string[] = [];
@@ -94,6 +97,16 @@ async function deleteAccountViaUi(page: Page, email: string) {
   await dialog.getByLabel('DELETE').fill('DELETE');
   await dialog.getByRole('button', { name: 'Delete account', exact: true }).click();
   await page.waitForURL(/\/login/);
+}
+
+/** Save (or clear, with '') the display name through the Settings field. */
+async function saveDisplayName(page: Page, name: string) {
+  await page.goto('/settings');
+  await page.getByLabel(SETTINGS.displayNameLabel).fill(name);
+  await page.getByRole('button', { name: SETTINGS.displayNameSave }).click();
+  await expect(
+    page.getByText(name ? SETTINGS.displayNameSaved : SETTINGS.displayNameCleared),
+  ).toBeVisible();
 }
 
 /** Build the career base by pasting the fixture resume through the import dialog. */
@@ -336,12 +349,54 @@ test.describe('generate', () => {
      */
     console.log(
       '[phase-4] header:',
-      JSON.stringify({ literalNamePlaceholder: /^NAME/.test(draftRaw.trim()) }),
+      JSON.stringify({
+        literalNamePlaceholder: /^NAME\b/.test(draftRaw.trim()),
+        namePlaceholder: draftRaw.includes(NAME_PLACEHOLDER),
+      }),
     );
+
+    /**
+     * NO DISPLAY NAME IS SAVED IN THIS TEST, so the name line must be the VISIBLE
+     * placeholder (v2.17) — never the vacancy's job title, which is what owner
+     * testing found there, and never a silent substitution.
+     *
+     * The vacancy is "Data Annotator". A resume whose first line is that title is
+     * the defect this round exists to remove, and it is the line an ATS parser
+     * reads as the candidate's name.
+     */
+    const firstLine = draftRaw.trim().split('\n')[0]?.trim() ?? '';
+    expect(firstLine, 'the name line must not be the job title').not.toBe('Data Annotator');
+    expect(draftRaw).toContain(NAME_PLACEHOLDER);
+    // And the editor says so while it is still one edit away from fixed.
+    await expect(page.getByText(RESULT.namePlaceholderNotice)).toBeVisible();
     for (const absent of ['labelbox', 'supervisely']) {
       expect(draft, `the base never mentions ${absent}; the resume must not claim it`).not.toContain(
         absent,
       );
+    }
+
+    /**
+     * THE JUDGE PANEL MAY NOT SUGGEST WHAT THE BASE DOES NOT CONTAIN (v2.17).
+     *
+     * The owner's own defect, asserted on the rendered screen rather than on the
+     * pure function alone: the card listed Labelbox, Supervisely, MS Office and
+     * Google Suite under "Supported by your base, missing from the resume" while
+     * the coverage table two blocks above said `no mention of "Labelbox"`. This
+     * fixture's base contains none of the four, so none of them may appear under
+     * that header — whatever the reviewer returned.
+     */
+    const supportedSection = page
+      .locator('div')
+      .filter({ has: page.getByRole('heading', { name: RESULT.missingHonestHeading }) })
+      .last();
+    if (await supportedSection.isVisible().catch(() => false)) {
+      const suggested = (await supportedSection.innerText()).toLowerCase();
+      for (const absent of ['labelbox', 'supervisely', 'ms office', 'google suite']) {
+        expect(
+          suggested,
+          `the base never mentions ${absent}; it must not be offered as supported`,
+        ).not.toContain(absent);
+      }
     }
 
     // --- US-5 step 1: edit, then re-score against the same vacancy -----------
@@ -431,7 +486,19 @@ test.describe('generate', () => {
       page.waitForEvent('download', { timeout: 60_000 }),
       page.getByRole('button', { name: RESULT.download }).click(),
     ]);
-    expect(download.suggestedFilename()).toMatch(/^CV_.*\.docx$/);
+    /**
+     * With no display name saved, the file is `CV_<Company>_<Role>.docx`: the name
+     * part is ABSENT rather than guessed at from the document's first line, which
+     * used to produce `CV_Data_Annotator_….docx`.
+     */
+    const filename = download.suggestedFilename();
+    expect(filename).toMatch(/^CV_.*\.docx$/);
+    expect(filename, 'the filename must not take the job title for a name').not.toMatch(
+      /^CV_Data_Annotator/,
+    );
+    // The download succeeded AND the document still says [YOUR NAME]: both are
+    // true, and the second is said out loud rather than left to be discovered.
+    await expect(page.getByText(RESULT.exportedWithPlaceholderName)).toBeVisible();
     const stream = await download.createReadStream();
     const chunks: Buffer[] = [];
     for await (const chunk of stream) chunks.push(Buffer.from(chunk));
@@ -472,6 +539,14 @@ test.describe('generate', () => {
      */
     test.setTimeout(600_000);
     await signUp(page, uniqueEmail());
+    /**
+     * A display name is saved here so the SECOND half of v2.17 rides on a
+     * generate this suite already pays for: the name line and the export
+     * filename both have to come from the profile, and proving that needs a real
+     * generated resume. Buying a third one for it would be a metered call for a
+     * fact this one already establishes.
+     */
+    await saveDisplayName(page, DISPLAY_NAME);
     await buildCareerBase(page);
     await runScan(page);
 
@@ -492,6 +567,47 @@ test.describe('generate', () => {
     expect((await response).status()).toBe(200);
 
     expect(requests, 'a double click must not buy two generations').toBe(1);
+
+    // --- v2.17: the NAME line is the profile's, and so is the filename --------
+    const editor = page.getByRole('textbox', { name: RESULT.editorLabel });
+    const draft = await editor.inputValue();
+    expect(draft, 'the saved display name is the name line').toContain(DISPLAY_NAME);
+    expect(draft, 'a saved name leaves no placeholder').not.toContain(NAME_PLACEHOLDER);
+    // The judge was told the name comes from the profile, so it must not be
+    // reported as an unsupported claim — a grounding failure there would be
+    // uncompensatable under rule B2 and would buy a rewrite for having a name.
+    await expect(page.getByText(RESULT.namePlaceholderNotice)).toHaveCount(0);
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download', { timeout: 60_000 }),
+      page.getByRole('button', { name: RESULT.download }).click(),
+    ]);
+    expect(download.suggestedFilename()).toContain('Mira_Steinberg');
+    await expect(page.getByText(RESULT.exportedWithPlaceholderName)).toHaveCount(0);
+  });
+
+  test('the display name saves, persists and can be cleared', async ({ page }) => {
+    /**
+     * The whole Settings field, and it costs no model call.
+     *
+     * OPTIONAL IS THE POINT, so clearing is asserted as hard as saving: a
+     * settings field a user cannot empty is one they cannot take back, and a
+     * name is personal data. Reloading between the two is what makes each
+     * assertion about the STORED row rather than about the input's own state.
+     */
+    await signUp(page, uniqueEmail());
+    await page.goto('/settings');
+
+    const field = page.getByLabel(SETTINGS.displayNameLabel);
+    await expect(field, 'a new account has no name saved').toHaveValue('');
+
+    await saveDisplayName(page, DISPLAY_NAME);
+    await page.reload();
+    await expect(page.getByLabel(SETTINGS.displayNameLabel)).toHaveValue(DISPLAY_NAME);
+
+    await saveDisplayName(page, '');
+    await page.reload();
+    await expect(page.getByLabel(SETTINGS.displayNameLabel)).toHaveValue('');
   });
 
   test('an empty editor blocks both metered buttons with the exact copy', async ({ page }) => {

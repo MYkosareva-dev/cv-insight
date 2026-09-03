@@ -174,12 +174,15 @@ export async function generateResume(args: {
   applicationId: string;
   findings: string[];
   ledger: CallLedger;
+  /** The profile's display name, or the visible placeholder standing in for one. */
+  candidateName: string;
 }): Promise<string> {
   const prompt = fillPrompt(P2_GENERATE, {
     // The WRITER gets no keyword list — see `requirementsJson`.
     parsedRequirementsJson: requirementsJson(args.parsed, false),
     retrievedChunksJson: itemsJson(args.items),
     revisionFeedbackBlock: revisionFeedbackBlock(args.findings),
+    candidateName: args.candidateName,
   });
   const result = await runChat(
     {
@@ -221,12 +224,21 @@ export async function judgeResume(args: {
   resumeText: string;
   applicationId: string;
   ledger: CallLedger;
+  /**
+   * Told to the REVIEWER as well as to the writer, because it is a fact from a
+   * source the career items do not contain. Without it the grounding gate fires
+   * on the one line the user supplied themselves, and rule B2 makes that
+   * uncompensatable — so every generated resume would be revised once for
+   * having a name on it.
+   */
+  candidateName: string;
 }): Promise<JudgeReport> {
   const prompt = fillPrompt(P3_JUDGE, {
     resumeText: args.resumeText,
     // The REVIEWER does: P3 criterion 2 scores against exactly this list.
     parsedRequirementsJson: requirementsJson(args.parsed, true),
     retrievedChunksJson: itemsJson(args.items),
+    candidateName: args.candidateName,
   });
   const { data } = await runChatJson({
     step: 'judge',
@@ -290,6 +302,7 @@ export async function generateWithJudge(args: {
   items: GenerationItem[];
   applicationId: string;
   ledger: CallLedger;
+  candidateName: string;
 }): Promise<GenerateOutcome> {
   /**
    * The corpus every claim about "what your base supports" is checked against —
@@ -362,7 +375,13 @@ export async function generateWithJudge(args: {
  * the judge. Returning null saves the resume they paid for.
  */
 async function judgeOrNull(
-  args: { parsed: ParsedVacancy; items: GenerationItem[]; applicationId: string; ledger: CallLedger },
+  args: {
+    parsed: ParsedVacancy;
+    items: GenerationItem[];
+    applicationId: string;
+    ledger: CallLedger;
+    candidateName: string;
+  },
   resumeText: string,
 ): Promise<JudgeReport | null> {
   try {

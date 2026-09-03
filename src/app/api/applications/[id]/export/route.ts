@@ -4,13 +4,13 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { requireApiUser } from '@/lib/auth/requireApiUser';
-import { RESULT } from '@/lib/copy';
+import { NAME_PLACEHOLDER, RESULT } from '@/lib/copy';
 import { getApplication } from '@/lib/db/applications';
+import { getDisplayName } from '@/lib/db/profiles';
 import { getLatestResumeVersion, insertResumeVersion } from '@/lib/db/resumeVersions';
 import { getVacancy } from '@/lib/db/vacancies';
 import { NotFoundError, ValidationError, apiErrorResponse } from '@/lib/errors';
 import { exportFilename, resumeToDocx } from '@/lib/docx';
-import { resumeName } from '@/lib/generation';
 import { resumeContentSchema } from '@/lib/validation';
 
 /**
@@ -35,6 +35,20 @@ import { resumeContentSchema } from '@/lib/validation';
  * turn the version history into a download log. The comparison is against the
  * LATEST version only, because that is what "unchanged since I last saved" means;
  * re-exporting an older text is a real edit and gets its own row.
+ *
+ * THE FILENAME COMES FROM THE PROFILE, NOT FROM THE DOCUMENT (SPEC v2.17). It
+ * used to read the resume's first line, which is exactly the line owner testing
+ * found holding the vacancy's job title — so a download arrived as
+ * `CV_Data_Annotator_….docx`. With no display name saved, the name part is simply
+ * absent and the file is `CV_<Company>_<Role>.docx`: dropping a part the app does
+ * not know beats inventing one, and `exportFilename` already sanitises every part
+ * for the filesystem while keeping non-Latin letters intact.
+ *
+ * AND IT REPORTS A PLACEHOLDER RATHER THAN HIDING IT. A file whose name line
+ * still reads `[YOUR NAME]` must never look finished: the placeholder is in the
+ * document itself, where it cannot be missed, and the response says so in a
+ * header the client turns into a warning. The download is not blocked — the file
+ * is the user's and refusing it would be the app deciding what they may send.
  */
 
 /** Document assembly only — no model call, so no long budget to reserve. */
@@ -81,11 +95,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       revalidatePath(`/applications/${id}`);
     }
 
+    const displayName = await getDisplayName();
     const bytes = await resumeToDocx(content);
     const filename = exportFilename({
-      // The resume's own first line — P2 rule 4 puts NAME there, so this reads
-      // what the document says rather than guessing at an identity.
-      name: resumeName(content),
+      // The user's own saved name, or nothing. Never the document's first line.
+      name: displayName ?? '',
       company: vacancy.company,
       role: vacancy.title,
     });
@@ -104,6 +118,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         'Content-Length': String(bytes.byteLength),
         // A resume is personal data and there is nothing to gain from caching it.
         'Cache-Control': 'no-store',
+        /**
+         * The name line is still the placeholder. A boolean header rather than a
+         * message: the copy belongs in `lib/copy.ts` with every other string, and
+         * a response body is not available on a file download.
+         */
+        ...(content.includes(NAME_PLACEHOLDER) ? { 'X-Name-Placeholder': '1' } : {}),
       },
     });
   } catch (err) {

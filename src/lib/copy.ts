@@ -53,6 +53,25 @@ export const PRIVACY_ERASURE = {
 export const NO_SCORE = '—';
 
 /**
+ * The NAME line of a generated resume when the user has not saved a display name
+ * (SPEC v2.17).
+ *
+ * A VISIBLE PLACEHOLDER, never a substituted value. The career base holds no
+ * person's name — P4 splits an imported resume into items and the heading
+ * becomes part of none of them — so the generator has nothing to write there,
+ * and owner testing found it writing the vacancy's job title instead: a .docx
+ * that reaches an employer with "Data Annotator" where the candidate's name
+ * belongs, which is what an ATS parser reads as the name.
+ *
+ * Square brackets and capitals because the one thing this must not do is look
+ * finished. An exported file carrying it is obviously incomplete at a glance, in
+ * the document itself and not only in a toast the user has already dismissed —
+ * which is the difference between a reminder and a document that quietly goes
+ * out wrong.
+ */
+export const NAME_PLACEHOLDER = '[YOUR NAME]';
+
+/**
  * App-level error boundary (src/app/error.tsx). Deliberately says nothing about
  * WHAT failed: a thrown error can carry resume or vacancy text in its message,
  * and that must never be rendered or logged (CLAUDE.md, Privacy). Per-screen
@@ -537,7 +556,17 @@ export const RESULT = {
    */
   generateNeedsBase: baseNotIndexedCopy,
 
-  generating: 'Generating…',
+  /**
+   * NO ELLIPSIS, unlike its three siblings below, and the difference is the
+   * point: `<BusyDots />` renders three PULSING dots after this label, and a
+   * static "…" beside them would read as six dots, three of them dead.
+   *
+   * Only the generate button gets the motion. It is the one that runs for the
+   * better part of a minute — a re-score, a quality check and an export are all
+   * seconds — and owner testing found a dimmed button with a changed label
+   * indistinguishable from a hung one over that span.
+   */
+  generating: 'Generating',
   /** US-4 step 1: the progress text cycles while the pipeline runs. */
   generateSteps: ['Retrieving your experience…', 'Writing…', 'Quality check…'] as const,
   rescoring: 'Re-scoring…',
@@ -639,6 +668,18 @@ export const RESULT = {
     'Must-have requirements are matched against the resume in the editor (60%); vacancy keywords are counted in the same text (40%).',
   resumeTooLong: 'A resume is limited to 15000 characters.',
   savedUserVersion: 'Your edited version was saved.',
+  /**
+   * The export went out with the name placeholder still in it. Said as a WARNING
+   * on a completed download rather than as a refusal: the file is the user's and
+   * blocking it would be the app deciding what they may send, but leaving it
+   * silent would let a resume reach an employer with "[YOUR NAME]" at the top
+   * because nobody mentioned it.
+   */
+  exportedWithPlaceholderName:
+    'Downloaded — but the name line still reads [YOUR NAME]. Replace it, or save your name in Settings.',
+  /** In the editor, where the placeholder is still on screen and still editable. */
+  namePlaceholderNotice:
+    'Replace [YOUR NAME] with your own, or save it once in Settings and the next resume uses it.',
 } as const;
 
 export const APPLICATIONS = {
@@ -701,6 +742,27 @@ export const QUALITY = {
 export const SETTINGS = {
   title: 'Settings',
   emailLabel: 'Email',
+
+  /**
+   * The display name (SPEC v2.17, Block E). One optional field, and the copy has
+   * to earn the asking: it says what the name is FOR, which is the only reason a
+   * resume tool has to hold one.
+   *
+   * OPTIONAL IN WORDS as well as in the schema. The app works without it — the
+   * resume gets a placeholder the user replaces — and a field that looks
+   * required collects personal data from people who would rather not give it.
+   */
+  displayNameLabel: 'Your name',
+  displayNameHint:
+    'Optional. Used as the name line on resumes you generate, and in the file name when you download one. Leave it empty and the resume asks you to fill the name in yourself.',
+  displayNamePlaceholder: 'e.g. Mira Steinberg',
+  displayNameSave: 'Save name',
+  displayNameSaving: 'Saving…',
+  displayNameSaved: 'Name saved.',
+  displayNameCleared: 'Name removed.',
+  displayNameFailed: 'Could not save your name — try again.',
+  displayNameTooLong: 'A name is limited to 120 characters.',
+
   dangerZone: 'Danger zone',
   deleteAccount: 'Delete account and data',
   /**

@@ -6,6 +6,7 @@ import { Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ResultTabs } from '@/components/applications/result-tabs';
+import { BusyDots } from '@/components/ui/busy-dots';
 import { ResumeEditor } from '@/components/applications/resume-editor';
 import { ScoreRing } from '@/components/applications/score';
 import { Button } from '@/components/ui/button';
@@ -263,7 +264,15 @@ export function ResultWorkspace({
         URL.revokeObjectURL(url);
         // The export APPENDS the edited text as a version (Block D #6: saving
         // happens via /judge or export), so the history has a new row.
+        //
+        // A file whose name line is still the placeholder gets a WARNING beside
+        // that, not instead of it: the download succeeded and the version was
+        // saved, and both of those are true — what is also true is that the
+        // document says "[YOUR NAME]" at the top.
         toast.success(RESULT.savedUserVersion);
+        if (res.headers.get('X-Name-Placeholder') === '1') {
+          toast.warning(RESULT.exportedWithPlaceholderName);
+        }
         router.refresh();
       },
       RESULT.exportFailed,
@@ -307,7 +316,14 @@ export function ResultWorkspace({
         {versions.length === 0 ? (
           <Button variant="hero" onClick={generate} disabled={pending !== null}>
             <Sparkles aria-hidden />
-            {pending === 'generate' ? RESULT.generating : RESULT.generate}
+            {pending === 'generate' ? (
+              <>
+                {RESULT.generating}
+                <BusyDots />
+              </>
+            ) : (
+              RESULT.generate
+            )}
           </Button>
         ) : null}
       </div>
