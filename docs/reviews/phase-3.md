@@ -3,6 +3,7 @@
 **Branch:** `phase-3-scan` (11 commits ahead of `main`) · **Date:** 2026-09-03
 **Scope:** `git diff main...HEAD` — 28 files, +3792/−60. SPEC v2.12 (US-2, US-3, Block D #4 and #8's PATCH half, Block E `/scan`, `/applications`, `/applications/[id]`), CLAUDE.md as amended 2026-09-03.
 **Gate runs recorded here:** two `ai-architect` passes — one on the PLAN before any code was written, one on the DIFF after the phase was built.
+**Then an addendum**, appended after the phase was reviewed: the owner's own testing round (2026-09-03) — one defect (P1 returning keywords the vacancy does not contain), one calibration problem (rule B1's similarity thresholds, never measured against this embedding model), and two questions answered with numbers (where a 6% score comes from, and whether embedding calls write `llm_calls` rows). Four further backlog entries, `p3-13` … `p3-16`, and the gates re-run. The gate figures quoted immediately below are the ones from the phase review; the addendum carries the post-round run.
 
 **VERDICT: APPROVE.** Both passes are closed. The plan pass produced two BLOCKERs and a set of MAJORs, all fixed in the plan before implementation and declared as SPEC v2.12's nine deviations. The diff pass produced one BLOCKER and two MAJORs, all fixed on this branch in `33c416e`. What is left is twelve backlog entries, `p3-1` … `p3-12`. No secret exposure, no chokepoint breach, no migration, no RLS change, no `.from(`/`.rpc(` outside `lib/db`, and no new enforcement rule — the 13 stay frozen.
 
@@ -295,3 +296,203 @@ Recorded because it is the part a later reviewer should not re-litigate.
 not been run on the Phase-2 owner-feedback round, which touched personal data. This
 phase puts vacancy text and resume text through a new endpoint, so it is due here
 too — together with `nextjs-security` on the two new route handlers.
+
+---
+
+# Addendum — the owner's testing round (2026-09-03)
+
+The owner ran the built phase against a real posting and a real career base.
+Three findings, and neither the chokepoints, the RLS story nor the gate rules are
+among them: one defect, one calibration problem, one number that needed
+explaining. Commits `04d52e5`, `fa9269d`, `1b2d832`.
+
+## CONFIRMED CORRECT by owner verification — the keyword counter
+
+Recorded as evidence, because a verified component should not be re-litigated by
+the next reviewer or "improved" by the next agent.
+
+The owner checked **every count by hand** against the vacancy and resume text.
+The counter is case-insensitive and respects word boundaries: **"Remote" counted
+3** against a posting that says lowercase "remote", and it **correctly did not
+count "remotely"**. The all-zero **IN RESUME** column was **truthful** — that
+resume genuinely lacks those literal terms.
+
+That is rule B1a's boundary rule (`keywordRegex` in `src/lib/scoring.ts`)
+verified against real text by a human reader, which is a stronger statement than
+the unit tests make: the tests pin the cases someone thought to write down, and
+this checked the ones a real posting produced. `keywordPresent` is defined as
+`keywordCount > 0` on the same regex, so the verification covers both columns of
+the keywords table and the K term of rule B1 at once.
+
+## DEFECT — P1 returned keywords the vacancy does not contain
+
+The parse produced **"Quality assurance"** and **"Data labeling"** for a posting
+that says *"quality checks"*, *"quality standards"* and *"label, categorize"*.
+The model generalized instead of extracting, and the keywords table then rendered
+a row whose **In-vacancy count was 0** — the app measuring the absence of a term
+it claims to have found, which is incoherent on its face. It was not only
+cosmetic: a phantom keyword also counted against the resume in K, so rule B1
+scored the resume for failing to mention something the posting never asked for.
+
+**Fixed at both levels, because a prompt is not a guarantee** (`04d52e5`):
+
+- **P1** (`src/lib/prompts.ts`, and its verbatim copy in SPEC Block F) now states
+  that every keyword — the `keywords` list AND each requirement's `keyword` — must
+  be a span copied verbatim from the posting, character for character, with the
+  example the owner supplied ("quality checks", never "Quality assurance"), and
+  that a keyword the model cannot find literally must be left out. Requirement
+  TEXT is explicitly exempt: a requirement may still be a normalized sentence.
+- **The server guard**: `literalKeywords()` in `src/lib/scoring.ts` drops any
+  keyword whose `keywordCount` in the vacancy text is 0 — after Zod, before
+  anything counts or renders. Membership is decided by the SAME boundary rule as
+  the table's own columns, so a keyword can never be dropped as absent while the
+  table would have counted it present. K is computed over the kept keywords.
+- **The drop is recorded, not silent**: `coverage.keywordsDropped` (optional in
+  the type because it is optional in the DATA — rows written before this round
+  did not measure it, which is not the same as zero) plus one `console.warn`
+  carrying counts only, never the dropped spans, which are fragments of the
+  posting.
+- **`requirements[].keyword` is deliberately NOT filtered.** It never reaches the
+  screen and carries no in-vacancy count, so it cannot be incoherent; blanking it
+  would suppress `gap_in_resume_covered_by_base`, which is US-3's hidden match —
+  a real finding lost to a formatting rule. The prompt covers that field, the
+  guard covers the one that renders.
+- **Unit-tested at both levels** (`tests/unit/scoring.test.mjs`): the owner's two
+  reported keywords are dropped and the literal ones kept; membership agrees with
+  `keywordCount` in both directions ("Remote" survives "Remote-first team", not
+  "works remotely"); every kept keyword has a nonzero in-vacancy count by
+  construction; and dropping a phantom RAISES K rather than lowering it.
+
+Declared as SPEC **v2.13** under rule B1a and in the Business-rules notes.
+
+## CALIBRATION — the thresholds were never measured, and 0.60 was unreachable
+
+A senior AI-quality base scanned against an entry-level Data Annotator posting
+returned **Gap on all ten requirements**, best matches 0.20–0.43, including
+*"0-2 years of experience in data entry, data annotation, or similar role"* at
+0.43 — a covered requirement scored as a gap.
+
+**The numbers were not lowered until the screen looked better.** What was built
+instead, in the order the owner asked for it:
+
+**(a) The instrument.** `src/app/api/dev/coverage-probe/route.ts` — dev-only,
+404 in production before anything else runs, `requireApiUser()` on the next line
+(it is a metered path), everything read through DALs so RLS scopes it to the
+caller, and **chunk text never returned**: career-item titles and similarities
+only, the same pair the development match log may print and the result screen
+already shows. It exists because the coverage map discards the matched item for a
+gap by design, so the numbers a threshold must be calibrated against are
+unreachable from the app itself. `scripts/coverage-probe.mjs` drives it through a
+real sign-in, because a script may not read the tables (R1), may not use the
+service-role key (R10) and may not embed anything itself (R5/R6) — a browser is
+the cheap option here, not the elaborate one.
+
+**(b) The labeled set.** `--seed` builds a throwaway account from
+`docs/eval/calibration-case.json`, imports a resume, runs one scan, probes it and
+deletes the account again — so the case is reproducible without anyone's
+credentials. Seven requirements, hand-labeled covered / partial / gap by reading
+the matched item: **4 covered, 2 partial, 1 gap**.
+
+**(c) The thresholds, and what the split costs.** `COVERAGE_THRESHOLD` 0.60 →
+**0.36**, `SIMILARITY_FLOOR` 0.30 → **0.20**, `SIMILARITY_SPAN` now **derived**
+as `COVERAGE_THRESHOLD − SIMILARITY_FLOOR`. At 0.36: **4 of 4** labeled-covered
+requirements are admitted (**0 of 4** at the old threshold), **1 of 2**
+labeled-partial is admitted as covered — the annotation-platform requirement,
+against a base that names no platform — and **0 of 1** labeled gaps. No cut in
+the set does better, because **the highest similarity in it is a partial**: a
+single number cannot separate covered from partial, only evidence from no
+evidence. The derived span makes S reach exactly 1 where `isCovered` turns true,
+which a hard-coded 0.16 does not even manage in floating point
+(`(0.36 − 0.2) / 0.16 = 0.9999999999999998`).
+
+**(d) The record.** `docs/eval/coverage-thresholds.md` — the labeled set with the
+reasoning per label, the distribution, the derivation, the cost, and the live
+verification: the same case re-run against the calibrated constants scores
+**57** where it scored 17, with exactly the predicted five-of-seven split. Its
+first line says it is a **calibration note, not a benchmark** — seven
+requirements from one case — and it names its own weakest number (the floor,
+which rests on a single labeled gap).
+
+**(e) Declared** as SPEC v2.13 in rule B1 and a Business-rules note citing the
+file.
+
+**Chunk granularity IS the underlying cause, and it is named rather than fixed.**
+`CHUNK_TARGET_CHARS = 2_000` with `MAX_CHUNKS_PER_ITEM = 2` embeds a career item
+as one or two ~2,000-character blobs, so a 60-character requirement cannot score
+high against it however well one sentence of that blob answers it. The evidence
+is in the run: the generic **Skills** item was the best match for **three of
+seven** requirements, twice for requirements its own text answers *literally*
+("Comfortable working with spreadsheets" → 0.38 against an item listing
+"spreadsheets"; "Good written English" → 0.37 against one listing "English C1").
+The fix is **one chunk per resume bullet** (~80–300 characters, split on bullet
+and sentence boundaries), so a requirement meets a claim its own size. Not done
+now, as instructed: it is a Phase-2 rebuild that requires deleting and
+re-inserting every `documents` row, breaks B9's `200 × 2 = 400 ≤ 500`
+reconciliation, and would invalidate the thresholds above, which are calibrated
+for the chunking that ships. Backlog **p3-13**, with **p3-14** (a second labeled
+case, and the floor), **p3-15** (a third "partial" status, which is what a
+threshold cannot express) and **p3-16** (`keywordsDropped` is stored and nothing
+surfaces it until /quality).
+
+## EXPLAIN — where 6% comes from with nothing covered and no keywords present
+
+**It is rule B1's S term, and nothing else. The implementation has not drifted.**
+
+`S = mean over MUST requirements of clamp((bestSimilarity − FLOOR) / SPAN, 0, 1)`
+is **continuous partial credit**, while "covered" is a **separate threshold**. The
+two answer different questions, so a scan can have zero covered requirements and
+a nonzero S: at the thresholds in force when the owner saw 6%, a best similarity
+of 0.43 contributed 0.236 and one of 0.31 contributed 0.018.
+
+Checked against the numbers rather than argued. The calibration run's five MUST
+best similarities give S = 0.1186 and K = 0.25, so
+`round(100 × (0.6 × 0.1186 + 0.4 × 0.25))` = **17** — exactly the score the
+endpoint stored. With **K = 0**, the owner's case, the same distribution gives
+**7%**; and 6% back-solves to a mean best similarity of 0.355, inside the
+0.20–0.43 band the owner reported. So the reading is self-consistent and needs no
+term outside B1. `tests/unit/scoring.test.mjs` now pins that arithmetic, including
+that K is the only other term and that it is weighted 0.4.
+
+What was genuinely wrong there is not the arithmetic but the **coherence** of what
+it rendered: a 6% Match Rate beside a table of ten gaps is a number the screen
+cannot explain to the person reading it, and the reason is the calibration above.
+At the calibrated thresholds the same measurements read 57% with five
+requirements covered — a screen whose parts agree.
+
+## CHECK — embedding calls DO write `llm_calls` rows
+
+`logEmbedCall` runs on both the success and the failure path of `embedFor`
+(`src/lib/retrieval.ts`), `embed` is in the `llm_calls.step` CHECK constraint, and
+the probe runs observed the rows directly through the `llm_calls` DAL under RLS:
+
+```
+embed            rows=2 with_application_id=0 cost_usd_micro=8
+parse_vacancy    rows=1 with_application_id=1 cost_usd_micro=2602
+import_resume    rows=1 with_application_id=0 cost_usd_micro=3545
+```
+
+Two `embed` rows per run — one batch for indexing the base, one for the scan's
+requirements — `ok=true`, model `text-embedding-3-small`, a real nonzero cost.
+
+**Why the owner's query found none: `application_id` is NULL on them by design**
+(indexing is not tied to an application), so a query filtered on an application id
+returns the `parse_vacancy` row and none of the embedding rows. The behaviour is
+kept and the backlog line already exists — **p3-8**, which threads an application
+id through the scan's embedding calls so a run's spend is fully attributable.
+Rule B8 holds as written; what is missing is the link, not the log.
+
+## Gates after the round
+
+- `node scripts/check.mjs` → **13/13**, unchanged (no new enforcement rule).
+- `npm test` → **tests 160 · pass 160 · fail 0** (149 before; the new ones are the
+  B1a guard and the score arithmetic).
+- `npx tsc --noEmit` → clean · `npx eslint .` → clean · `npm run build` → clean,
+  16/16 pages (the dev probe is the sixteenth).
+- `npx playwright test` → **24 passed, 1 skipped**; the skipped case passes on the
+  broken-key server. `docs/eval/phase-3-e2e-run.txt` was re-run against `fa9269d`.
+- One e2e case **failed first, and the evidence file says so**: it asserted
+  `similarity >= 0.6`, and under the calibrated threshold an attributed entry came
+  back at 0.5701. The assertion was wrong, not the app — it reads
+  `COVERAGE_THRESHOLD` now (`fa9269d`), along with two other places that kept a
+  private copy of a calibrated number, including the probe route itself, which
+  would otherwise have reported the thresholds its own calibration replaced.
