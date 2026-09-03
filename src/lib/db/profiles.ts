@@ -36,9 +36,41 @@ export async function getProfile(): Promise<Profile | null> {
  * folded into null for the same reason the writer refuses to store one: a name
  * that is present and empty is a third state nothing needs, and it would render
  * as a resume with a blank first line rather than as one asking to be filled in.
+ *
+ * THIS ONE NEVER THROWS, and `getProfile` above still does. The difference is
+ * who is asking. Settings reads the profile to render and to save it, and a
+ * failure there must be visible — the feature IS the row, so hiding a broken
+ * read would leave a user typing a name into a field that quietly forgets it.
+ * The generation pipeline is the opposite case: the name is one optional line of
+ * a document the user has already paid a Sonnet call and a Haiku call for, and
+ * losing that run to report a profile lookup would take their money and their
+ * work for a field they may never have filled in.
+ *
+ * So a failure here degrades to "no name saved", which is a state the app
+ * already handles honestly and visibly: the resume gets the `[YOUR NAME]`
+ * placeholder, the editor says so, and the export warns. Nothing is silently
+ * wrong — the user sees exactly what the app does not know. Same shape as
+ * indexing, where an embedding failure is a warning and never a failed save
+ * (CLAUDE.md, Embeddings).
+ *
+ * It is also what makes the missing-migration state legible rather than fatal:
+ * before `004_profiles.sql` is applied, every read fails, the pipeline carries
+ * on with the placeholder, and the Settings field — which does NOT swallow —
+ * reports the error where the feature lives.
  */
 export async function getDisplayName(): Promise<string | null> {
-  const profile = await getProfile();
+  let profile: Profile | null;
+  try {
+    profile = await getProfile();
+  } catch (err) {
+    // Metadata only: an error message could carry the name, which is personal
+    // data. The name of the error is enough to tell a missing table from a
+    // network fault in a log.
+    console.error('[profiles] could not read the display name; using the placeholder', {
+      name: err instanceof Error ? err.name : typeof err,
+    });
+    return null;
+  }
   const name = profile?.display_name?.trim();
   return name && name.length > 0 ? name : null;
 }

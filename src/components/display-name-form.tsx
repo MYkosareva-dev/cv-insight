@@ -27,7 +27,18 @@ import { EMPTY_DISPLAY_NAME_STATE, MAX_DISPLAY_NAME_CHARS } from '@/lib/validati
  * typing survives the action's round trip, and a successful save re-renders the
  * Server Component with the stored name behind it.
  */
-export function DisplayNameForm({ displayName }: { displayName: string | null }) {
+export function DisplayNameForm({
+  displayName,
+  readFailed,
+}: {
+  displayName: string | null;
+  /**
+   * The stored name could not be READ. Distinct from `displayName === null`,
+   * which means there is none — an empty field with no explanation reads as "the
+   * app forgot my name", and only one of those two is true.
+   */
+  readFailed: boolean;
+}) {
   const [state, formAction, pending] = useActionState(
     saveDisplayNameAction,
     EMPTY_DISPLAY_NAME_STATE,
@@ -63,6 +74,17 @@ export function DisplayNameForm({ displayName }: { displayName: string | null })
         `role="alert"` for the failure, so a screen reader is told which of the
         two it is rather than hearing one sentence in one voice.
       */}
+      {/*
+        The read failed. Shown even before the user touches anything, because the
+        field below is empty for a reason they cannot otherwise see. Saving still
+        works — the write is a separate round trip — so the copy says so rather
+        than implying the field is dead.
+      */}
+      {readFailed && !state.error && !state.notice ? (
+        <p role="alert" className="text-destructive text-sm">
+          {SETTINGS.displayNameLoadFailed}
+        </p>
+      ) : null}
       {state.error ? (
         <p role="alert" className="text-destructive text-sm">
           {state.error}

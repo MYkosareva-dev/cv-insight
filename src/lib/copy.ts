@@ -761,6 +761,16 @@ export const SETTINGS = {
   displayNameSaved: 'Name saved.',
   displayNameCleared: 'Name removed.',
   displayNameFailed: 'Could not save your name — try again.',
+  /**
+   * The READ failed, which is not the same as having no name saved — and the
+   * difference matters, because an empty field with no explanation reads as "the
+   * app forgot my name". Said inline, on a page that still renders: a Settings
+   * screen that 500s because one optional field could not load is out of all
+   * proportion to the field, and it takes the route's prefetch down with it,
+   * which was observed breaking navigation across the whole app.
+   */
+  displayNameLoadFailed:
+    'Could not load your saved name. What is shown below may be out of date — saving will still work.',
   displayNameTooLong: 'A name is limited to 120 characters.',
 
   dangerZone: 'Danger zone',

@@ -3,7 +3,7 @@ import { DisplayNameForm } from '@/components/display-name-form';
 import { Button } from '@/components/ui/button';
 import { signOutAction } from '@/lib/auth/actions';
 import { AUTH, SETTINGS } from '@/lib/copy';
-import { getDisplayName } from '@/lib/db/profiles';
+import { getProfile } from '@/lib/db/profiles';
 import { getUser } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Settings — CV Insight' };
@@ -18,15 +18,41 @@ export const metadata = { title: 'Settings — CV Insight' };
  * The display name (v2.17) is read through the DAL under the user's own session,
  * so RLS scopes it — this page never asks for a name by id. `null` is a normal
  * answer and renders an empty optional field, not an error.
+ *
+ * `getProfile` and NOT `getDisplayName`: the pipeline's reader swallows a failed
+ * read and falls back to the placeholder, because losing a paid run over an
+ * optional field would be the worse trade. Here the feature IS the row, so a
+ * failed read has to be SAID rather than shown as an empty field — an empty
+ * field with no explanation reads as "the app forgot my name".
+ *
+ * SAID, AND NOT THROWN. Letting it reach the error boundary was the first
+ * attempt and it is disproportionate twice over: a whole Settings screen lost to
+ * one optional field, and — observed, not theorised — Next prefetches the
+ * sidebar's /settings link from every member route, so the throw surfaced on
+ * pages that never asked for a profile and broke navigation across the app. The
+ * page renders, the field is empty, and the form says the read failed.
  */
 export default async function SettingsPage() {
-  const [user, displayName] = await Promise.all([getUser(), getDisplayName()]);
+  const user = await getUser();
+
+  let displayName: string | null = null;
+  let readFailed = false;
+  try {
+    const profile = await getProfile();
+    displayName = profile?.display_name?.trim() || null;
+  } catch (err) {
+    readFailed = true;
+    // Metadata only: the message could carry the name, which is personal data.
+    console.error('[settings] could not read the profile', {
+      name: err instanceof Error ? err.name : typeof err,
+    });
+  }
 
   return (
     <section className="flex max-w-xl flex-col gap-8">
       <h1 className="text-2xl font-semibold">{SETTINGS.title}</h1>
 
-      <DisplayNameForm displayName={displayName} />
+      <DisplayNameForm displayName={displayName} readFailed={readFailed} />
 
       <div className="flex flex-col gap-1.5">
         <span className="text-sm font-medium">{SETTINGS.emailLabel}</span>
