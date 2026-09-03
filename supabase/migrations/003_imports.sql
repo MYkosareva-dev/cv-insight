@@ -20,9 +20,10 @@ create table imports (
   -- The role this resume was aimed at, when the user says. Optional by design --
   -- an old CV often had no single target, and forcing one would invite a guess.
   target_role text check (char_length(target_role) <= 120),
-  -- 'pdf' or 'paste'. Nullable per the schema as specified; the app always sets it,
-  -- so a null here means a row that did not come through the import flow.
-  source_kind text check (source_kind in ('pdf','paste')),
+  -- 'pdf' or 'paste'. NOT NULL: the app always sets it, so a null could only mean a
+  -- row that bypassed the import flow -- and the database is the right place to
+  -- forbid that, rather than a convention every future writer has to remember.
+  source_kind text not null check (source_kind in ('pdf','paste')),
   created_at timestamptz not null default now()
 );
 create index imports_user_idx on imports(user_id, created_at desc);

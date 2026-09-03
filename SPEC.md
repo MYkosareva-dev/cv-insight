@@ -446,7 +446,7 @@ create table imports (
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null check (char_length(name) between 1 and 120),
   target_role text check (char_length(target_role) <= 120),
-  source_kind text check (source_kind in ('pdf','paste')),
+  source_kind text not null check (source_kind in ('pdf','paste')),
   created_at timestamptz not null default now()
 );
 create index imports_user_idx on imports(user_id, created_at desc);
@@ -462,7 +462,7 @@ create index career_items_import_idx on career_items(user_id, import_id);
 > Why (v2.11, from the owner's first live use): a career item recorded THAT it came from an import (`source = 'import'`) but not WHICH one. After two or three resumes the base is a flat list with no way to tell which document a fact came from or what role that document targeted. Provenance is not derivable after the fact — nothing in `career_items` carries it — so it is stored at save time. One row per import RUN, not per file: the same PDF imported twice is two runs and the user needs to tell them apart.
 > Decision (no DELETE policy): the least-privilege matrix gains `imports S/I/U`. Deleting a SOURCE is out of scope, and the absent policy is the point — a user who could delete an import row would silently strip the provenance from every item pointing at it, turning a fact with a known origin back into a fact with none, which is the defect this table exists to fix. Renaming and re-targeting are what UPDATE is for. Account deletion still removes everything via the FK cascade to `auth.users`, so the right to erasure is unaffected (cascades are not blocked by RLS).
 > Decision (`ON DELETE SET NULL`, not CASCADE, on `career_items.import_id`): if an import row ever does go, the ITEMS must not go with it. A career item is the user's real experience; the import is only how it arrived, and deleting the paperwork must never delete the history. The column stays nullable for the same reason — a hand-created item has no import, and every item predating this migration has none either.
-> Decision (`source_kind` nullable): specified without NOT NULL and implemented that way. The app always sets it, so a null means a row that did not come through the import flow.
+> Decision (`source_kind` NOT NULL): the app always sets it, so a null could only mean a row that bypassed the import flow. The database forbids that outright rather than leaving it to a convention every future writer has to remember. (Specified without NOT NULL in the first draft and tightened by the owner before 003 was applied — there is no migrated data to reconcile.)
 > Consequence: the Supabase-linter hardening deferred in v2.2 moves from a future `003` to a future `004`.
 
 ### Seed example (core table `career_items`)
