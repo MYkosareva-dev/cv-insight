@@ -194,6 +194,32 @@ test.describe('career base', () => {
     }
   });
 
+  test('every career endpoint refuses a signed-out caller with 401', async ({ request }) => {
+    /**
+     * Edge case S4 and auth rule 3. This is the assertion that matters most in
+     * this file, because middleware CANNOT cover it: the matcher excludes
+     * `/api` by design, since a handler must answer 401 JSON rather than
+     * redirect to an HTML page. That makes `requireApiUser()` in each handler
+     * the ONLY fence in front of these endpoints, and a fence that exists in
+     * exactly one place should be tested rather than read.
+     *
+     * `request` is a fresh API context with no session cookie.
+     */
+    const id = '11111111-1111-1111-1111-111111111111';
+    const responses = [
+      await request.post('/api/career/import', { data: { text: 'x'.repeat(200) } }),
+      await request.post('/api/career/items', { data: { items: [] } }),
+      await request.patch(`/api/career/items/${id}`, { data: { title: 'x' } }),
+      await request.delete(`/api/career/items/${id}`),
+    ];
+
+    for (const res of responses) {
+      expect(res.status(), `${res.url()} must refuse an anonymous caller`).toBe(401);
+      // The canonical Block D shape, not an incidental framework error page.
+      expect((await res.json()).error.code).toBe('UNAUTHORIZED');
+    }
+  });
+
   test('a new account sees the exact empty state', async ({ page }) => {
     await signUp(page, uniqueEmail());
     await expect(page.getByRole('heading', { name: COPY.emptyTitle })).toBeVisible();

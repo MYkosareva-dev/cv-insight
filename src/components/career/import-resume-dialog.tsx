@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { CAREER, CAREER_ITEM_TYPE_LABEL, ERROR_CODES, MAX_PDF_BYTES, SCAN } from '@/lib/copy';
-import { MAX_CAREER_ITEMS } from '@/lib/db/limits';
+import { MAX_CAREER_ITEMS } from '@/lib/limits';
 import type { CareerItemType } from '@/lib/db/types';
 import { fieldErrorsForItem, isPdfUpload, type ItemFieldErrors } from '@/lib/validation';
 
@@ -148,12 +148,20 @@ export function ImportResumeDialog({ itemCount }: { itemCount: number }) {
       setError(CAREER.nothingSelected);
       return;
     }
-    // Every included item must satisfy the Block F bounds before the request.
-    const invalid = selected.some(
-      (item) => Object.keys(fieldErrorsForItem(item)).length > 0,
-    );
-    if (invalid) {
-      setError(CAREER.titleRequired);
+    /**
+     * Every included item must satisfy the Block F bounds before the request.
+     *
+     * The summary line reports the FIRST ACTUAL message, not a fixed one: it used
+     * to say `CAREER.titleRequired` for any violation, so a 4,001-character
+     * content produced "Title is required, max 200 characters." — copy describing
+     * a field that was fine, about a problem it does not name. The per-item inline
+     * errors below were always right; this line was the one lying.
+     */
+    const firstMessage = selected
+      .flatMap((item) => Object.values(fieldErrorsForItem(item)))
+      .find((message): message is string => typeof message === 'string');
+    if (firstMessage) {
+      setError(firstMessage);
       return;
     }
 

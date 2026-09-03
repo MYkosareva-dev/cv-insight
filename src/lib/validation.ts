@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { AUTH, CAREER, SCAN } from '@/lib/copy';
-import { MAX_CAREER_ITEMS } from '@/lib/db/limits';
+import { MAX_CAREER_ITEMS } from '@/lib/limits';
 
 /**
  * Zod schemas shared by the client form and the server that receives it.
@@ -142,18 +142,27 @@ export const importTextSchema = z.object({
 /**
  * The same bound applied to text that came out of a PDF rather than a textarea.
  *
- * A separate schema because the two branches fail differently: a paste that is
+ * A separate function because the two branches fail differently: a paste that is
  * too short is the user's typo and gets the Block F copy, whereas an extraction
  * that is too short means the PDF had no usable text layer — which is 422
  * UNREADABLE_PDF, not 400. `lib/pdf.ts` owns that lower bound; this owns the
  * upper one, where an over-long extraction is truncated rather than refused: the
  * user did nothing wrong, and the first 20,000 characters of a CV are the part
  * that matters.
+ *
+ * It REPORTS the truncation rather than performing it quietly. A silent cut is
+ * the same defect the chunker refuses when it merges overflow instead of dropping
+ * it — part of the user's career history disappears while the result still looks
+ * complete — except here it disappears before the model ever sees it, so the only
+ * symptom would be fewer items than the CV contains and no reason given. The
+ * caller turns the flag into a dialog notice.
  */
-export function importedResumeText(extracted: string): string {
-  return extracted.length > MAX_IMPORT_TEXT_CHARS
-    ? extracted.slice(0, MAX_IMPORT_TEXT_CHARS)
-    : extracted;
+export function importedResumeText(extracted: string): {
+  text: string;
+  truncated: boolean;
+} {
+  if (extracted.length <= MAX_IMPORT_TEXT_CHARS) return { text: extracted, truncated: false };
+  return { text: extracted.slice(0, MAX_IMPORT_TEXT_CHARS), truncated: true };
 }
 
 /**

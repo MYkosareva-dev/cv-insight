@@ -10,7 +10,7 @@ import {
   titleOf,
   withTitle,
 } from '../../src/lib/chunking.ts';
-import { MAX_CAREER_ITEMS, MAX_DOCUMENTS } from '../../src/lib/db/limits.ts';
+import { MAX_CAREER_ITEMS, MAX_DOCUMENTS } from '../../src/lib/limits.ts';
 
 /**
  * The chunker is the one part of indexing a reviewer cannot verify by reading.

@@ -178,6 +178,13 @@ export const CAREER = {
   extract: 'Extract items',
   extracting: 'Reading your resume…',
   importFailed: 'Import failed — try again.',
+  /**
+   * The extraction was bounded before the model saw it (S7). Said out loud
+   * rather than left as "fewer items than my CV has, and no reason given" —
+   * silently dropping part of someone's career history is the same defect the
+   * chunker refuses when it merges overflow instead of discarding it.
+   */
+  truncated: 'This resume is very long — only its first part was read. Check for missing items.',
   /** US-1 step 3: "Review 14 extracted items". */
   reviewHeading: (count: number) => `Review ${count} extracted item${count === 1 ? '' : 's'}`,
   reviewHint: 'Edit anything that looks wrong, then uncheck what you do not want to keep.',

@@ -44,7 +44,7 @@ import {
 export async function POST(request: Request) {
   try {
     const user = await requireApiUser();
-    const resumeText = await readResumeText(request);
+    const { text: resumeText, truncated } = await readResumeText(request);
 
     const { data } = await runChatJson({
       step: 'import_resume',
@@ -66,7 +66,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       items: data.items,
-      notice: data.items.length === 0 ? CAREER.noItemsFound : null,
+      // Two different things a user needs told, in priority order: nothing was
+      // found at all, or something was found but the input was cut short.
+      notice: data.items.length === 0 ? CAREER.noItemsFound : truncated ? CAREER.truncated : null,
     });
   } catch (err) {
     return apiErrorResponse(err);
@@ -79,7 +81,7 @@ export async function POST(request: Request) {
  * multipart → a PDF upload; JSON → pasted text. Anything else is a 400 rather
  * than a crash on a missing field.
  */
-async function readResumeText(request: Request): Promise<string> {
+async function readResumeText(request: Request): Promise<{ text: string; truncated: boolean }> {
   const contentType = request.headers.get('content-type') ?? '';
 
   if (contentType.includes('multipart/form-data')) {
@@ -96,7 +98,7 @@ async function readResumeText(request: Request): Promise<string> {
     if (file.size > MAX_PDF_BYTES) throw new FileTooLargeError(CAREER.fileTooLarge);
 
     const bytes = new Uint8Array(await file.arrayBuffer());
-    return importedResumeText(await extractPdfText(bytes));
+    return importedResumeText(await extractPdfText(bytes));  // reports truncation
   }
 
   let body: unknown;
@@ -111,5 +113,8 @@ async function readResumeText(request: Request): Promise<string> {
     // The schema's own message, which is the Block F copy the field renders.
     throw new ValidationError(parsed.error.issues[0]?.message ?? CAREER.importFailed);
   }
-  return parsed.data.text;
+  // A paste is bounded by the schema itself, so it is never truncated here: an
+  // over-long paste is a 400 the user can act on, and only the PDF branch has an
+  // input the user did not type.
+  return { text: parsed.data.text, truncated: false };
 }

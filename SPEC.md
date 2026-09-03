@@ -111,8 +111,9 @@ cv-insight/
 │   │   ├── pricing.ts           # the price table + micro-USD math. Pure, NOT server-only: it
 │   │   │                        # had to be testable, and tests/ is in R6 scope so a test can
 │   │   │                        # never import the connection where this used to live
-│   │   ├── db/limits.ts         # the two B9 ceilings as plain numbers — validation.ts needs them
-│   │   │                        # on the CLIENT and cannot import a server-only DAL
+│   │   ├── limits.ts            # the two B9 ceilings as plain numbers — validation.ts needs them
+│   │   │                        # on the CLIENT and cannot import a server-only DAL. In lib/ and
+│   │   │                        # NOT lib/db/: a file a client imports must not sit in the DAL dir
 │   │   ├── auth/requireApiUser.ts # API-side gate twin: getUser() → throws UnauthorizedError (401)
 │   │   ├── auth/actions.ts      # Server Actions: signUp / signIn / signOut (no browser Supabase client)
 │   │   ├── supabase/admin.ts    # the ONE service-role client — imported ONLY by DELETE /api/account

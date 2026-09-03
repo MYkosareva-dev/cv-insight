@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server';
 import { requireApiUser } from '@/lib/auth/requireApiUser';
 import { CAREER, ERROR_MESSAGES } from '@/lib/copy';
 import { MAX_CAREER_ITEMS, countCareerItems, insertCareerItems } from '@/lib/db/careerItems';
+import { MAX_CHUNKS_PER_ITEM } from '@/lib/chunking';
 import { MAX_DOCUMENTS, countDocuments } from '@/lib/db/documents';
 import { ValidationError, apiErrorResponse } from '@/lib/errors';
 import { indexCareerItems } from '@/lib/retrieval';
@@ -120,7 +121,13 @@ async function assertUnderB9(incoming: number): Promise<void> {
   if (items + incoming > MAX_CAREER_ITEMS) {
     throw new ValidationError(CAREER.limitReached);
   }
-  if (documents >= MAX_DOCUMENTS) {
+  // Accounts for what this batch will ADD, not just what is already stored.
+  // `documents >= MAX_DOCUMENTS` would let a 14-item save land 527 rows from a
+  // starting point of 499 — a net that only catches an overshoot after it has
+  // happened is not a net. Unreachable while MAX_CHUNKS_PER_ITEM holds the
+  // relation (200 x 2 = 400), which is exactly why it must stay correct on its
+  // own terms: if that constant ever changes, this is what fails first.
+  if (documents + incoming * MAX_CHUNKS_PER_ITEM > MAX_DOCUMENTS) {
     throw new ValidationError(ERROR_MESSAGES.DOCUMENT_LIMIT);
   }
 }

@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { costUsdMicro } from '@/lib/pricing';
+import { costUsdMicro, normalizeModelId } from '@/lib/pricing';
 
 /**
  * CONNECTION module.
@@ -185,16 +185,28 @@ export class OpenRouterUsageError extends OpenRouterError {
 }
 
 /**
- * The model slug without a routing suffix.
+ * Did the FALLBACK model serve this call, rather than the primary?
  *
- * OpenRouter may answer with a variant of the model that was asked for
- * (`…haiku-4.5:beta`, a dated snapshot). That is the SAME model serving, not the
- * fallback, and reporting `fallback_used=true` for it would corrupt the fallback
- * rate on /quality — the one number that tells the owner the primary model is
- * having a bad day.
+ * Compared through `normalizeModelId` — the same normalization the price lookup
+ * uses, and for the same reason. Two ways a naive comparison lies:
+ *   - a routing suffix (`…haiku-4.5:beta`, a dated snapshot) is the SAME model
+ *     serving, not the fallback;
+ *   - a provider namespace may simply be absent from the response. That is not
+ *     hypothetical: the embeddings endpoint demonstrably echoes
+ *     `text-embedding-3-small` for a request sent as
+ *     `openai/text-embedding-3-small`, which is exactly how the price table came
+ *     to miss on every embed row. If the chat endpoint ever does the same, a
+ *     prefix-sensitive comparison would report `fallback_used=true` on every
+ *     successful primary call.
+ *
+ * That second failure is worse than the price one it mirrors. A missed price at
+ * least announces itself through `cost_known=false`; a wrong fallback flag is
+ * indistinguishable from the truth, so /quality's fallback rate — the one number
+ * that says the primary model is having a bad day — would read 100% with nothing
+ * anywhere to contradict it.
  */
-function baseSlug(model: string): string {
-  return model.split(':')[0] ?? model;
+function isFallback(servedModel: string, primaryModel: string): boolean {
+  return normalizeModelId(servedModel) !== normalizeModelId(primaryModel);
 }
 
 /** Authorization header. The key is read here and nowhere else in this module. */
@@ -305,7 +317,7 @@ export async function chatCompletion(args: {
       status: res.status,
       usage: {
         model: served,
-        fallbackUsed: baseSlug(served) !== baseSlug(primaryModel),
+        fallbackUsed: isFallback(served, primaryModel),
         tokensIn,
         tokensOut,
       },
@@ -317,7 +329,7 @@ export async function chatCompletion(args: {
   return {
     data: content,
     model: served,
-    fallbackUsed: baseSlug(served) !== baseSlug(primaryModel),
+    fallbackUsed: isFallback(served, primaryModel),
     tokensIn,
     tokensOut,
     costUsdMicro: cost,

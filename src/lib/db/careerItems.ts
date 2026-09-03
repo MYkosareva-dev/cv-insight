@@ -14,11 +14,11 @@ import type { CareerItem } from '@/lib/db/types';
  */
 
 /**
- * SPEC rule B9: <= 200 career_items per user. Defined in `lib/db/limits.ts` and
+ * SPEC rule B9: <= 200 career_items per user. Defined in `lib/limits.ts` and
  * re-exported here, because `lib/validation.ts` needs the same number on the
  * client and cannot import a `server-only` module.
  */
-export { MAX_CAREER_ITEMS } from '@/lib/db/limits';
+export { MAX_CAREER_ITEMS } from '@/lib/limits';
 
 export async function listCareerItems(): Promise<CareerItem[]> {
   const supabase = await createClient();
