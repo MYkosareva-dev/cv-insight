@@ -38,6 +38,72 @@ run" is not observable from here. What IS observable is the number of versions a
 run wrote (below), the request count for a double-clicked button, and every
 verdict the judge returned. The row count is the owner query in the hand-over.
 
+
+===========================================================================
+RE-RUN AFTER THE OWNER-TESTING ROUND (SPEC v2.17)
+===========================================================================
+
+Command:      npx playwright test
+Date:         2026-09-04 UTC
+Commit:       (this run) fix(settings): a profile that cannot be read is said,
+              not thrown
+Result:       31 passed, 2 skipped.
+
+The two skips are both VISIBLE and both say why:
+
+  -  23  generate > a saved display name becomes the resume name line and the
+         file name
+         SKIPPED: needs migration 004_profiles.sql applied in the Supabase
+         dashboard. It probes by performing the feature's own first save, so it
+         cannot drift from what it guards, and it starts running by itself the
+         moment the table exists. Until the owner applies 004, THE DISPLAY-NAME
+         FEATURE IS UNWITNESSED end to end (backlog p4-19).
+  -  33  scan > an AI failure saves the vacancy as a draft and says so
+         The documented pre-existing skip: it needs a server started with a
+         deliberately invalid OPENROUTER_API_KEY.
+
+What the phase-4 diagnostics said on this run:
+
+  [phase-4] run: {"versions":2,"autoRevised":true,"revisionNotBetter":false,
+                  "revisionWithheld":false,
+                  "verdicts":[{"source":"ai","verdict":"revise","grounding":"fail","violations":3},
+                              {"source":"ai_revision","verdict":"revise","grounding":"fail","violations":3}]}
+  [phase-4] header: {"literalNamePlaceholder":false,"namePlaceholder":true}
+  [phase-4] rescore: {"stored":"57%","live":"56%","entries":8}
+  [phase-4] grounding gate: {"verdict":"revise","grounding":"fail","violations":5,
+                             "scores":{"keywordCoverage":3,"relevance":1,"atsFormat":4}}
+
+  * `namePlaceholder: true` is the v2.17 fix observed working. No display name is
+    saved on this path, so the resume's name line is the VISIBLE `[YOUR NAME]`
+    placeholder — not the vacancy's job title, which is what owner testing found
+    there, and not a silent substitution. The test now asserts it rather than
+    logging a boolean that could not fail: it checks the first line is not
+    "Data Annotator", that the draft contains the placeholder, that the editor
+    says so, that the filename is not `CV_Data_Annotator_…`, and that the
+    download raises the warning. `literalNamePlaceholder` (P2's own layout token
+    `NAME`) stays false and is now measured by a regex that can actually match.
+  * The judge panel's base gate is asserted ON THE RENDERED SCREEN: nothing under
+    "Supported by your base, missing from the resume" may name Labelbox,
+    Supervisely, MS Office or Google Suite, none of which this fixture's base
+    contains. That is the owner's own defect, and it now fails a test rather than
+    a reading.
+  * `rescore: 57% -> 56%` — the live number moved DOWN this time, which is worth
+    recording beside the earlier 65% and 62%: the delta is not a quality signal
+    and is not attributable to the edit alone (see the corpus note above and
+    backlog p4-11).
+
+A NOTE ON TWO EARLIER RUNS OF THIS SUITE THAT FAILED, and why they are not in
+this file as failures. Both were run against a dev server left ORPHANED by
+stopping an earlier Playwright run mid-flight: `reuseExistingServer` picked the
+broken process back up, and it was by then logging Turbopack worker crashes and
+`write EPIPE`. Twelve auth and career tests failed on routes that touch nothing
+this round changed, `/generate` answered 500 where it answers 401, and the whole
+US-4/US-5 path took 10.4 minutes instead of 54 seconds. Killing that server by
+its PID and re-running gave the result above with no code change. Recorded
+because the first reading of those failures was "a regression in this branch",
+and it was not - it was the test harness, and the way to tell was to reproduce
+one failure by hand rather than to read the list.
+
 ---------------------------------------------------------------------------
 RESULT
 ---------------------------------------------------------------------------
