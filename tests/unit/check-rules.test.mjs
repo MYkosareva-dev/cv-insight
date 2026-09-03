@@ -126,6 +126,65 @@ describe('scripts/check.mjs — the gate the other gates rest on', () => {
     assert.equal(status, 1, 'a failed purge run unlocked the 90-day claim');
   });
 
+  test('R12 is not satisfied by PROSE that merely contains the word succeeded', () => {
+    // This is the case the test above was NAMED for and did not cover: it passed
+    // only because its fixture happened not to contain the substring. A substring
+    // test for "succeeded" is satisfied by a file saying the opposite.
+    const dir = sandbox();
+    makeStrongClaim(dir);
+    write(
+      dir,
+      EVIDENCE,
+      'The job has NOT succeeded yet: permission denied for table audit_log_entries.\n',
+    );
+    const { status } = run(dir);
+    assert.equal(status, 1, '"has NOT succeeded" unlocked the claim — the predicate is a substring');
+  });
+
+  test('R12 accepts an anchored status line among other output', () => {
+    const dir = sandbox();
+    makeStrongClaim(dir);
+    write(
+      dir,
+      EVIDENCE,
+      '# purge run\n\n```\n jobid | status    | end_time\n```\n' +
+        'status: succeeded\nend_time: 2026-09-03 03:00:07+00\n',
+    );
+    const { status, stderr } = run(dir);
+    assert.equal(status, 0, `an anchored succeeded line must unlock the claim:\n${stderr}`);
+  });
+
+  /**
+   * M1/M2 from the phase-1 code review, as fixtures. R12's first version keyed the
+   * noun on "audit" and the period on the literal "90 days"; all three of these
+   * shipped a fully-formed retention promise past it, exit 0.
+   */
+  for (const [label, sentence] of [
+    [
+      'the phrase the app itself ships ("authentication records", no "audit")',
+      'in our EU database for 90 days; these are not removed when you',
+    ],
+    ['a hyphenated singular period ("90-day")', 'in our EU database on a 90-day retention schedule; these are not removed when you'],
+    ['a spelled-out period ("ninety days")', 'in our EU database for ninety days; these are not removed when you'],
+    ['a different unit ("three months")', 'in our EU database for three months; these are not removed when you'],
+  ]) {
+    test(`R12 FAILS on ${label}`, () => {
+      const dir = sandbox();
+      const before = read(dir, PRIVACY);
+      const after = before
+        .replace(
+          /in our EU database for security purposes; these are not removed when you/,
+          sentence,
+        )
+        .replace(/authentication audit records/g, 'authentication records');
+      assert.notEqual(after, before, 'fixture failed to rewrite the paragraph');
+      write(dir, PRIVACY, after);
+      const { status, stderr } = run(dir);
+      assert.equal(status, 1, `a retention promise shipped unguarded: ${label}`);
+      assert.match(stderr, /R12/);
+    });
+  }
+
   test('R12 follows the claim into another file — the allow-list would have missed this', () => {
     // The realistic regression: someone lifts the paragraph into a component.
     const dir = sandbox();
@@ -227,6 +286,27 @@ describe('scripts/check.mjs — the gate the other gates rest on', () => {
     );
     const { status, stderr } = run(dir);
     assert.equal(status, 1, 'a far-off "are deleted" must not exempt an unrelated stale path');
+    assert.match(stderr, /env\.ts/);
+  });
+
+  test('R13 resolves paths CASE-SENSITIVELY, so a green tree here is green on Linux', () => {
+    // existsSync is case-insensitive on NTFS/APFS. Without an explicit walk this
+    // passes on the author's machine and fails on the Vercel builder — and check
+    // is prebuild, so that is a green local tree and a red deploy.
+    const dir = sandbox();
+    write(dir, 'docs/case.md', docNote('the client lives in `src/lib/Supabase/Server.ts`.'));
+    const { status, stderr } = run(dir);
+    assert.equal(status, 1, 'a mis-cased path must fail here, as it would on Linux');
+    assert.match(stderr, /R13/);
+  });
+
+  test('R13 sees a path sitting after a bare // in markdown prose', () => {
+    // `//` is not a comment in markdown. The shared stripComments blanked the rest
+    // of the line, hiding any stale path behind one.
+    const dir = sandbox();
+    write(dir, 'docs/slashes.md', docNote('ratio 1//2 — see `lib/supabase/env.ts` for the guard.'));
+    const { status, stderr } = run(dir);
+    assert.equal(status, 1, 'a stale path hid behind a bare // in markdown');
     assert.match(stderr, /env\.ts/);
   });
 

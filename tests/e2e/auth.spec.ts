@@ -317,8 +317,12 @@ test.describe('auth', () => {
     );
     // No retention PERIOD here, ever — one retention story, told on /privacy.
     // Asserted as an absence so re-adding a number fails here as well as in R12.
-    await expect(dialog).not.toContainText('90 days');
-    await expect(dialog).not.toContainText(/\d+\s*(?:days|months|years)/);
+    // The pattern mirrors R12's: hyphenated or spaced, singular or plural, digits
+    // or words. The first version was /\d+\s*(?:days|months|years)/, which missed
+    // "90-day" (hyphen, singular) — the same hole the rule itself had.
+    const PERIOD =
+      /(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fourteen|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)[-\s]*(?:day|week|month|year)s?\b/i;
+    await expect(dialog).not.toContainText(PERIOD);
 
     // Confirm stays disabled until the word matches EXACTLY.
     const confirm = dialog.getByRole('button', { name: 'Delete account', exact: true });

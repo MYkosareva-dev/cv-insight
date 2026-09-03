@@ -135,12 +135,22 @@ const rel = (abs) => path.relative(ROOT, abs).split(path.sep).join('/');
 const files = walk(ROOT);
 const failures = [];
 
-/** Strip block and line comments, so prose about a rule never trips it. */
-function stripComments(text) {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
-    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+/**
+ * Strip block and line comments, so prose about a rule never trips it.
+ *
+ * `//` is NOT a comment in markdown. Applying the line-comment pass to a .md file
+ * blanked everything after any bare `//` in prose, which hid the rest of the line
+ * from R13 — a stale path could sit behind one and never be seen. Block comments
+ * stay stripped for .md, because SPEC and CLAUDE quote code samples that contain
+ * them and other rules read those files.
+ */
+function stripComments(text, isMarkdown = false) {
+  const noBlocks = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+  if (isMarkdown) return noBlocks;
+  return noBlocks.replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
+
+const isMarkdown = (abs) => rel(abs).endsWith('.md');
 
 /**
  * Per-line rule. The matcher sees the comment-stripped line, the file, and the
@@ -155,7 +165,7 @@ function scanLines(label, predicate, matcher) {
   for (const abs of files.filter(predicate)) {
     const text = readFileSync(abs, 'utf8');
     const raw = text.split(/\r?\n/);
-    const stripped = stripComments(text).split(/\r?\n/);
+    const stripped = stripComments(text, isMarkdown(abs)).split(/\r?\n/);
     raw.forEach((line, i) => {
       const verdict = matcher(stripped[i] ?? '', abs, stripped, i);
       if (!verdict) return;
@@ -171,7 +181,7 @@ function scanFiles(label, predicate, matcher) {
   const hits = [];
   for (const abs of files.filter(predicate)) {
     const raw = readFileSync(abs, 'utf8');
-    const reason = matcher(raw, stripComments(raw), abs);
+    const reason = matcher(raw, stripComments(raw, isMarkdown(abs)), abs);
     if (reason) hits.push(`${rel(abs)}: ${reason}`);
   }
   if (hits.length) failures.push({ label, hits });
@@ -471,26 +481,46 @@ scanLines(
 //      Matched on comment-STRIPPED text, so the block comment archiving the strong
 //      sentence (and this rule's own prose) never trips it — what a reader sees is
 //      what is judged.
-//      The evidence file must CONTAIN 'succeeded': `touch`ing an empty file would
-//      otherwise unlock the strongest privacy claim in the app, which would make this
-//      rule the same species of paper mechanism it exists to prevent.
+//      FAIL-CLOSED AND DELIBERATELY OVER-INCLUSIVE (SPEC v2.8). The first version
+//      keyed the noun on the word "audit" and the period on the literal "90 days".
+//      Both were too narrow, and the gap was not hypothetical: the app's own shipped
+//      dialog says "Some AUTHENTICATION records", which a rule looking for "audit"
+//      cannot see, and "90-day" is not "90 days". A rule that only recognises one
+//      blessed sentence protects that sentence, not the claim.
+//      So: ANY period expression near ANY of this app's retention vocabulary. If it
+//      over-matches somewhere benign, rephrase the copy or add the evidence — do NOT
+//      narrow the rule. A false positive costs one edit; a false negative ships a
+//      promise nothing performs.
+//      The evidence file must contain a line matching `status: succeeded`, ANCHORED.
+//      A substring test for "succeeded" was satisfied by a file reading "has NOT
+//      succeeded", which is the same species of paper mechanism this rule exists to
+//      prevent.
 const RETENTION_EVIDENCE = 'docs/eval/audit-retention-evidence.md';
-const RETENTION_NOUN = 'audit\\s+(?:records|logs?|trail|entries)';
+/** The vocabulary this app actually uses for the thing being retained. */
+const RETENTION_NOUN = '(?:audit|authentication\\s+record|retention|log\\s+entr)';
+/** number + unit: digits or words, hyphenated or spaced, singular or plural. */
+const PERIOD_WORD =
+  '(?:one|two|three|four|five|six|seven|eight|nine|ten|twelve|fourteen|fifteen|twenty|' +
+  'thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)';
+const PERIOD = `(?:\\d+|${PERIOD_WORD})[-\\s]*(?:day|week|month|year)s?\\b`;
+const RETENTION_EVIDENCE_LINE = /^\s*status\s*:\s*succeeded\b/im;
 scanFiles(
-  `R12 the 90-day audit-retention claim ships without ${RETENTION_EVIDENCE}`,
+  `R12 an audit-retention period ships without ${RETENTION_EVIDENCE}`,
   (abs) => (rel(abs).startsWith('src/') && CODE_EXT.test(rel(abs))) || rel(abs) === 'README.md',
   (raw, stripped) => {
     // The noun and the period within one sentence-ish window, either order.
     const claim =
-      new RegExp(`${RETENTION_NOUN}[\\s\\S]{0,300}?90 days`, 'i').test(stripped) ||
-      new RegExp(`90 days[\\s\\S]{0,300}?${RETENTION_NOUN}`, 'i').test(stripped);
+      new RegExp(`${RETENTION_NOUN}[\\s\\S]{0,300}?${PERIOD}`, 'i').test(stripped) ||
+      new RegExp(`${PERIOD}[\\s\\S]{0,300}?${RETENTION_NOUN}`, 'i').test(stripped);
     if (!claim) return null;
     const evidence = path.join(ROOT, RETENTION_EVIDENCE);
-    if (existsSync(evidence) && /succeeded/i.test(readFileSync(evidence, 'utf8'))) return null;
+    if (existsSync(evidence) && RETENTION_EVIDENCE_LINE.test(readFileSync(evidence, 'utf8'))) {
+      return null;
+    }
     return (
-      'promises a 90-day audit-record retention that nothing has been shown to perform - ' +
+      'states an audit-retention period that nothing has been shown to perform - ' +
       `either use the SPEC fallback wording or add ${RETENTION_EVIDENCE} ` +
-      "containing a 'succeeded' row from cron.job_run_details, in this same commit"
+      "with a 'status: succeeded' line from cron.job_run_details, in this same commit"
     );
   },
 );
@@ -527,12 +557,36 @@ const DOC_PATH_PREFIXES = /^(?:src|lib|scripts|tests|supabase|docs|app|component
 const DOC_ROOT_FILES = /^(?:README|SPEC|CLAUDE|package|next\.config|eslint\.config|tsconfig)\./;
 const DELETED_MARKER = /\b(?:was|is|were|are)\s+deleted\b|\bdeleted\s+in\s+Phase\b/i;
 
-/** Resolve a path that may carry a `*` segment (e.g. `lib/db/*`). */
+/**
+ * Does this repo-relative path exist, matching CASE exactly?
+ *
+ * `existsSync` alone is case-insensitive on NTFS and APFS, so a doc naming
+ * `src/lib/Supabase/Server.ts` passed on the author's machine and would fail the
+ * same check on Vercel's Linux builder — and `check` is `prebuild`, so that is a
+ * green local tree and a red deploy. Walking the segments and comparing against
+ * the real directory entries makes the rule mean the same thing everywhere.
+ */
+function existsCaseSensitive(relPath) {
+  const segments = relPath.split('/').filter((s) => s.length > 0 && s !== '.');
+  let dir = ROOT;
+  for (let i = 0; i < segments.length; i += 1) {
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return false;
+    }
+    if (!entries.includes(segments[i])) return false;
+    dir = path.join(dir, segments[i]);
+  }
+  return segments.length > 0;
+}
+
+/** Resolve a path that may carry a `*` segment (e.g. `src/app/api/*\/route.ts`). */
 function resolvesInTree(p) {
-  const abs = path.join(ROOT, p);
-  if (!p.includes('*')) return existsSync(abs);
+  if (!p.includes('*')) return existsCaseSensitive(p);
   const parent = p.slice(0, p.indexOf('*')).replace(/\/[^/]*$/, '');
-  return parent.length > 0 && existsSync(path.join(ROOT, parent));
+  return parent.length > 0 && existsCaseSensitive(parent);
 }
 
 scanLines(
