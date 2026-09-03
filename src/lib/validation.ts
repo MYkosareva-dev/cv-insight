@@ -195,3 +195,43 @@ export const patchCareerItemSchema = z
   .refine((patch) => Object.keys(patch).length > 0, { message: 'Nothing to update.' });
 
 export type PatchCareerItem = z.infer<typeof patchCareerItemSchema>;
+
+/** Which fields of a career item can carry an inline message (Block F). */
+export type ItemFieldErrors = Partial<Record<'title' | 'content', string>>;
+
+/**
+ * Field → first error message for ONE career item, for the review list and the
+ * Edit dialog.
+ *
+ * The client twin of the server parse, exactly as `fieldErrorsOf` is for the auth
+ * form and for the same split of duties: this blocks the submit and renders the
+ * Block F string inline, while the route handler's parse is the actual gate. Both
+ * run the SAME schema, so the message a test asserts on is the message the field
+ * shows — and neither can drift from `career_items`' CHECK constraints, since the
+ * bounds are those constraints.
+ *
+ * Without it the DB check answers instead, and a 4,001-character item comes back
+ * as a Postgres constraint error the user cannot act on.
+ */
+export function fieldErrorsForItem(item: {
+  type: string;
+  title: string;
+  content: string;
+  period: string | null;
+}): ItemFieldErrors {
+  const result = extractedItemSchema.safeParse({
+    ...item,
+    // An empty period box means "no period", not an empty string.
+    period: item.period === null || item.period.trim() === '' ? null : item.period,
+  });
+  if (result.success) return {};
+
+  const errors: ItemFieldErrors = {};
+  for (const issue of result.error.issues) {
+    const field = issue.path[0];
+    if ((field === 'title' || field === 'content') && !errors[field]) {
+      errors[field] = issue.message;
+    }
+  }
+  return errors;
+}
