@@ -481,6 +481,19 @@ kept and the backlog line already exists — **p3-8**, which threads an applicat
 id through the scan's embedding calls so a run's spend is fully attributable.
 Rule B8 holds as written; what is missing is the link, not the log.
 
+## Also from the round — a hydration mismatch on `<html>`
+
+Owner testing hit a hydration mismatch caused by browser extensions
+(LanguageTool, Grammarly) writing attributes onto `<html>` before React
+hydrates: the server markup and the client DOM differ on an element the app does
+not control. `suppressHydrationWarning` is now on that element and nowhere else
+in the layout (`0a42493`) — the framework's own remedy, and narrow, since the
+flag covers one level of attributes rather than the tree. Not on `<body>` and not
+in a component, where it would silence the mismatches the app IS responsible for.
+The docblock names the one other element that carries the flag — the `<time>`
+cell whose server and viewer timezones differ by design (edge case T1) — so the
+comment stays true against a grep.
+
 ## Gates after the round
 
 - `node scripts/check.mjs` → **13/13**, unchanged (no new enforcement rule).
@@ -496,3 +509,79 @@ Rule B8 holds as written; what is missing is the link, not the log.
   `COVERAGE_THRESHOLD` now (`fa9269d`), along with two other places that kept a
   private copy of a calibrated number, including the probe route itself, which
   would otherwise have reported the thresholds its own calibration replaced.
+
+## Process — a rule broken in the session that committed it
+
+Recorded because a review that lists only code defects hides the failure mode
+that actually costs time. This one cost the owner a rule amendment and could have
+cost them a running process.
+
+**What happened.** Earlier in the same session, at the owner's instruction, the
+agent committed a new CLAUDE.md Process rule (`a123fc9`): *"Never terminate
+processes by image name (`taskkill /IM`, `killall`, `pkill -f node`). Stop only
+the processes this session started, by their own PID or through the runner that
+started them. The machine runs other work."*
+
+Roughly an hour later, needing to stop the broken-key dev server on port 3100
+before running the production build, the agent ran a PowerShell filter that
+selected processes by **command-line pattern plus an age window** — anything
+whose command line matched `*next*dev*3100*` or `*start-server*` and had started
+in the previous ten minutes — and stopped the eight PIDs it returned.
+
+**Why that is the same defect the rule forbids.** The rule names `taskkill /IM`
+and `pkill -f` as examples, and the reasoning it gives is the whole rule: *the
+machine runs other work*. A command-line pattern is not a narrower instrument
+than an image name — it is the same instrument with a different string in it. In
+both cases the set of processes to be killed is **inferred** rather than known,
+so the blast radius depends on what else happens to be running, which is exactly
+the property the rule exists to remove. The agent had the correct information
+available and did not use it: the two dev servers were started through the
+session's own background-task runner, which reports a task id, and the one
+orphaned child's PID (22900) had already been identified from the lock file and
+verified by creation time before being stopped individually — the right way,
+done immediately before the wrong way.
+
+**How it was caught: self-reported.** No hook, no check, no reviewer. The agent
+noticed while reading its own command output that the filter had matched more
+PIDs than it expected, and one of the `Stop-Process` calls had already failed
+with *"Cannot find a process with the process identifier 7484"* — the signature
+of a set that was guessed rather than known. It then enumerated the surviving
+`node` processes to establish what had actually been hit, and reported the
+mistake in its verdict to the owner rather than leaving a green gate summary to
+speak for the session.
+
+**What the blast radius actually was.** Every process the filter matched was
+`node` started inside that ten-minute window: the port-3100 dev server and its
+compile workers, plus the remains of the port-3000 server. The only `node`
+process left running afterwards was an unrelated Adobe Creative Cloud helper
+started at 16:21, which the age window excluded. Nothing of the owner's was
+stopped — but that is a fact established **after** the fact, by inspection. Had
+the owner's own `next dev`, a test run or a long build been in that window, the
+same command would have taken it, and the agent would have had no way to know it
+had.
+
+**The amendment** (`977ec05`), appended verbatim immediately after the rule it
+repairs:
+
+> - When you start a long-running process, record its PID at the moment you start
+>   it and stop it by that PID. Selecting processes to kill by a command-line
+>   pattern is the same mistake as selecting them by image name: the pattern is a
+>   guess about what else is running.
+
+Two things make this worth more than an apology. First, the original rule stated
+the *conclusion* ("not by image name") and left the *principle* implicit, and an
+implicit principle is a rule that only covers the spellings someone thought of —
+the same shape as the stale-annotation and configured-mechanism failures this
+repo already legislates against. The amendment states the principle, so the next
+spelling is covered too. Second, the fix is cheap and available at the only
+moment it is reliable: a PID is knowable when the process starts and is a guess
+ever after.
+
+**Related, and not the same.** Two other process-adjacent facts from this session,
+recorded so nobody reads them as part of the above: Next 16 permits one dev server
+per directory, so the port-3000 server had to be stopped before the broken-key
+server could start — that is why a stop was needed at all; and stopping a
+background task through the session runner killed the `npm run dev` wrapper while
+leaving its `next dev` child alive, which is what produced the orphan in the first
+place. A runner-level stop is not always a process-tree stop, and the PID of the
+child is the thing worth recording.
