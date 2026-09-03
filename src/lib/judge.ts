@@ -143,6 +143,37 @@ export function bestVersion<T extends { judge: Rubric | null }>(original: T, rev
 }
 
 /**
+ * Which stored version the editor OPENS with, given the rows newest-first.
+ *
+ * It exists so that a reload shows the same draft the generate response did. The
+ * newest row is not the answer: a run that revised inserts `ai` then
+ * `ai_revision`, and `bestVersion` may well choose the ORIGINAL — so reading
+ * "the latest version" would swap the text under the user between the response
+ * and their next visit, with the judge card still describing the other one.
+ *
+ * The user's own edit wins outright when it is the newest row. It is the only
+ * version they wrote, it is what they last saw, and no rubric comparison applies
+ * to it — [Check quality] and the export are the two ways it gets there, and
+ * both are deliberate acts.
+ *
+ * Ordering is by `created_at desc`, so the `ai_revision`/`ai` pair of one run are
+ * adjacent. Two inserts in the same run could in principle share a timestamp and
+ * come back in either order; the pair is then compared the same way whichever way
+ * round it arrives, because `bestVersion` is symmetric on grounding and breaks a
+ * rubric tie toward the revision.
+ */
+export function openingVersion<T extends { source: 'ai' | 'ai_revision' | 'user'; judge: Rubric | null }>(
+  versionsNewestFirst: readonly T[],
+): T | null {
+  const newest = versionsNewestFirst[0];
+  if (!newest) return null;
+  if (newest.source !== 'ai_revision') return newest;
+  const previous = versionsNewestFirst[1];
+  if (!previous || previous.source !== 'ai') return newest;
+  return bestVersion(previous, newest);
+}
+
+/**
  * The two Block E category bars the judge owns, as issue counts.
  *
  * `null` is the THIRD state and is not a zero: no judge report means the check

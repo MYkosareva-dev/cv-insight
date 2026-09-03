@@ -4,6 +4,7 @@ import test, { describe } from 'node:test';
 import {
   COVERAGE_THRESHOLD,
   SIMILARITY_FLOOR,
+  cosineSimilarity,
   SIMILARITY_SPAN,
   coverageStatusFor,
   insufficientSignal,
@@ -746,5 +747,45 @@ describe('literalKeywords applied to requirement terms (B1a, v2.15)', () => {
       missingLexicalTerm({ evidence: 'tool', terms: kept, baseText: 'I used Supervisely daily' }),
       null,
     );
+  });
+});
+
+describe('cosineSimilarity — the re-score corpus is not in Postgres', () => {
+  /**
+   * `/api/applications/[id]/rescore` measures the requirements against the
+   * resume in the EDITOR, which has never been stored and must not be. So the
+   * comparison happens in process instead of through `match_documents`, and it
+   * has to land on the SAME scale — rule B1's thresholds are calibrated against
+   * pgvector's `1 - (a <=> b)`, and would mean nothing on another one.
+   */
+  test('identical vectors score 1', () => {
+    assert.equal(cosineSimilarity([1, 2, 3], [1, 2, 3]), 1);
+  });
+
+  test('is scale-invariant, like cosine distance', () => {
+    assert.equal(cosineSimilarity([1, 2, 3], [2, 4, 6]), 1);
+  });
+
+  test('orthogonal vectors score 0', () => {
+    assert.equal(cosineSimilarity([1, 0], [0, 1]), 0);
+  });
+
+  test('opposite vectors score -1, and rule B1 floors that at 0', () => {
+    assert.equal(cosineSimilarity([1, 0], [-1, 0]), -1);
+    // The floor is what stops a negative similarity becoming a negative score.
+    assert.equal(normalizeSimilarity(-1), 0);
+    assert.equal(isCovered(-1), false);
+  });
+
+  test('a zero vector scores 0 rather than NaN', () => {
+    // NaN would flow through normalizeSimilarity and out the other side as a
+    // score — a number nobody measured, rendered as one.
+    assert.equal(cosineSimilarity([0, 0], [1, 1]), 0);
+    assert.ok(!Number.isNaN(cosineSimilarity([0, 0], [1, 1])));
+  });
+
+  test('mismatched lengths score 0 rather than comparing what happens to line up', () => {
+    assert.equal(cosineSimilarity([1, 2, 3], [1, 2]), 0);
+    assert.equal(cosineSimilarity([], []), 0);
   });
 });

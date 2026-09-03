@@ -587,6 +587,14 @@ export const RESULT = {
   revisionNotBetter: 'The rewrite did not improve on the first draft, so this is the first draft.',
   versionsHeading: 'Versions',
   versionLabel: { ai: 'AI draft', ai_revision: 'AI revision', user: 'Your edit' },
+  /**
+   * A version the reviewer approved, and one it did not. Not "Failed": rule B2's
+   * grounding failure and a criterion scoring 2 both land on `revise`, and only
+   * one of them is a factual problem — the row says the verdict, and the card
+   * above says which of the four criteria produced it.
+   */
+  versionApproved: 'Approved',
+  versionNeedsWork: 'Needs work',
 
   // --- re-score (US-5 step 2) ---
   /**

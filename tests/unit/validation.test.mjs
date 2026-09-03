@@ -3,13 +3,16 @@ import test, { describe } from 'node:test';
 
 import { AUTH, RESULT, SCAN, VACANCY_LENGTH } from '../../src/lib/copy.ts';
 import {
+  MAX_RESUME_CHARS,
   MAX_SCAN_RESUME_CHARS,
   credentialsSchema,
   fieldErrorsOf,
+  judgeReportSchema,
   parsedVacancySchema,
   patchApplicationSchema,
   isRescanBody,
   rescanSchema,
+  resumeContentSchema,
   scanResumeText,
   scanSchema,
 } from '../../src/lib/validation.ts';
@@ -261,5 +264,94 @@ describe('patchApplicationSchema — Block D #8', () => {
 
   test('a status outside the enum is refused', () => {
     assert.equal(patchApplicationSchema.safeParse({ status: 'ghosted' }).success, false);
+  });
+});
+
+describe('judgeReportSchema — P3 output', () => {
+  const full = {
+    grounding: { verdict: 'pass', violations: [] },
+    keywordCoverage: { score: 4, missingHonest: ['Docker'] },
+    relevance: { score: 5, evidence: 'top third' },
+    atsFormat: { score: 5, issues: [] },
+    verdict: 'approve',
+    feedbackForGenerator: [],
+  };
+
+  test('a full report survives unchanged', () => {
+    const parsed = judgeReportSchema.parse(full);
+    assert.equal(parsed.grounding.verdict, 'pass');
+    assert.deepEqual(parsed.keywordCoverage.missingHonest, ['Docker']);
+  });
+
+  test('a missing ARRAY is the nit class — accepted as empty', () => {
+    // A reviewer with nothing to report often omits `violations` rather than
+    // emitting `[]`, and burning the one repair retry on that would end a
+    // perfectly good review in a 502 (backlog `n-1`).
+    const parsed = judgeReportSchema.parse({
+      ...full,
+      grounding: { verdict: 'pass' },
+      atsFormat: { score: 5 },
+      keywordCoverage: { score: 4 },
+    });
+    assert.deepEqual(parsed.grounding.violations, []);
+    assert.deepEqual(parsed.atsFormat.issues, []);
+    assert.deepEqual(parsed.keywordCoverage.missingHonest, []);
+  });
+
+  test('a missing CRITERION is refused, not defaulted to a passing score', () => {
+    // Defaulting would print a score on the judge card for a question the
+    // reviewer never answered — the three-state discipline this repo applies
+    // everywhere else.
+    for (const field of ['grounding', 'keywordCoverage', 'relevance', 'atsFormat']) {
+      const partial = { ...full };
+      delete partial[field];
+      assert.equal(
+        judgeReportSchema.safeParse(partial).success,
+        false,
+        `${field} must not be optional`,
+      );
+    }
+  });
+
+  test('a score outside 1-5 is refused', () => {
+    assert.equal(
+      judgeReportSchema.safeParse({ ...full, relevance: { score: 7, evidence: '' } }).success,
+      false,
+    );
+    assert.equal(
+      judgeReportSchema.safeParse({ ...full, relevance: { score: 0, evidence: '' } }).success,
+      false,
+    );
+  });
+
+  test('a numeric score sent as a string is coerced rather than refused', () => {
+    const parsed = judgeReportSchema.parse({ ...full, relevance: { score: '4', evidence: '' } });
+    assert.equal(parsed.relevance.score, 4);
+  });
+
+  test('a missing verdict parses — the app recomputes it anyway', () => {
+    const parsed = judgeReportSchema.parse({ ...full, verdict: undefined });
+    // The conservative default; `withComputedVerdict` overwrites it from the
+    // report's own evidence before anything reads it.
+    assert.equal(parsed.verdict, 'revise');
+  });
+});
+
+describe('resumeContentSchema — the editor body', () => {
+  test('accepts a real resume', () => {
+    assert.equal(resumeContentSchema.safeParse({ content: 'x'.repeat(200) }).success, true);
+  });
+
+  test('an empty editor is refused with US-5 own copy', () => {
+    const result = resumeContentSchema.safeParse({ content: '   ' });
+    assert.equal(result.success, false);
+    assert.equal(result.error.issues[0].message, RESULT.emptyEditor);
+  });
+
+  test('the upper bound is the column CHECK, answered with copy not a 500', () => {
+    const result = resumeContentSchema.safeParse({ content: 'x'.repeat(MAX_RESUME_CHARS + 1) });
+    assert.equal(result.success, false);
+    assert.equal(result.error.issues[0].message, RESULT.resumeTooLong);
+    assert.equal(MAX_RESUME_CHARS, 15_000);
   });
 });
