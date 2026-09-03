@@ -701,3 +701,50 @@ describe('coverageStatusFor — the lexical gate in the decision (B1, v2.15)', (
     assert.equal(result.missingTerm, null);
   });
 });
+
+/**
+ * `terms` are literal spans of the VACANCY, enforced server-side (architect
+ * finding on the v2.15 diff, closed by reusing v2.13's own guard).
+ *
+ * The asymmetry that makes this worth a test: an incoherent keywords row only
+ * misinformed, while a term the posting never used FLIPS a coverage status —
+ * and it flips it toward the false gap this round was built to remove.
+ */
+describe('literalKeywords applied to requirement terms (B1a, v2.15)', () => {
+  const VACANCY =
+    'What we are looking for:\n- Proficient with MS Office or Google Suite.\n' +
+    '- Experience with annotation tools such as Labelbox or Supervisely.';
+
+  test('a generalized term is dropped, so it cannot gate anything', () => {
+    // P1 asked for verbatim spans and returned an expansion. The posting says
+    // "MS Office"; "Microsoft Office" appears nowhere in it.
+    const { kept, dropped } = literalKeywords(VACANCY, ['Microsoft Office', 'Google Suite']);
+    assert.deepEqual(kept, ['Google Suite']);
+    assert.deepEqual(dropped, ['Microsoft Office']);
+  });
+
+  test('a requirement left with NO literal terms withholds the gate entirely', () => {
+    // The conservative direction: nothing survived the filter, so there is
+    // nothing to search for, so the requirement is decided on similarity alone
+    // exactly as a `general` one would be.
+    const { kept } = literalKeywords(VACANCY, ['Microsoft Office', 'Office 365']);
+    assert.deepEqual(kept, []);
+    assert.equal(
+      missingLexicalTerm({ evidence: 'tool', terms: kept, baseText: 'a base with no tools' }),
+      null,
+    );
+  });
+
+  test('the terms the posting really uses survive and still gate', () => {
+    const { kept } = literalKeywords(VACANCY, ['Labelbox', 'Supervisely']);
+    assert.deepEqual(kept, ['Labelbox', 'Supervisely']);
+    assert.equal(
+      missingLexicalTerm({ evidence: 'tool', terms: kept, baseText: 'annotation QA, no tools' }),
+      'Labelbox',
+    );
+    assert.equal(
+      missingLexicalTerm({ evidence: 'tool', terms: kept, baseText: 'I used Supervisely daily' }),
+      null,
+    );
+  });
+});

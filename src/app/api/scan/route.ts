@@ -200,7 +200,7 @@ async function parseAndScore(plan: ScanPlan) {
       inVacancy: keywordCount(plan.vacancyText, keyword),
     }));
 
-    const entries = await coverageFor(vacancy, plan);
+    const { entries, termsDropped } = await coverageFor(vacancy, plan);
 
     const matchScore = computeMatchScore({
       // The TOTAL from the parse, not the number of MUST requirements: a
@@ -215,7 +215,12 @@ async function parseAndScore(plan: ScanPlan) {
       keywords: vacancyKeywords,
     });
 
-    const coverage = { entries, keywords, keywordsDropped: dropped.length };
+    const coverage = {
+      entries,
+      keywords,
+      keywordsDropped: dropped.length,
+      termsDropped,
+    };
     const committed = await updateApplication(plan.applicationId, { matchScore, coverage });
     if (!committed) {
       // The row was inserted moments ago under this same session, so a miss here
@@ -245,12 +250,15 @@ async function parseAndScore(plan: ScanPlan) {
  * this function: retrieved chunks are data for a model call, never echoed to the
  * client (CLAUDE.md, Retrieval).
  */
-async function coverageFor(vacancy: ParsedVacancy, plan: ScanPlan): Promise<CoverageEntry[]> {
+async function coverageFor(
+  vacancy: ParsedVacancy,
+  plan: ScanPlan,
+): Promise<{ entries: CoverageEntry[]; termsDropped: number }> {
   // N4: nothing to search for, so nothing is embedded and nothing is spent. The
   // empty map is a MEASURED result — "we parsed the posting and it stated no
   // requirements" — which the result screen renders with its own notice, and
   // which is a different thing from `coverage: null` ("the analysis never ran").
-  if (vacancy.requirements.length === 0) return [];
+  if (vacancy.requirements.length === 0) return { entries: [], termsDropped: 0 };
 
   const outcome = await matchDocumentsForTexts(vacancy.requirements.map((r) => r.text));
   if (outcome.status === 'could_not_search') {
@@ -260,8 +268,29 @@ async function coverageFor(vacancy: ParsedVacancy, plan: ScanPlan): Promise<Cove
     throw new AiUnavailableError(SCAN.aiUnavailable);
   }
 
-  return vacancy.requirements.map((requirement, index) => {
+  let termsDropped = 0;
+
+  const entries = vacancy.requirements.map((requirement, index) => {
     const best = bestChunk(outcome.outcomes[index]);
+
+    /**
+     * RULE B1a APPLIED TO `terms`, not only to `keywords` (architect finding on
+     * the v2.15 diff). P1 is told to copy terms verbatim and a prompt is not a
+     * guarantee — v2.13 exists because it returned "Quality assurance" for a
+     * posting saying "quality checks". A generalized term is worse here than it
+     * was there: an incoherent keywords row only misinformed, while a term the
+     * posting never used FLIPS a coverage status, and it flips it toward the
+     * false gap this round was built to remove.
+     *
+     * Same guard, same boundary rule, same conservative direction: a term the
+     * VACANCY does not contain is dropped, and a requirement left with no terms
+     * withholds the gate entirely rather than refusing on an empty search.
+     */
+    const { kept: literalTerms, dropped } = literalKeywords(
+      plan.vacancyText,
+      requirement.terms ?? [],
+    );
+    termsDropped += dropped.length;
     const similarity = best?.similarity ?? 0;
     const { status, missingTerm } = coverageStatusFor({
       bestSimilarity: similarity,
@@ -272,7 +301,7 @@ async function coverageFor(vacancy: ParsedVacancy, plan: ScanPlan): Promise<Cove
       // the BASE, not the scored source. A vacancy parsed before v2.15 carries
       // neither field and reads as `general`, i.e. the pre-gate behaviour.
       evidence: requirement.evidence,
-      terms: requirement.terms,
+      terms: literalTerms,
       baseText: plan.baseText,
     });
     // A gap keeps the similarity it measured but names no item: the best chunk
@@ -291,6 +320,17 @@ async function coverageFor(vacancy: ParsedVacancy, plan: ScanPlan): Promise<Cove
       missingTerm,
     };
   });
+
+  if (termsDropped > 0) {
+    // Metadata only: counts, never the dropped spans — they are fragments of
+    // the posting.
+    console.warn('[scan] dropped non-literal requirement terms from the parse', {
+      step: 'parse_vacancy',
+      dropped: termsDropped,
+    });
+  }
+
+  return { entries, termsDropped };
 }
 
 /**

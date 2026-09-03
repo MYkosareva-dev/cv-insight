@@ -162,6 +162,16 @@ export type CoverageMap = {
    * visible in the stored data, and so /quality can count it in a later phase.
    */
   keywordsDropped?: number;
+  /**
+   * How many requirement `terms` the same literal-span guard threw away on this
+   * run (SPEC v2.15) — terms P1 returned that the vacancy text does not contain.
+   *
+   * Optional for the same reason as `keywordsDropped`: absent on rows written
+   * before it existed, which is not the same as zero. Not rendered. It exists so
+   * that a parser generalizing the terms that decide a coverage status is
+   * visible in the data rather than only in a screen someone happens to read.
+   */
+  termsDropped?: number;
 };
 
 export type ApplicationStatus = 'draft' | 'applied' | 'interview' | 'offer' | 'rejected';

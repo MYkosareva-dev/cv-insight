@@ -33,7 +33,12 @@
  * that.
  *
  * FLOOR + SPAN === COVERAGE_THRESHOLD, on purpose, and SPAN is derived from the
- * other two so that stays true. Rule B1 has two halves that
+ * other two so that stays true. The identity is about the SIMILARITY half of
+ * rule B1 and nothing else — since v2.15 a requirement can clear both the
+ * threshold and full S credit and still be a gap, because the lexical gate
+ * decides on evidence the similarity numbers do not contain. S is a measure of
+ * how close the base came; it was never a claim that the requirement is met.
+ * Rule B1 has two halves that
  * both answer "how well is this requirement met" — the binary `isCovered` and
  * the continuous S term — and S now reaches 1 exactly where `isCovered` turns
  * true, so they cannot disagree about what a fully met requirement is. Under the
@@ -256,8 +261,20 @@ export function insufficientSignal(args: {
  * gap. The term reported is the FIRST one, because that is the one the posting
  * led with and the one worth naming on screen.
  *
- * The boundary rule is `keywordCount`'s, so this gate and the keywords table can
- * never disagree about whether a term is present.
+ * The boundary rule is `keywordCount`'s, so this gate and the keywords table
+ * apply the same test for whether a term is present. They can still report
+ * differently, and legitimately: on a pasted-resume scan the gate reads the BASE
+ * and the table counts the PASTE, so "Covered" beside "Labelbox: 0 in resume" is
+ * reachable and both statements are true of their own corpus (backlog p3-24).
+ *
+ * THE DIRECTION OF ERROR THIS LEAVES OPEN, named rather than discovered later:
+ * the gate matches FORMS. A base writing "Microsoft Office", "PostgreSQL" or
+ * "NodeJS" does not satisfy a posting saying "MS Office", "Postgres" or
+ * "Node.js", and the result is a FALSE GAP at any similarity — the error this
+ * round exists to remove, narrowed to spelling. Casing is handled; spacing,
+ * punctuation and abbreviation are not. It cannot be fixed by loosening the
+ * match, because a substring test would let "SQL" satisfy "MySQL". Backlog
+ * p3-23 carries the two candidate fixes, both of which are new mechanisms.
  */
 export function missingLexicalTerm(args: {
   evidence: EvidenceKind;

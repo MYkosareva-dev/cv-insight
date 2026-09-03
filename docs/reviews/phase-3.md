@@ -635,64 +635,74 @@ terms to 5, halving K's denominator. No test caught it and nothing failed — a
 second measured run is what showed the number was wrong, and the prompt now says
 the keywords list and the per-requirement terms are separate jobs.
 
-## THE ai-architect PASS ON THIS DIFF WAS NOT OBTAINED
+## The ai-architect pass on this diff — two failures, then a pass
 
-Stated plainly because the branch goes to PR next and this is a gate CLAUDE.md
-requires on every phase.
+Kept as a record of the attempts, because the way it eventually worked is the
+useful part.
 
-Two `ai-architect` subagents were launched against this diff, with different
-prompts (one long and specific, one under 900 words). Both ran for tens of
-minutes, wrote nothing to their transcripts beyond a first line, and were stopped
-after repeated checks showed no progress. That is an environment failure in this
-session rather than a verdict of any kind: the same subagent completed normally
-against the v2.14 diff earlier in the same session and produced fifteen findings,
-five of which were fixed on the spot.
+**Attempts 1 and 2 produced nothing.** Both were launched in the BACKGROUND
+against the whole diff, one with a long specific prompt and one capped at 900
+words. Both ran for tens of minutes, wrote nothing beyond a first line, and were
+stopped after repeated no-progress checks. At that point this section said the
+gate could not be run and that my own checklist walk stood in its place — which
+was the honest state of it, and is why it was written down rather than left out.
 
-**So this diff has had no independent architecture review, and the owner should
-treat that as an open gate on the PR, not as a clean pass.** What follows is my
-own walk of the ai-architect checklist — useful, but not the same thing, and
-labelled accordingly.
+**Attempt 3 passed, in under two minutes.** Two things changed: it was scoped to
+this ONE change with an explicit six-file list, and it ran in the FOREGROUND.
+Whether the foreground or the narrower scope did it is not established by one
+run, but the pair is cheap to repeat and worth trying first the next time a gate
+appears to hang.
 
-### Self-review against the gate's own checklist
+Its report is saved VERBATIM at `docs/reviews/phase-3-architect-p3-17.md`, before
+any of it was acted on (CLAUDE.md, Process — the rule this branch added). Verdict:
+**APPROVE WITH CHANGES**, no blockers, 2 majors, 3 minors.
 
-- **Chokepoints.** No new OpenRouter call site; the gate is pure arithmetic over
-  text the route already holds. `.from(` is unchanged (the extra base read goes
-  through `listCareerItems`). `check.mjs` 13/13.
-- **The false-gap paths**, which are the ones that matter, because a false gap is
-  the error this round was told to avoid:
-  - *bad classification* → the prompt states the asymmetry in those words and
-    `parsedVacancySchema` defaults a missing or unknown `evidence` to `general`;
-  - *empty or whitespace `terms`* → trimmed and dropped by the schema, and
-    `missingLexicalTerm` withholds the gate entirely on an empty array;
-  - *a vacancy parsed before v2.15* → both fields optional, both read as
-    `general`, so the decision is exactly the pre-gate one;
-  - *a re-run of an old draft* → `parseAndScore` always re-parses, so a re-run
-    gets fresh fields rather than a stale classification;
-  - *an empty career base on a pasted scan* → `baseText` is empty, but nothing
-    can clear the similarity threshold against zero chunks, so the gate never
-    decides anything there.
-  - **The path that IS open: term-form variance.** The gate matches forms, so a
-    base saying "Microsoft Office" does not satisfy a vacancy saying "MS Office".
-    Casing is handled; spacing, punctuation and abbreviation are not. Filed as
-    `p3-23` (MAJOR) with the reason it cannot be fixed by loosening the match —
-    substring matching would let "SQL" satisfy "MySQL".
-- **Corpus.** `baseText` is the career base on every path, which is the corpus the
-  retrieval searched and therefore the one the coverage decision is about.
-  Searching the pasted source instead would refuse a tool the base really holds.
-  One extra `listCareerItems()` on the paste path; none on the career-base path,
-  where the scored text and the corpus are the same string.
-- **Return-type change.** `coverageStatusFor` now returns `{ status, missingTerm }`;
-  the only production caller is the scan route, and `tsc` is clean. The gate runs
-  after the similarity test and before the source-versus-base split, so it can
-  only ever turn a covered row into a gap — a requirement the base does not name
-  is not a hidden match the chosen resume is missing.
-- **The duplicated `EvidenceKind`** (in `lib/scoring.ts` and `lib/db/types.ts`) is
-  deliberate and commented: `scoring.ts` must stay pure and loadable by bare
-  `node:test`, so it cannot import the `server-only` DAL types.
-- **Two smaller findings** filed rather than fixed: `p3-24` (the keywords table
-  counts against the scored source while the gate reads the base, so on a pasted
-  scan the two tables can look contradictory while both are true) and `p3-25`
-  (nothing asserts the shape of `terms` beyond its bounds).
+### What it found, and what was done
+
+- **MAJOR — `terms` were never enforced as literal spans of the vacancy**, though
+  `keywords` are. The asymmetry mattered more than it looked: v2.13's guard
+  exists because P1 returned "Quality assurance" for a posting saying "quality
+  checks", and an incoherent keywords row only misinformed — a generalized TERM
+  flips a coverage status, toward the false gap this round was built to remove.
+  **Fixed** by reusing that same guard: `literalKeywords(plan.vacancyText, terms)`
+  in `coverageFor`, a requirement left with no literal terms withholds the gate
+  entirely, and the drops are counted in `coverage.termsDropped` beside
+  `keywordsDropped`. Three unit tests, including the withhold case.
+- **MAJOR — the false-gap direction the gate INTRODUCES was not declared.** A base
+  writing "Microsoft Office", "PostgreSQL" or "NodeJS" does not satisfy a posting
+  saying "MS Office", "Postgres" or "Node.js". **Fixed** by naming it in SPEC's
+  own v2.15 note under "what this does NOT do" and in `missingLexicalTerm`'s
+  docblock, with the reason it cannot be fixed by loosening the match and the two
+  candidate mechanisms in backlog `p3-23`. The new `terms` guard bounds this error
+  on the VACANCY side; nothing bounds the base side, where the user's own wording
+  lives.
+- **MINOR — a false invariant in `lib/scoring.ts`.** The comment said S reaching 1
+  exactly where `isCovered` turns true means the two halves "cannot disagree about
+  what a fully met requirement is". Since v2.15 a requirement can take full S
+  credit and still be a gap. **Fixed**: the identity is about the similarity half
+  and says so.
+- **MINOR — an overstated claim in rule B1a.** "The gate and the keywords table can
+  never disagree about whether a term is present" holds for the boundary rule and
+  not for the corpora: on a pasted scan the gate reads the base and the table
+  counts the paste. **Fixed** in SPEC and in the docblock, cross-referenced to
+  `p3-24`.
+- **MINOR — `keywordRegex` does not normalize whitespace**, so a term carrying a
+  line-wrap or a double space can never match anything. **Backlogged as `p3-26`**
+  rather than fixed: that regex is rule B1a's shared boundary rule, keyword
+  counting was out of scope for this round, and changing it needs its own
+  measurement of the keywords table.
+
+On its four questions it confirmed the parts that matter and that I had checked
+independently: the corpus is the base on both branches of `resolveSource` and
+never the source; the gate's order is right and has no stale callers; blanks,
+empty terms, pre-v2.15 vacancies and an empty base are all safe; and nothing in
+the change conflicts with CLAUDE.md.
+
+My own checklist walk from before the pass is below, kept because it is what the
+record rested on while the gate was unavailable — and because it found `p3-23`
+and `p3-24` independently, which the pass then confirmed.
+
+### My own walk of the checklist (mine, not a review)
 
 ## Gates at hand-over
 
@@ -702,12 +712,10 @@ the broken-key server (`docs/eval/phase-3-e2e-run.txt`, re-run at `d3dbc7c`).
 
 ## Open for the owner, before or with the PR
 
-1. **`ai-architect` on `d3dbc7c`** — not obtained, see above. The one gate this
-   branch is missing.
-2. **`eu-compliance-reviewer`** — still not run on the Phase-2 owner-feedback
+1. **`eu-compliance-reviewer`** — still not run on the Phase-2 owner-feedback
    round or on Phase 3, both of which touch personal data.
-3. **`nextjs-security`** on the phase's route handlers, including the two
+2. **`nextjs-security`** on the phase's route handlers, including the two
    `/api/dev/*` instruments.
-4. **Block H item 9** — the dev-route production fence needs its owner-run
+3. **Block H item 9** — the dev-route production fence needs its owner-run
    verification; `docs/eval/dev-routes-production-evidence.md` ships as a template
    that says so.
