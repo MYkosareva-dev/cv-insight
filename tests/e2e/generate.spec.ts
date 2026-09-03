@@ -323,7 +323,21 @@ test.describe('generate', () => {
     // `RESULT.editorLabel`, which is right for a reader and ambiguous for a
     // locator.
     const editor = page.getByRole('textbox', { name: RESULT.editorLabel });
-    const draft = (await editor.inputValue()).toLowerCase();
+    const draftRaw = await editor.inputValue();
+    const draft = draftRaw.toLowerCase();
+    /**
+     * Metadata only, and one BOOLEAN rather than the line itself: the first line
+     * of a resume is a person's name. What is worth knowing is whether P2's
+     * layout token survived into the output — the career base is a list of jobs
+     * and skills and carries no name anywhere, so a grounded generator has
+     * nothing to put there and may write the placeholder instead. That is a
+     * product finding, not a test failure: refusing to invent a name is the
+     * generator behaving correctly.
+     */
+    console.log(
+      '[phase-4] header:',
+      JSON.stringify({ literalNamePlaceholder: /^NAME/.test(draftRaw.trim()) }),
+    );
     for (const absent of ['labelbox', 'supervisely']) {
       expect(draft, `the base never mentions ${absent}; the resume must not claim it`).not.toContain(
         absent,

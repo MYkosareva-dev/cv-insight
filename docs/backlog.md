@@ -60,6 +60,42 @@ migration caused are fixed on this branch. These are the rest. Recorded in
 - **MINOR a-5** — the dedup guard is not idempotent under concurrency: two saves in flight both read the signatures before either inserts, and no unique constraint backs the key, so exact duplicates can still land; same class as the declared B9 race, so declare it in the route docblock.
 - **MINOR a-6** — `src/components/career/career-item-card.tsx` seeds Edit state once and never re-keys, so cancelling and reopening shows the abandoned draft and Save then buys a re-embed for an intention the user withdrew; `key={item.updated_at}` on the dialog. (Supersedes NIT n-2, which the architect argues is above NIT now that this component's spend path was reworked.)
 
+## Phase 4 — closed here, from earlier rounds
+
+Struck rather than left as instructions to redo finished work.
+
+> **MINOR m-4** (phase-2) is CLOSED for the metered-request budget: the retry
+> arithmetic moved out of `server-only` `src/lib/chat.ts` into pure
+> `src/lib/budget.ts`, and `tests/unit/budget.test.mjs` pins "two requests
+> maximum per step, in either order of exception" plus the derived
+> generate ceiling. The rest of m-4 (`importedResumeText`, `isPdfUpload`,
+> `indexWarningFor`) is untouched and still open.
+> **MINOR p3-8** (phase-3) is CLOSED: an optional application id is threaded
+> through `matchDocuments` / `matchDocumentsForTexts` / `embedTexts` →
+> `embedFor` → `logEmbedCall` in `src/lib/retrieval.ts`, so a scan's, a
+> generate's and a re-score's embedding rows all carry the run they belong to.
+> Indexing a career item still passes null, which is correct — it belongs to no
+> application.
+
+## Phase 4 — from building it (2026-09-03)
+
+The ai-architect gate ran on the PLAN before any code existed
+(`docs/reviews/phase-4-architect-plan.md`); its three BLOCKERs and eight MAJORs
+are fixed on this branch and declared in SPEC v2.16. What is below is what the
+build itself turned up, plus the architect items that were agreed to be
+non-blockers.
+
+- **MINOR p4-1** — `maxDuration = 300` in `src/app/api/applications/[id]/generate/route.ts` is the honest budget for four chat steps, and nothing verifies it against the deployment plan's own function-duration limit; this is `p3-2`'s question on a route whose worst case is four times longer, and a platform cut below it kills `after()` and drops the `llm_calls` rows for calls that WERE billed (rule B8). Check both numbers at the vercel-security gate, before deploy.
+- **MINOR p4-2** — the judge's repair retry is not rare: a real run logged `[chat] judge output failed validation, one repair retry`, i.e. one extra Haiku call for that step, because `judgeReportSchema` requires all four criteria objects (deliberately — defaulting a missing one would print a score for a question nobody answered). The decision is right and its COST is unmeasured; count the retries across a dozen runs on `/quality` and, if it is routine rather than occasional, add the four criteria to P3's "Return ONLY JSON matching" line as an explicit required list before loosening the schema.
+- **MINOR p4-3** — `POST /api/applications/[id]/judge` re-retrieves its own career items, so [Check quality] can judge against a different item set than the one the AI draft was written from, and the two grounding verdicts are not strictly comparable. Declared in SPEC v2.16 and honest for what the button means ("is what I have now supported by what I have now"), but the fix is to store the retrieved item ids on the version row — which needs a `resume_versions` column and therefore a migration this phase does not make.
+- **MINOR p4-4** — the generate lock in the same route is per-INSTANCE, so two serverless instances can each hold one for the same application and run two full pipelines. It closes the double click and the second tab, which is what actually happens; a concurrent-invocation race needs a row or an advisory lock, and `applications` has no column for one. Decide before the app has more than one warm instance.
+- **MINOR p4-5** — `POST …/export` skips the `source='user'` insert only when the content equals the LATEST version, so exporting text identical to an OLDER version appends a duplicate row. Correct as "unchanged since I last saved" and wrong as "this text is already stored"; compare against the whole history if the version list starts reading as a download log.
+- **MINOR p4-6** — the auto-revision WIRING has no deterministic test. Both branches were observed in real runs (one approve, several revise-and-rewrite) and the DECISION is unit-tested in `tests/unit/judge.test.mjs`, but which branch a run takes is the model's choice, so `tests/e2e/generate.spec.ts` asserts it conditionally and the coverage is opportunistic. A stubbed chat gate — the same instrument `p3-3` wants for the draft re-run — would pin both.
+- **NIT p4-7** — the generated resume's header depends on a name the career base does not contain: `P4` splits a resume into items and the name line becomes part of none of them, so there is nothing for P2 to put on the first line. One early run emitted the literal placeholder `NAME`, which then became the export filename (`CV_NAME_…`); it has not recurred since the vacancy keyword list left the prompt, and it is not reproducible on demand. Refusing to invent a name is the generator behaving correctly, so the fix is to ASK for one — a name field on the editor, or a `profiles` row, which Block C decided against for MVP.
+- **NIT p4-8** — `GenerateOutcome.revisionWithheld` is unreachable in practice, because `needsRevision()` already requires at least one finding; it is kept as the explicit statement of the branch rather than as an implication of another function, and `RESULT.reviseWithoutFindings` renders it. Delete both only if the schema is ever changed to reject a `fail` verdict with no violations.
+- **NIT p4-9** — `p3-12` widens: `result-workspace.tsx`, `resume-editor.tsx` and `judge-card.tsx` all read row shapes from `server-only` `src/lib/db/types.ts`. It holds because `import type` is elided and the module reads no secret, but that is now eight client components resting on the same argument — either drop the marker or move the client-facing types out of `lib/db/`.
+- **NIT p4-10** — `RESULT.generateSteps` (US-4 step 1's "Retrieving your experience… Writing… Quality check…") is declared and unused: the button shows one label for the whole run rather than cycling three, because nothing on the client knows which server step is running and a timer-driven cycle would be a progress bar that reports the passage of time as progress. Declared rather than deleted, because the Block E state it names is real; wire it if `/generate` ever streams its stage.
+
 ## Phase 3 — from the ai-architect phase gate (2026-09-03)
 
 Its two BLOCKERs and every MAJOR are fixed on this branch; SPEC v2.12 declares the

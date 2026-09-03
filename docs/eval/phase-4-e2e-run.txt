@@ -1,0 +1,142 @@
+Phase 4 - Playwright suite, verbatim run output (auth + career + generate + scan).
+
+This file exists because SPEC Block F states that manual live verification is
+not accepted as evidence - the spec run is. A spec FILE is cron.job; this is
+cron.job_run_details.
+
+Command:      npx playwright test
+Date:         2026-09-03 UTC
+Branch:       phase-4-generate
+Commit:       (this run) test(e2e): the US-4/US-5 path against the Hiredbuddy case
+Working tree: CLEAN for src/ and tests/ - the commit above is exactly the code
+              that was tested. The SPEC amendment and this file are the only
+              things committed after it, and neither is loaded at runtime.
+Against:      npm run dev on http://localhost:3000, started and torn down by
+              Playwright itself (real Supabase project, EU-Frankfurt) and real
+              OpenRouter calls.
+
+WHAT THE PHASE-4 CASES RUN AGAINST. `docs/eval/calibration-case-hiredbuddy.json`
+- the owner's own reconstruction of the posting the coverage thresholds were
+calibrated against. A senior AI-quality career base scanned against an
+entry-level annotation role, so the generator is asked for material the base
+genuinely does not have: the base names none of MS Office, Google Suite,
+Labelbox or Supervisely, all four of which the posting asks for. A vacancy the
+base answered perfectly would never exercise what this phase is about.
+
+WHAT THIS SUITE CANNOT SEE, stated so nobody reads more into it than it says.
+It does not query `llm_calls` or `resume_versions`: `.from(` outside a DAL fails
+check.mjs R1 and `tests/` is in scope, so "exactly two chat rows for an approved
+run" is not observable from here. What IS observable is the number of versions a
+run wrote (below), the request count for a double-clicked button, and every
+verdict the judge returned. The row count is the owner query in the hand-over.
+
+---------------------------------------------------------------------------
+RESULT
+---------------------------------------------------------------------------
+
+  ok  1 [chromium] > tests\e2e\auth.spec.ts:122:3 > auth > sign-up lands on /career (2.3s)
+  ok  2 [chromium] > tests\e2e\auth.spec.ts:129:3 > auth > sign-in lands on /scan, sign-out returns to /login (2.9s)
+  ok  3 [chromium] > tests\e2e\auth.spec.ts:142:3 > auth > a signed-in user is bounced off /login and /signup (2.3s)
+  ok  4 [chromium] > tests\e2e\auth.spec.ts:150:3 > auth > a visitor is redirected off member routes with no data flash (1.0s)
+  ok  5 [chromium] > tests\e2e\auth.spec.ts:163:3 > auth > /privacy is public and reachable from both layouts (2.2s)
+  ok  6 [chromium] > tests\e2e\auth.spec.ts:178:3 > auth > wrong password shows the exact copy and no other outcome (3.3s)
+  ok  7 [chromium] > tests\e2e\auth.spec.ts:207:5 > auth > client-side validation blocks submit on a malformed email (490ms)
+  ok  8 [chromium] > tests\e2e\auth.spec.ts:207:5 > auth > client-side validation blocks submit on a too-short password (507ms)
+  ok  9 [chromium] > tests\e2e\auth.spec.ts:225:3 > auth > native validation never pre-empts our copy (456ms)
+  ok 10 [chromium] > tests\e2e\auth.spec.ts:241:3 > auth > a duplicate email is reported as such (3.1s)
+  ok 11 [chromium] > tests\e2e\auth.spec.ts:252:3 > auth > the session cookie is httpOnly, SameSite=Lax and capped at 30 days (1.6s)
+  ok 12 [chromium] > tests\e2e\auth.spec.ts:296:3 > auth > account deletion removes the user and returns to /login with the toast (12.5s)
+  ok 13 [chromium] > tests\e2e\career.spec.ts:228:3 > career base > every career endpoint refuses a signed-out caller with 401 (1.0s)
+  ok 14 [chromium] > tests\e2e\career.spec.ts:254:3 > career base > a new account sees the exact empty state (2.3s)
+  ok 15 [chromium] > tests\e2e\career.spec.ts:260:3 > career base > a scanned PDF shows the exact 422 copy, pre-opens the paste tab, and saves nothing (2.6s)
+  ok 16 [chromium] > tests\e2e\career.spec.ts:296:3 > career base > a text-layer PDF imports, reviews and saves, and a second import ADDS (11.3s)
+  ok 17 [chromium] > tests\e2e\career.spec.ts:329:3 > career base > re-importing the SAME text saves nothing and reports every skip (8.6s)
+  ok 18 [chromium] > tests\e2e\career.spec.ts:354:3 > career base > a metered Save spends once even when double-clicked (8.8s)
+  ok 19 [chromium] > tests\e2e\generate.spec.ts:156:3 > generate > all four Phase-4 endpoints refuse a signed-out caller with 401 (3.1s)
+  ok 20 [chromium] > tests\e2e\generate.spec.ts:178:3 > generate > another user's application is 404 on every Phase-4 endpoint, never 403 (2.1s)
+  ok 21 [chromium] > tests\e2e\generate.spec.ts:194:3 > generate > generate, judge, edit, re-score, export - the whole US-4/US-5 path (38.7s)
+  ok 22 [chromium] > tests\e2e\generate.spec.ts:451:3 > generate > one click, one spend: a double-clicked [Generate] sends ONE request (37.9s)
+  ok 23 [chromium] > tests\e2e\generate.spec.ts:483:3 > generate > an empty editor blocks both metered buttons with the exact copy (14.8s)
+  ok 24 [chromium] > tests\e2e\generate.spec.ts:507:3 > generate > the judge catches invention, and rule B2 forces revise however good the rest is (25.6s)
+  ok 25 [chromium] > tests\e2e\generate.spec.ts:592:3 > generate > [Add to resume] is refused with a reason while no resume exists (13.4s)
+  ok 26 [chromium] > tests\e2e\scan.spec.ts:214:3 > scan > both scan endpoints refuse a signed-out caller with 401 (1.4s)
+  ok 27 [chromium] > tests\e2e\scan.spec.ts:244:3 > scan > an oversized vacancy is refused with the exact copy, before any spend (1.8s)
+  ok 28 [chromium] > tests\e2e\scan.spec.ts:275:3 > scan > an empty career base blocks the Career-base source with the exact notice (2.2s)
+  ok 29 [chromium] > tests\e2e\scan.spec.ts:288:3 > scan > the applications list starts empty with the exact copy (2.7s)
+  ok 30 [chromium] > tests\e2e\scan.spec.ts:294:3 > scan > a pasted resume scans, scores, and renders coverage, keywords and base matches (13.2s)
+  ok 31 [chromium] > tests\e2e\scan.spec.ts:461:3 > scan > a career-base scan says the base is the source, instead of an empty tab (11.8s)
+  -  32 [chromium] > tests\e2e\scan.spec.ts:503:3 > scan > an AI failure saves the vacancy as a draft and says so
+
+  1 skipped
+  31 passed (4.0m)
+
+THE SKIP IS THE DOCUMENTED ONE and is unchanged from Phase 3: the AI-unavailable
+case needs a server started with a deliberately invalid OPENROUTER_API_KEY,
+because the model call is server-side and no browser script can make it fail.
+It is skipped VISIBLY rather than passing quietly - a test that passes when it
+cannot run is worse than no test. Its docblock carries the two commands.
+
+---------------------------------------------------------------------------
+WHAT THE PHASE-4 RUNS ACTUALLY DID
+---------------------------------------------------------------------------
+
+The spec prints one metadata line per metered run - verdicts, scores and counts
+only, never the resume text and never a violated claim, both of which are
+personal data and neither of which belongs in a log (CLAUDE.md, Privacy).
+
+From THIS run:
+
+  [phase-4] run: {"versions":2,"autoRevised":true,"revisionNotBetter":true,
+                  "revisionWithheld":false,
+                  "verdicts":[{"source":"ai","verdict":"revise","grounding":"fail","violations":2},
+                              {"source":"ai_revision","verdict":"revise","grounding":"fail","violations":2}]}
+  [phase-4] rescore: {"stored":"57%","live":"65%","entries":8}
+  [phase-4] grounding gate: {"verdict":"revise","grounding":"fail","violations":5,
+                             "scores":{"keywordCoverage":2,"relevance":1,"atsFormat":4}}
+
+Read against the declared budget:
+
+  * TWO versions, not three. The first draft was judged `revise` on grounding,
+    rule B3's single revision ran with the reviewer's two specific violations in
+    hand, the rewrite was judged again and STILL came back `revise`. The run
+    stopped there and returned the better of the two with its honest card, which
+    is Block D #5's own instruction. A loop would have shown up here as a third
+    version and did not.
+  * FOUR chat calls for that run (generate, judge, generate, judge) - the middle
+    figure of the declared 2 / 4 / 8.
+  * `revisionNotBetter: true` - `bestVersion` kept the FIRST draft, because the
+    rewrite did not improve on it. Both rows exist either way, and the card says
+    which one the reader is looking at.
+  * The re-score moved 57% -> 65% on the SAME vacancy after two lines were added
+    to the editor, with no chat call.
+
+From an EARLIER run of the same spec, on the same fixture, recorded because it
+is the other DoD branch and a model decides which one happens:
+
+  [phase-4] run: {"versions":1,"autoRevised":false,"revisionNotBetter":false,
+                  "revisionWithheld":false,
+                  "verdicts":[{"source":"ai","verdict":"approve","grounding":"pass","violations":0}]}
+
+  * ONE version, TWO chat calls, no revision - the judge approved the first
+    draft. "One revision when the rubric fails, none when it passes" is
+    therefore witnessed in both directions, across two runs, against the same
+    posting and the same career base.
+
+THE GROUNDING GATE, END TO END. The `judge` case submits a resume claiming a
+Senior Staff Engineer role at Google, a team of 40, a PhD from Stanford and an
+AWS certification, against a base of two annotation jobs at fictional companies.
+Five violations, `grounding: fail`, verdict `revise` - and that verdict is
+COMPUTED by lib/judge.ts from the report's own evidence, not read from the
+model's `verdict` field. atsFormat scored 4 in the same report, which is the
+point of rule B2 being a gate: a well-formatted invention is still an invention.
+
+A DEFECT THIS SUITE FOUND IN ITS OWN BRANCH, before any reviewer did. The first
+run of the whole path failed on the assertion that the draft must not name
+Labelbox or Supervisely. It named both, in a SKILLS line reading "ms office,
+google suite, labelbox, supervisely" - the vacancy's keyword list, pasted whole
+into a resume grounded in a base that contains none of it. The cause was in this
+branch's prompt assembly, not in the model alone: `parsedRequirementsJson`
+carried `parsed.keywords`, and a tidy list of skill terms beside an instruction
+to use the vacancy's exact spelling is an invitation to reproduce it. Block F's
+template asks for "Vacancy requirements"; the keyword list is now out of it, and
+the assertion is permanent.
