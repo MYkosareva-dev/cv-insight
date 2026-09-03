@@ -5,9 +5,9 @@ not accepted as evidence - the spec run is. A spec FILE is cron.job; this is
 cron.job_run_details.
 
 Command:      npx playwright test
-Date:         2026-09-03 19:55 UTC
+Date:         2026-09-03 20:40 UTC
 Branch:       phase-3-scan
-Commit:       e05f597  fix: close the architect pass on the chunking diff
+Commit:       d3dbc7c  feat(scan): a lexical evidence gate on the coverage decision
 Working tree: CLEAN - the commit above is exactly the code that was tested.
               (docs/openrouter-processing.md is the owner's own untracked file
               and is not part of this branch.)
@@ -57,34 +57,34 @@ docs/backlog.md rather than left unexplained here.
 
 Running 25 tests using 1 worker
 
-  ok  1 [chromium] › tests\e2e\auth.spec.ts:122:3 › auth › sign-up lands on /career (1.7s)
-  ok  2 [chromium] › tests\e2e\auth.spec.ts:129:3 › auth › sign-in lands on /scan, sign-out returns to /login (2.8s)
-  ok  3 [chromium] › tests\e2e\auth.spec.ts:142:3 › auth › a signed-in user is bounced off /login and /signup (2.4s)
-  ok  4 [chromium] › tests\e2e\auth.spec.ts:150:3 › auth › a visitor is redirected off member routes with no data flash (981ms)
-  ok  5 [chromium] › tests\e2e\auth.spec.ts:163:3 › auth › /privacy is public and reachable from both layouts (2.3s)
-  ok  6 [chromium] › tests\e2e\auth.spec.ts:178:3 › auth › wrong password shows the exact copy and no other outcome (3.3s)
-  ok  7 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a malformed email (459ms)
-  ok  8 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a too-short password (479ms)
-  ok  9 [chromium] › tests\e2e\auth.spec.ts:225:3 › auth › native validation never pre-empts our copy (436ms)
-  ok 10 [chromium] › tests\e2e\auth.spec.ts:241:3 › auth › a duplicate email is reported as such (3.3s)
-  ok 11 [chromium] › tests\e2e\auth.spec.ts:252:3 › auth › the session cookie is httpOnly, SameSite=Lax and capped at 30 days (1.6s)
-  ok 12 [chromium] › tests\e2e\auth.spec.ts:296:3 › auth › account deletion removes the user and returns to /login with the toast (12.4s)
-  ok 13 [chromium] › tests\e2e\career.spec.ts:228:3 › career base › every career endpoint refuses a signed-out caller with 401 (836ms)
+  ok  1 [chromium] › tests\e2e\auth.spec.ts:122:3 › auth › sign-up lands on /career (1.9s)
+  ok  2 [chromium] › tests\e2e\auth.spec.ts:129:3 › auth › sign-in lands on /scan, sign-out returns to /login (2.7s)
+  ok  3 [chromium] › tests\e2e\auth.spec.ts:142:3 › auth › a signed-in user is bounced off /login and /signup (2.5s)
+  ok  4 [chromium] › tests\e2e\auth.spec.ts:150:3 › auth › a visitor is redirected off member routes with no data flash (987ms)
+  ok  5 [chromium] › tests\e2e\auth.spec.ts:163:3 › auth › /privacy is public and reachable from both layouts (2.2s)
+  ok  6 [chromium] › tests\e2e\auth.spec.ts:178:3 › auth › wrong password shows the exact copy and no other outcome (3.2s)
+  ok  7 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a malformed email (526ms)
+  ok  8 [chromium] › tests\e2e\auth.spec.ts:207:5 › auth › client-side validation blocks submit on a too-short password (495ms)
+  ok  9 [chromium] › tests\e2e\auth.spec.ts:225:3 › auth › native validation never pre-empts our copy (433ms)
+  ok 10 [chromium] › tests\e2e\auth.spec.ts:241:3 › auth › a duplicate email is reported as such (3.2s)
+  ok 11 [chromium] › tests\e2e\auth.spec.ts:252:3 › auth › the session cookie is httpOnly, SameSite=Lax and capped at 30 days (1.7s)
+  ok 12 [chromium] › tests\e2e\auth.spec.ts:296:3 › auth › account deletion removes the user and returns to /login with the toast (12.7s)
+  ok 13 [chromium] › tests\e2e\career.spec.ts:228:3 › career base › every career endpoint refuses a signed-out caller with 401 (865ms)
   ok 14 [chromium] › tests\e2e\career.spec.ts:254:3 › career base › a new account sees the exact empty state (1.9s)
   ok 15 [chromium] › tests\e2e\career.spec.ts:260:3 › career base › a scanned PDF shows the exact 422 copy, pre-opens the paste tab, and saves nothing (2.5s)
-  ok 16 [chromium] › tests\e2e\career.spec.ts:296:3 › career base › a text-layer PDF imports, reviews and saves, and a second import ADDS (10.4s)
-  ok 17 [chromium] › tests\e2e\career.spec.ts:329:3 › career base › re-importing the SAME text saves nothing and reports every skip (8.4s)
-  ok 18 [chromium] › tests\e2e\career.spec.ts:354:3 › career base › a metered Save spends once even when double-clicked (8.4s)
-  ok 19 [chromium] › tests\e2e\scan.spec.ts:214:3 › scan › both scan endpoints refuse a signed-out caller with 401 (800ms)
-  ok 20 [chromium] › tests\e2e\scan.spec.ts:244:3 › scan › an oversized vacancy is refused with the exact copy, before any spend (1.6s)
-  ok 21 [chromium] › tests\e2e\scan.spec.ts:275:3 › scan › an empty career base blocks the Career-base source with the exact notice (1.9s)
+  ok 16 [chromium] › tests\e2e\career.spec.ts:296:3 › career base › a text-layer PDF imports, reviews and saves, and a second import ADDS (11.4s)
+  ok 17 [chromium] › tests\e2e\career.spec.ts:329:3 › career base › re-importing the SAME text saves nothing and reports every skip (8.6s)
+  ok 18 [chromium] › tests\e2e\career.spec.ts:354:3 › career base › a metered Save spends once even when double-clicked (9.0s)
+  ok 19 [chromium] › tests\e2e\scan.spec.ts:214:3 › scan › both scan endpoints refuse a signed-out caller with 401 (786ms)
+  ok 20 [chromium] › tests\e2e\scan.spec.ts:244:3 › scan › an oversized vacancy is refused with the exact copy, before any spend (1.7s)
+  ok 21 [chromium] › tests\e2e\scan.spec.ts:275:3 › scan › an empty career base blocks the Career-base source with the exact notice (2.1s)
   ok 22 [chromium] › tests\e2e\scan.spec.ts:288:3 › scan › the applications list starts empty with the exact copy (1.9s)
-  ok 23 [chromium] › tests\e2e\scan.spec.ts:294:3 › scan › a pasted resume scans, scores, and renders coverage, keywords and base matches (18.6s)
-  ok 24 [chromium] › tests\e2e\scan.spec.ts:448:3 › scan › a career-base scan says the base is the source, instead of an empty tab (11.1s)
+  ok 23 [chromium] › tests\e2e\scan.spec.ts:294:3 › scan › a pasted resume scans, scores, and renders coverage, keywords and base matches (12.2s)
+  ok 24 [chromium] › tests\e2e\scan.spec.ts:448:3 › scan › a career-base scan says the base is the source, instead of an empty tab (11.4s)
   -  25 [chromium] › tests\e2e\scan.spec.ts:490:3 › scan › an AI failure saves the vacancy as a draft and says so
 
   1 skipped
-  24 passed (1.7m)
+  24 passed (1.6m)
 ======================================================================
 RUN 2 - the AI-unavailable path (US-2 step 5, edge cases N2/N3/N5)
 ======================================================================
@@ -121,9 +121,9 @@ What the case asserts, and therefore what this run proves:
 
 Running 1 test using 1 worker
 
-  ok 1 [chromium] › tests\e2e\scan.spec.ts:490:3 › scan › an AI failure saves the vacancy as a draft and says so (5.9s)
+  ok 1 [chromium] › tests\e2e\scan.spec.ts:490:3 › scan › an AI failure saves the vacancy as a draft and says so (6.3s)
 
-  1 passed (7.1s)
+  1 passed (7.9s)
 
 
 ======================================================================
@@ -168,3 +168,17 @@ What those runs prove about the APP rather than about the thresholds:
   - EMBEDDING COST OF A RE-INDEX, measured: 9 chunks, 1 embedding request,
     cost_usd_micro 9 for a five-item base. Embeddings are priced per token and
     chunking changes how text is divided, not how much of it there is.
+
+  - THE LEXICAL GATE (v2.15) WAS MEASURED THE SAME WAY, three more seeded runs,
+    recorded in docs/eval/coverage-thresholds.md Part 3. Both false positives
+    are Gaps naming their missing term ("MS Office", "Labelbox"); all five
+    `general` requirements kept the status they had; and the one tool
+    requirement the base DOES satisfy (Python) stayed Covered - which is the
+    difference between a gate that discriminates and one that distrusts tools.
+    The classification for the eight requirements was 5 general / 3 tool /
+    0 credential.
+
+    The middle of those three runs exists because the first version of the P1
+    edit narrowed the top-level keywords list from 10 terms to 5, halving K's
+    denominator. Nothing failed; the number was simply wrong, and only a second
+    run showed it. Recorded because "no test caught it" is the point.
