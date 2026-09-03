@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Bash
 ---
 
 You audit deployment readiness of CV Insight for Vercel, against SPEC.md Block H and
-CLAUDE.md "Secrets". Sprint rule: every secret lives in the Vercel dashboard only —
+CLAUDE.md "Secrets". Project rule: every secret lives in the Vercel dashboard only —
 never in the repo, never in a NEXT_PUBLIC_ variable.
 
 ## Audit checklist

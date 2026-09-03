@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { APP_NAME } from '@/lib/copy';
+import { APP_NAME, AUDIT_RETENTION_VERIFIED, PRIVACY_ERASURE } from '@/lib/copy';
 
 export const metadata = { title: 'Privacy — CV Insight' };
 
@@ -16,8 +16,9 @@ export default function PrivacyPage() {
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium">What is stored, and where</h2>
         <p className="text-muted-foreground text-sm">
-          {APP_NAME} stores your career items, job postings, scans and generated resumes in a
-          Supabase Postgres database hosted in the EU (Frankfurt). Rows are scoped to your account.
+          {APP_NAME} stores the email address you sign up with, together with your career items,
+          job postings, scans, generated resumes and per-call AI usage metadata, in a Supabase
+          Postgres database hosted in the EU (Frankfurt). Rows are scoped to your account.
         </p>
       </section>
 
@@ -38,10 +39,31 @@ export default function PrivacyPage() {
         </p>
       </section>
 
+      {/*
+       * SINGLE SOURCE of the erasure + audit-record claim (SPEC v2.9). This is
+       * the ONLY place the page may mention audit records, retention or erasure
+       * scope. Two sentences on the subject is how the page came to contradict
+       * itself once already: an earlier version claimed Supabase retained the
+       * records "for its own retention period" while a second section claimed we
+       * delete them at 90 days. The first was simply false - auth.audit_log_entries
+       * lives in OUR Postgres and we are the controller.
+       *
+       * The wording states the CONSEQUENCE, not the mechanism: a reader does not
+       * care that auth.audit_log_entries has no foreign key to auth.users, they
+       * care that deleting the account does not remove these rows. Scope is
+       * likewise exact - "the data you created in the app", never "all data".
+       *
+       * Which branch renders is decided by AUDIT_RETENTION_VERIFIED, and by
+       * nothing else. It is false, so the page states no retention period.
+       * check.mjs R12 requires a real cron.job_run_details paste in
+       * docs/eval/audit-retention-evidence.md before that constant may be true,
+       * so the claim and its proof can only ship together.
+       */}
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium">Right to erasure</h2>
         <p className="text-muted-foreground text-sm">
-          Settings → Delete account and all data removes your account and every row you own.
+          {PRIVACY_ERASURE.lead}{' '}
+          {AUDIT_RETENTION_VERIFIED ? PRIVACY_ERASURE.verified : PRIVACY_ERASURE.fallback}
         </p>
       </section>
 

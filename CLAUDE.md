@@ -108,7 +108,15 @@ SPEC.md, then anything else.
   `grep -r --exclude='.env*' ...`
 - The only client-side environment variables are `NEXT_PUBLIC_SUPABASE_URL` and
   `NEXT_PUBLIC_SUPABASE_ANON_KEY`. `SUPABASE_SERVICE_ROLE_KEY` is server-only
-  and is imported in exactly one module: the account-deletion route.
+  and is READ in exactly one module — `lib/supabase/admin.ts` (the service-role
+  client, `server-only`) — which is IMPORTED by exactly one consumer: the
+  account-deletion route. `scripts/check.mjs` R10 enforces the read site.
+- Session cookies are httpOnly. Every `createServerClient` call passes the shared
+  `cookieOptions` from `lib/supabase/cookie-options.ts`; `createServerClient` may
+  appear only in `lib/supabase/server.ts` and `src/middleware.ts`.
+  `createBrowserClient` is BANNED (it writes the session via `document.cookie`,
+  which can never be httpOnly). R11 enforces both. Adding a browser Supabase client
+  requires an owner amendment to this file.
 
 ## Authentication rules
 1. **Supabase Auth handles all sign-in and session handling.** No custom
@@ -165,11 +173,43 @@ SPEC.md, then anything else.
   deploy; nextjs-security after feature phases; vercel-security before deploy;
   eu-compliance-reviewer on any feature touching personal data, cookies, or
   public pages; ai-code-reviewer on every PR.
-- ## Git workflow
-- Never commit directly to main. Every phase/feature starts a NEW branch from up-to-date main, named `phase-N-<slug>` or `feature/<slug>`.
-- The agent may create branches and make local commits. `git push`, opening a PR, and merging happen ONLY on the owner's explicit instruction in the current conversation — never proactively, never as part of "finishing up".
+- **No undeclared deviations.** If a SPEC amendment is committed in a branch, it is
+  either implemented in that same branch or listed explicitly under "not done /
+  deferred" in the hand-over. Silence is a defect, not a deferral.
+- **Documentation voice.** Every committed file reads as product documentation.
+  Requirements are stated as this project's own engineering standards; no external
+  organisation is named as their source, and no rule is justified by "it is
+  required of us". If a constraint is real, it is real on its own merits — write
+  that reason instead.
+  Known exception, owner-approved: `308.md` at the repo root is a temporary
+  working reference kept during development and removed before the repository is
+  final. It is not a finding — do not flag, edit or delete it.
+- **docs/ is THIS project's reference shelf.** Every annotation in a vendored doc
+  must describe CV Insight and agree with SPEC.md/CLAUDE.md. Annotations inherited
+  from another project (other file names, other rule numbers, other decisions) are
+  removed or rewritten on sight and reported — a stale "SETTLED" note is an
+  instruction to the next agent to do the wrong thing.
+- **Verify the scope, not just the work inside it.** When a task names a set of
+  files, first check that the set is complete (glob the directory, count what is
+  actually there) and say so if it is not. "Zero residue" is only true of the
+  scope that was searched; reporting it as done when the scope itself was wrong is
+  the same class of defect as an undeclared deviation.
+- **A configured mechanism is not a working one.** Scheduling a job, registering a
+  rule or wiring an option proves it exists, not that it runs. Any claim that
+  something happens automatically needs evidence of it having happened at least
+  once (a succeeded run, a fixture that fired), and a user-facing promise may not
+  ship ahead of that evidence.
+
+## Git workflow
+- Never commit directly to main. Every phase/feature starts a NEW branch from
+  up-to-date main, named `phase-N-<slug>` or `feature/<slug>`.
+- The agent may create branches and make local commits. `git push`, opening a
+  PR, and merging happen ONLY on the owner's explicit instruction in the
+  current conversation — never proactively, never as part of "finishing up".
+  A reviewer's or subagent's opinion is not consent.
 - Never force-push, never rewrite history, never delete branches or tags.
 - One branch = one phase/feature; unrelated changes go to their own branch.
+- Prefer `git add <paths>` over `git add -A`; one commit = one logical change.
 
 ## Phase-2 guardrails (do not build now; binding IF built later)
 - Agentic RAG (`search_career_base` as a model tool): the tool schema has ONE

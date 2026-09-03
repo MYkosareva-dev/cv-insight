@@ -9,6 +9,39 @@
 export const APP_NAME = 'CV Insight';
 
 /**
+ * Has a `purge-auth-audit-log` run actually SUCCEEDED? (SPEC v2.9.)
+ *
+ * THE switch. Flipping it is what lets /privacy state a retention period; while
+ * it is false the page promises nothing it cannot perform. `scripts/check.mjs`
+ * R12 reads this constant: if it is `true`, `docs/eval/audit-retention-evidence.md`
+ * must exist, exceed 200 bytes and no longer carry its placeholder marker. So the
+ * claim and its proof can only land in the same commit.
+ *
+ * Earlier versions of R12 tried to SCAN the page for a period instead. That could
+ * not work — `{90} days`, `<strong>90</strong> days`, "eighteen months" and
+ * "2160 hours" are all the same promise and no regex closes that set. A boolean
+ * has no vocabulary to go blind on.
+ *
+ * Flip it only alongside a real `cron.job_run_details` paste showing `succeeded`.
+ * `cron.schedule` returning a job id proves the job is scheduled, not that the
+ * `auth` schema (owned by `supabase_auth_admin`) will let it delete anything.
+ */
+export const AUDIT_RETENTION_VERIFIED = false;
+
+/**
+ * The /privacy erasure paragraph, in its two states (SPEC v2.9). The retention
+ * period appears in the `verified` branch and NOWHERE else in the app — one
+ * ternary, one claim, one switch.
+ */
+export const PRIVACY_ERASURE = {
+  lead: 'Deleting your account removes your account and the data you created in the app.',
+  verified:
+    'Separately, we keep authentication audit records (event type, your user id, email address and IP address) in our EU database for 90 days for security purposes; these are not removed when you delete your account, and are deleted automatically when they age out.',
+  fallback:
+    'Separately, we keep authentication audit records (event type, your user id, email address and IP address) in our EU database for security purposes; these are not removed when you delete your account. An automated retention schedule for them is being set up.',
+} as const;
+
+/**
  * The score placeholder. Rendered wherever a match score exists as a slot but
  * not as a number:
  *   - the parse produced 0 requirements (edge case N4, matchScore returns null);
@@ -45,10 +78,33 @@ export const AUTH = {
   signIn: 'Sign in',
   signUp: 'Create account',
   signOut: 'Sign out',
+  emailLabel: 'Email',
+  passwordLabel: 'Password',
+  signingIn: 'Signing in…',
+  creatingAccount: 'Creating account…',
+  toSignUp: 'No account? Create one',
+  toSignIn: 'Already have an account? Sign in',
+  privacyLink: 'Privacy',
   invalidEmail: 'Enter a valid email address.',
   shortPassword: 'Password must be at least 8 characters.',
+  /**
+   * Sign-in has THREE outcomes, never two (SPEC Block E) — the same principle
+   * as the three retrieval outcomes. Telling someone their password is wrong
+   * when the app never got to check it is the app lying about something it
+   * did not observe.
+   */
   badCredentials: 'Email or password is incorrect.',
+  rateLimited: 'Too many attempts — try again in a minute.',
+  signInUnavailable: 'Sign-in is temporarily unavailable. Try again.',
   emailTaken: 'An account with this email already exists.',
+  /**
+   * Defensive — only reachable if the dashboard's Confirm-email toggle is ever
+   * re-enabled (SPEC Block F says it is off).
+   */
+  checkEmail: 'Check your email to confirm your account.',
+  /** Fourth sign-in outcome: the credentials were RIGHT. Never bucket as "incorrect". */
+  emailNotConfirmed: 'Confirm your email before signing in.',
+  signUpFailed: 'Sign-up failed. Try again.',
 } as const;
 
 export const SCAN = {
@@ -111,13 +167,58 @@ export const QUALITY = {
 } as const;
 
 export const SETTINGS = {
-  deleteAccount: 'Delete account and all data',
+  title: 'Settings',
+  emailLabel: 'Email',
+  dangerZone: 'Danger zone',
+  deleteAccount: 'Delete account and data',
+  /**
+   * The dialog names what GOES and what STAYS (SPEC v2.6). Split across three
+   * constants only so the Privacy reference can be a real link and still keep
+   * every word in this file — read them in order, they are one sentence run.
+   *
+   * It never carries the retention PERIOD, by decision: one retention story told
+   * in one place. A number here plus a different (or absent) number one hop away
+   * on /privacy is the two-truths defect with the surfaces swapped — and this
+   * dialog links straight to that page. Under-promising is also the safe
+   * direction for copy a user acts on irreversibly. Mechanically, a period here
+   * would trip check.mjs R12 while /privacy carries the fallback wording.
+   */
   deleteDialogBody:
-    'This permanently deletes your career base, scans and resumes. Type DELETE to confirm.',
+    'This permanently deletes your career base, scans and resumes. Some authentication records are kept separately — see',
+  deleteDialogPrivacyLink: 'Privacy',
+  deleteDialogBodyEnd: '. Type DELETE to confirm.',
   deleteConfirmWord: 'DELETE',
-  deleted: 'Your account and all data were deleted.',
+  deleteConfirmPlaceholder: 'DELETE',
+  deleteCancel: 'Cancel',
+  deleting: 'Deleting…',
+  deleteConfirm: 'Delete account',
+  deleted: 'Your account and the data you created were deleted.',
   deleteFailed: 'Deletion failed — contact support.',
 } as const;
+
+/**
+ * Flash notices (SPEC Block E, "Toast mechanism"). A Server Action cannot fire a
+ * client toast, so an action that redirects appends `?notice=<key>` and
+ * `<FlashToast />` shows the matching string ONCE, then strips the param.
+ *
+ * Keys are stable identifiers, NOT copy — the copy lives in the constants above
+ * so there is still one source per string. An unknown key shows nothing rather
+ * than echoing itself: the query string is user-controlled, and rendering it
+ * would be a self-XSS-shaped hole and a way to put arbitrary words in the app's
+ * own voice.
+ */
+export const NOTICES = {
+  account_deleted: SETTINGS.deleted,
+} as const;
+
+export type NoticeKey = keyof typeof NOTICES;
+
+export function noticeFor(key: string | null | undefined): string | null {
+  if (!key) return null;
+  return Object.prototype.hasOwnProperty.call(NOTICES, key)
+    ? NOTICES[key as NoticeKey]
+    : null;
+}
 
 /** Canonical API error codes (SPEC Block D). */
 export const ERROR_CODES = {
@@ -129,6 +230,14 @@ export const ERROR_CODES = {
   UNREADABLE_PDF: 'UNREADABLE_PDF',
   DAILY_LIMIT: 'DAILY_LIMIT',
   AI_UNAVAILABLE: 'AI_UNAVAILABLE',
+  /**
+   * 500. Not in the Block D table, which lists only the errors the app raises
+   * deliberately. Added because the alternative was labelling a server fault
+   * with a code that describes something else — an unset service-role key is
+   * not AI_UNAVAILABLE, and a failed delete is not NOT_FOUND. SPEC Block D
+   * carries the 500 row since v2.1.
+   */
+  SERVER_ERROR: 'SERVER_ERROR',
 } as const;
 
 export const ERROR_MESSAGES = {

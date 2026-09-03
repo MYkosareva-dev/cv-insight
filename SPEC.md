@@ -1,12 +1,21 @@
 # CV Insight — Technical Specification
-> Version: 1.9 | Date: 2026-09-02 | Status: Production-ready
-> Amendment trail: v1.1 gate architecture · v1.2 fictional persona · v1.3 application notes · v1.4 HNSW index · v1.5 module-path cleanup · v1.6–1.9 phase-0 review rounds (B1a/B1b, middleware, check.mjs 7 rules, cost_known, errors.ts/requireApiUser.ts, Block A completeness)
+> Version: 2.9 | Date: 2026-09-02 | Status: Production-ready
+> v2.9: R12 redesigned from a prose scanner to a two-state switch (AUDIT_RETENTION_VERIFIED + a template evidence file). Scanning could not close the set of ways to write a period, and the anchored evidence format matched no real psql output — the guard had become more complex than what it guards. Rules stay frozen; this replaces one, it does not add any.
+> v2.8: R12 stated as fail-closed and over-inclusive (a rule keyed on one blessed word was blind to the app's own shipped phrasing); evidence predicate anchored, not substring. Enforcement rules are FROZEN for Phase 1 after this — new rules only when a defect in product code motivates one.
+> v2.7: fallback wording defined in exactly one place (the evidence gate owns it) and "verbatim" made conditional on that gate; R13 scope recorded as shipped — docs/*.md, excluding docs/reviews/, because a dated report must stay true to its date rather than be edited to satisfy a check.
+> v2.6: SPEC made buildable against its own rules — the deletion dialog names that records are kept and links, but never the period (a number there would trip R12); R12 described as the deny-by-default rule the code implements; migration comment matches what the page actually says; R13 mechanises path-resolution in docs/ (three rounds of drift a keyword sweep could not catch).
+> v2.5: deletion copy made honest at every surface ("all data" retired; dialog names what stays) · audit sentence states the consequence, not the FK · evidence gate mechanised as check R12 (claim and proof ship together; fallback wording until then) · revalidatePath on all three auth actions · docs/ declared a globbed set, never enumerated.
+> v2.4: audit-log claim has ONE canonical paragraph + evidence gate (a scheduled cron job is not a working one); no FK to auth.users so deletion does not cascade; 002 grants DELETE explicitly; noValidate KEPT (native bubbles would pre-empt our copy) + e2e must cover the email path; Phase-6 privacy gate triggers on any deployment reachable by anyone but the owner, preview URLs included.
+> v2.3: documentation voice — requirements stated as this project's own engineering standards, no external attribution anywhere in the repo (rule lives in CLAUDE.md Process); OpenRouter processing framed as deployment configuration.
+> v2.2: maxAge enforced via cappedMaxAge (library discards cookieOptions.maxAge) + R11d/test · R11a bare token · client-side Zod (no noValidate) · auth.spec.ts pulled into Phase 1 as the only accepted evidence · audit-log corrected: WE are controller → 002_audit_retention.sql (pg_cron, 90d) + accurate disclosure · /privacy accurate-now / complete-before-deploy (Impressum = Phase 6 gate) · OpenRouter Art. 28/44 owner task before Phase 2 · linter hardening → 003
+> v2.1: maxAge 30d sliding window · R11 (createServerClient pin + createBrowserClient ban) · Sonner toast via ?notice flash (decided once) · Dialog for deletion · auth copy enumerated (signUpFailed, checkEmail, email_not_confirmed 4th outcome, deleting/cancel) · signup-enumeration decision · 500 SERVER_ERROR row · Block A: cookie-options.ts, validation.ts, error.tsx, alias hooks · exact /privacy exclusion
+> Amendment trail: v1.1 gate architecture · v1.2 fictional persona · v1.3 application notes · v1.4 HNSW index · v1.5 module-path cleanup · v1.6–1.9 phase-0 review rounds (B1a/B1b, middleware, check.mjs rules, cost_known, errors.ts/requireApiUser.ts, Block A completeness) · v2.0 phase-1 review (httpOnly cookieOptions + no browser client, three sign-in outcomes, error.code not status, best-effort signOut after delete, anchored matcher, cookie propagation on redirect, audit-log disclosure, R10 service-role pin, actions.ts/admin.ts)
 > Tier: M | Modules: M1 Auth, M2 Database, M3 API, M5 Legal & Privacy, M8 File upload, M12 Third-party integrations, M15 AI/LLM
 
 ## Module checklist
 | # | Module | YES/NO | Reason |
 |---|---|---|---|
-| M1 | Auth & Sessions | YES | Per-user server data; Supabase Auth required by sprint |
+| M1 | Auth & Sessions | YES | Per-user server data; every row is owner-scoped |
 | M2 | Database | YES | Supabase Postgres + pgvector; RLS on every table |
 | M3 | API Endpoints | YES | Next.js route handlers; all LLM/embedding calls server-side |
 | M4 | Payments | NO | Free tool — zero words about pricing |
@@ -38,12 +47,12 @@
 | Files | PDF text extraction via `unpdf` (server-side) | PDF only in MVP, ≤5 MB |
 | Resume export | `docx` npm package, server-side | .docx download only in MVP |
 | Validation | Zod | Every API input and every LLM JSON output |
-| Unit tests | node:test (zero-dep, built-in) | `npm test` — pure functions (keywordPresent, matchScore branch); files in `tests/unit/` |
+| Unit tests | node:test (zero-dep, built-in) | `npm test` — pure functions (keywordPresent, matchScore) AND shipped artifacts testable without a browser (middleware matcher, check.mjs rules); files in `tests/unit/`, TS resolved via `tests/alias-hook.mjs` |
 | E2E tests | Playwright (Phase 7) | See Block H; files in `tests/e2e/` |
 | Deploy | Vercel | All secrets in Vercel dashboard only |
 | **Prohibited** | `NEXT_PUBLIC_` prefix on any secret; any OpenRouter call from client code; service-role key anywhere client-accessible; LangChain/CrewAI or any agent framework (direct `fetch` only); analytics/telemetry/third-party cookies; LinkedIn scraping or auto-apply; DOCX/MD import (phase 2) | |
 
-> Decision: Next.js 16 + Tailwind v4 chosen as current stable majors; sprint imposes no version, so newest stable wins.
+> Decision: Next.js 16 + Tailwind v4 — current stable majors at project start; no external constraint pins a version, so newest stable wins.
 > Decision: `SUPABASE_SERVICE_ROLE_KEY` exists server-side in `.env.local` and is used in exactly one place — `DELETE /api/account` (auth.admin.deleteUser). It never appears in client bundles or `NEXT_PUBLIC_` variables.
 > Decision: Money does not exist in this app (M4 = NO); the only monetary value is LLM cost tracking, stored as INTEGER micro-USD (`cost_usd_micro`), formatted only at display.
 
@@ -56,13 +65,19 @@ cv-insight/
 ├── SPEC.md
 ├── .env.local              # git-ignored; see Block F security
 ├── .env.example            # names only, no values
-├── docs/
-│   ├── supabase-pgvector.md   # cited reference, source URL at top
+├── docs/                      # ALL vendored references live here — this tree NEVER enumerates
+│   │                          # them; any task touching docs/ globs the directory first and
+│   │                          # reports the count (an enumeration here caused two wrong scopes).
+│   │                          # R13 resolves every backticked repo path in docs/*.md against the tree:
+│   │                          # an annotation describing a module that does not exist is a defect a
+│   │                          # keyword sweep cannot catch, which is why it is a property, not a grep.
+│   │                          # Every file: source URL at top, annotations about THIS project only.
 │   ├── reviews/               # ai-code-reviewer reports per PR
-│   └── eval/                  # judge calibration labels + agreement score
+│   └── eval/                  # judge calibration; audit-retention-evidence.md (R12)
 ├── .claude/agents/            # ai-architect, ai-code-reviewer, supabase-security,
 │                              # nextjs-security, vercel-security, eu-compliance-reviewer
 ├── supabase/migrations/001_init.sql
+├── supabase/migrations/002_audit_retention.sql   # pg_cron 90-day purge of auth.audit_log_entries
 ├── src/
 │   ├── middleware.ts          # route protection
 │   ├── app/
@@ -75,13 +90,18 @@ cv-insight/
 │   │   ├── (app)/quality/page.tsx
 │   │   ├── (app)/settings/page.tsx
 │   │   ├── privacy/page.tsx   # public
+│   │   ├── error.tsx          # error boundary — renders Next's digest only, never the message
 │   │   └── api/               # route handlers, see Block D
 │   ├── lib/
-│   │   ├── supabase/            # server client, browser client
+│   │   ├── supabase/            # server.ts (server client) · cookie-options.ts (shared httpOnly
+│   │   │                        # options) · admin.ts (service-role) — NO browser client (banned)
+│   │   ├── validation.ts        # Zod schemas for auth forms (+ API bodies as phases land)
 │   │   ├── openrouter/server.ts # CONNECTION only: speaks to both endpoints, no auth opinion
 │   │   ├── chat.ts              # GATE (server-only): completions — parse/generate/judge; getUser() first
 │   │   ├── errors.ts            # single shared UnauthorizedError (→401), imported by both gates
 │   │   ├── auth/requireApiUser.ts # API-side gate twin: getUser() → throws UnauthorizedError (401)
+│   │   ├── auth/actions.ts      # Server Actions: signUp / signIn / signOut (no browser Supabase client)
+│   │   ├── supabase/admin.ts    # the ONE service-role client — imported ONLY by DELETE /api/account
 │   │   ├── retrieval.ts         # GATE (server-only): embeddings + getUser() first; ORCHESTRATES
 │   │   │                        # matching by calling lib/db/documents.ts (the .rpc lives in the DAL)
 │   │   ├── db/                  # one DAL per table (+ types.ts) — the ONLY files calling .from()/.rpc(
@@ -92,8 +112,19 @@ cv-insight/
 │   │   └── docx.ts              # resume export
 │   ├── app/not-found.tsx        # 404 page (RLS-absent rows render here, not 403)
 │   └── components/              # shadcn/ui-based (incl. components/ui/), see Block E
-├── tests/unit/                  # node:test — keywordPresent, matchScore branch (`npm test`)
-├── scripts/check.mjs            # 7 rules — FAILs on: .from( AND .rpc( outside lib/db;
+├── tests/unit/                  # node:test — keywordPresent, matchScore, middleware matcher, check rules
+├── tests/alias-hook.mjs         # + alias-resolver.mjs: resolve @/ TS imports for node:test
+├── scripts/check.mjs            # 13 rules — FAILs on: .from( AND .rpc( outside lib/db;
+│                                # (R8) secret in next.config.*; (R9) getSession( in src/;
+│                                # (R10) SUPABASE_SERVICE_ROLE_KEY read outside lib/supabase/admin.ts;
+│                                # (R11) createServerClient outside lib/supabase/server.ts + middleware.ts,
+│                                # or ANY createBrowserClient import; (R12) an audit-retention period
+│                                # on any shipped surface without a succeeded run in
+│                                # docs/eval/audit-retention-evidence.md; (R13) a backticked repo path in
+│                                # docs/*.md that does not resolve against the tree (allow-list: paths the
+│                                # annotation itself marks as deleted). Scope EXCLUDES docs/reviews/ —
+│                                # a dated report correctly names files as they stood then, and failing on
+│                                # it would push an agent to falsify the record to make a check pass;
 │                                # "security definer" in supabase/; NEXT_PUBLIC_ on any secret name
 │                                # (incl. .env.example); openrouter.ai URL outside lib/openrouter/server.ts;
 │                                # a secret read without a 'server-only' import; OpenRouter fetch outside
@@ -189,8 +220,8 @@ Persona: **Mira** (fictional), 33, AI Quality Analyst in Hamburg, Germany, activ
 **US-6 — Privacy: lockout and erasure.**
 1. A signed-out visitor opens `/applications/9f2…` directly → redirected to `/login`; no data flash.
 2. A second account tries the same URL signed-in → 404 page "Not found" (RLS returns no row).
-3. Mira opens `/settings`, clicks [Delete account and all data], types `DELETE` to confirm.
-4. Server removes the auth user; all rows cascade-delete; she is signed out to `/login` with toast "Your account and all data were deleted."
+3. Mira opens `/settings`, clicks [Delete account and data], types `DELETE` to confirm.
+4. Server removes the auth user (`auth.admin.deleteUser`, hard delete — never `shouldSoftDelete`, which would turn GDPR erasure into a no-op); all rows cascade-delete; the follow-up `signOut()` is BEST-EFFORT (try/catch — the account is already gone, a network failure there must not surface as "Deletion failed"); session cookies are cleared locally regardless; redirect to `/login` with toast "Your account and the data you created were deleted."
 5. Error path: confirmation text mismatch → button stays disabled.
 - [ ] Incognito direct URL never renders user data (Playwright-verified)
 - [ ] Cross-user access returns 404, not another user's data (Playwright-verified)
@@ -212,7 +243,7 @@ auth.users 1──N resume_versions (user_id)    applications 1──N resume_ve
 auth.users 1──N llm_calls (user_id)          applications 1──N llm_calls (application_id, SET NULL)
 ```
 
-> Decision: the embeddings table is named `documents` (not `career_chunks`) to match the sprint requirement verbatim: "a documents table with vector(1536) columns".
+> Decision: the embeddings table is named `documents` (not `career_chunks`) — the conventional pgvector/Supabase naming, so the schema reads the way the ecosystem's examples and tooling expect.
 > Decision: no `profiles` table — `auth.users` covers MVP needs; nothing user-facing to store beyond owned rows.
 
 ### Migration `supabase/migrations/001_init.sql` (run in Supabase SQL editor as-is)
@@ -345,7 +376,7 @@ begin
 end $$;
 
 -- > Decision: Supabase-linter hardening (extensions schema, SET search_path, `to authenticated`,
--- `(select auth.uid())` wrapping) is DEFERRED to a future 002 migration. None is security-relevant
+-- `(select auth.uid())` wrapping) is DEFERRED to a future 003 migration (002 is audit retention). None is security-relevant
 -- under this RLS design (anon has no policies → denied; auth.uid() is null for anon); search_path
 -- has a real HNSW-inlining tradeoff; scale is tiny. Revisit only if the linter matters pre-deploy.
 
@@ -360,6 +391,32 @@ language sql stable as $$
   order by d.embedding <=> query_embedding
   limit match_count;
 $$;
+```
+
+### Migration `supabase/migrations/002_audit_retention.sql` (Phase 1; run in SQL editor after 001)
+```sql
+-- Retention for Supabase Auth's audit trail, which lives in THIS database (we are the controller).
+-- /privacy states NO period until a succeeded run exists (R12 + the evidence gate);
+-- after that it discloses 90 days. pg_cron must be enabled for the project (Database → Extensions).
+create extension if not exists pg_cron;
+
+-- The auth schema is owned by supabase_auth_admin and the job runs as the scheduling
+-- role, so DELETE must be granted explicitly or the job fails silently every night.
+grant usage on schema auth to postgres;
+grant delete on table auth.audit_log_entries to postgres;
+
+select cron.schedule(
+  'purge-auth-audit-log',            -- job name (idempotent: re-running replaces the schedule)
+  '0 3 * * *',                       -- daily 03:00 UTC
+  $$ delete from auth.audit_log_entries where created_at < now() - interval '90 days' $$
+);
+
+-- Prove it: schedule a one-off run a minute out, then read cron.job_run_details.
+-- A row in cron.job means "scheduled"; only status='succeeded' in cron.job_run_details
+-- means the purge actually has permission to run.
+--   select status, return_message, end_time from cron.job_run_details
+--   where jobid = (select jobid from cron.job where jobname = 'purge-auth-audit-log')
+--   order by end_time desc limit 3;
 ```
 
 ### Seed example (core table `career_items`)
@@ -393,6 +450,7 @@ Conventions for ALL endpoints: Next.js App Router route handlers under `src/app/
 | 413 | FILE_TOO_LARGE | Upload >5 MB |
 | 422 | UNREADABLE_PDF | No text layer extracted |
 | 429 | DAILY_LIMIT | >50 LLM calls per user per day (rule B7) |
+| 500 | SERVER_ERROR | Unexpected failure after validation and auth (e.g. admin.deleteUser error); message is generic — never the underlying error text |
 | 502 | AI_UNAVAILABLE | Primary and fallback models both failed |
 
 | # | Endpoint | Purpose |
@@ -406,7 +464,7 @@ Conventions for ALL endpoints: Next.js App Router route handlers under `src/app/
 | 7 | `POST /api/applications/[id]/judge` | On-demand judge of edited text; saves `source='user'` version |
 | 8 | `GET /api/applications` · `GET /api/applications/[id]` · `PATCH /api/applications/[id]` (status, notes) | List / detail / status & notes update |
 | 9 | `POST /api/applications/[id]/export` | Editor content → .docx file response |
-| 10 | `DELETE /api/account` | Erase auth user + all data (uses service-role key; server-only) |
+| 10 | `DELETE /api/account` | Erase auth user + every owned row (uses service-role key; server-only) |
 
 > Decision: full request/response contracts below for the three pipeline-defining endpoints (#4, #5, #6); the rest follow the same conventions and the error table verbatim — duplicating near-identical JSON would violate anti-bloat.
 
@@ -490,7 +548,7 @@ Responsive test widths: **1280 / 375**. Nothing may overflow horizontally at eit
 ### Screens (three mandatory states each)
 
 **`/login`, `/signup`** — centered card 400 px; fields Email, Password; primary green button [Sign in]/[Create account]; link to the other form; footer link Privacy.
-Loading: button spinner + disabled. Empty: n/a (form). Error: inline under field — invalid credentials → "Email or password is incorrect."; signup with existing email → "An account with this email already exists."
+Loading: button spinner + disabled. Empty: n/a (form). Error: inline under field. Sign-in has THREE outcomes, never collapsed (same principle as the three retrieval outcomes): invalid credentials (`invalid_credentials`) → "Email or password is incorrect."; rate-limited (`over_request_rate_limit` / 429) → "Too many attempts — try again in a minute."; Supabase unreachable / any other error → "Sign-in is temporarily unavailable. Try again." Sign-up: branch on GoTrue `error.code`, NEVER on HTTP status — `user_already_exists` → "An account with this email already exists."; `weak_password` → the Block F password copy (both return 422, so a status check would show the wrong message and leak a false enumeration signal).
 
 **`/scan` — New scan.** Stepper on top: `1 Resume → 2 Vacancy → 3 Results`. Two panels (grid-cols-2):
 Left: resume source Tabs (shadcn `Tabs`): **Career base** (default; shows "Using all N items of your base") / **Saved version** (Select of previous tailored resumes) / **Paste text** (Textarea) / **Upload PDF** (dropzone: "Drag & drop or choose a .pdf file, max 5 MB").
@@ -515,9 +573,26 @@ Loading: 8 skeleton rows. Empty: "No scans yet. Run your first scan." + [New sca
 **`/quality` — observability.** Stat tiles: Total LLM cost (USD, formatted from `cost_usd_micro`), Calls today, Avg judge score, Auto-revision rate, Fallback rate. Table of last 50 `llm_calls`: time, step, model, tokens in/out, cost, latency, ok.
 Loading: skeleton tiles. Empty: "No AI calls yet." Error: toast "Couldn't load metrics."
 
-**`/settings`.** Email (read-only), [Sign out] (outline), Danger zone card: [Delete account and all data] (danger red) → Dialog: "This permanently deletes your career base, scans and resumes. Type DELETE to confirm." Input + disabled confirm until exact match.
+**`/settings`.** Email (read-only), [Sign out] (outline), Danger zone card: [Delete account and data] (danger red) → shadcn **Dialog** (modal, focus-trapped — destructive actions are never an inline panel): "This permanently deletes your career base, scans and resumes. Some authentication records are kept separately — see Privacy. Type DELETE to confirm." (the Privacy link opens /privacy)
+> Decision: the dialog names that something is kept, and links; it never carries the retention PERIOD. One retention story, told in one place — a number here plus a different (or absent) number one hop away on /privacy is the same two-truths defect, surfaces swapped. It also keeps the dialog under-promising rather than over-promising, which is the safe direction for a copy that a user acts on irreversibly. Mechanically: any period stated here would trip R12 the moment /privacy carries the fallback. Input + disabled confirm until exact match; confirm button label while pending: "Deleting…"; secondary: "Cancel".
 
-**`/privacy`** — static: what is stored, where (Supabase, EU project region), that resume content is sent to OpenRouter for processing (retention choice documented), auth cookies are strictly necessary (no consent banner needed, no trackers), right to erasure via Settings, Impressum block.
+**Toast mechanism (decided once, used by every phase):** shadcn **Sonner**. Server Actions cannot fire a client toast directly, so an action that redirects appends `?notice=<key>`; a client `<FlashToast />` mounted in the `(auth)` and `(app)` layouts reads the key ONCE, fires the toast with the matching `lib/copy.ts` string, and strips the param via `router.replace`. Keys are the copy.ts constant names (e.g. `account_deleted` → "Your account and the data you created were deleted."). No inline "?deleted=1 notice" variants — one mechanism.
+
+**Auth copy not previously enumerated (so `copy.ts` stays verbatim-to-SPEC):** `signUpFailed` → "Sign-up failed. Try again."; `checkEmail` (defensive — only reachable if the dashboard's Confirm-email toggle is ever re-enabled) → "Check your email to confirm your account."; `email_not_confirmed` on sign-in → "Confirm your email before signing in." (a fourth sign-in outcome: the credentials were RIGHT — never bucket it as "password is incorrect"); `over_email_send_rate_limit` is bucketed with `over_request_rate_limit` as rate-limited.
+> Decision: `/signup` MAY enumerate accounts ("An account with this email already exists.") — deliberate UX trade-off on a personal tool with no public user directory; `/login` stays non-enumerating. Do not "fix" one to match the other.
+
+**`/privacy`** — static, reachable from BOTH layouts (footer link in `(auth)` and `(app)` — Art. 12(1)). Content: what is stored (account email; career items, vacancies, applications, resume versions, LLM-call metadata), where (Supabase, EU-Frankfurt), that resume/vacancy text is sent to OpenRouter for processing (retention choice documented), auth cookies are strictly necessary (no consent banner, no trackers), right to erasure via Settings, **authentication audit records**, Impressum block.
+> Decision (audit log, corrected): `auth.audit_log_entries` lives in OUR Postgres (EU-Frankfurt) — the operator is the controller, there is no "provider retention period", and Supabase does not prune it. It has **no foreign key to `auth.users`**, so account deletion fires NO cascade into it: those rows survive deletion and disappear only on the scheduled purge. Retention is therefore OURS: migration `002_audit_retention.sql` schedules a `pg_cron` job (daily 03:00 UTC) deleting entries older than **90 days**.
+> **Deletion copy must match this decision everywhere, not only on /privacy.** "all data" is not a true claim while audit records survive, so it appears in no button, toast, dialog or heading. Canonical strings: button "Delete account and data"; dialog body names what goes AND what stays, with a link to /privacy; toast "Your account and the data you created were deleted." A promise made at the moment of an irreversible action is the one that must be most exact.
+> **Single source of this claim on /privacy** — exactly one paragraph, nowhere else. The STRONG wording below is what ships ONCE the evidence gate two lines down is satisfied; until then the FALLBACK sentence defined in that gate is the verbatim one, and that gate is the only place this document defines fallback text. Strong wording, verbatim after the gate: "Deleting your account removes your account and the data you created in the app. Separately, we keep authentication audit records (event type, your user id, email address and IP address) in our EU database for 90 days for security purposes; these are not removed when you delete your account, and are deleted automatically when they age out." Any other sentence about audit records, provider retention, or "every row" erasure is a defect — grep /privacy for duplicates before hand-over.
+> **Evidence gate (mechanical, not advisory)**: the 90-day claim and its proof are coupled by the build. `scripts/check.mjs` **R12** FAILs if ANY shipped surface (page, component, or copy constant — not `/privacy` alone; the rule is deny-by-default, so a claim that moves file still trips it) states an audit-retention period while `docs/eval/audit-retention-evidence.md` is missing or empty of a `succeeded` run. Until the owner has applied 002 and pasted a `succeeded` run into that file, /privacy carries the FALLBACK sentence: "Separately, we keep authentication audit records (event type, your user id, email address and IP address) in our EU database for security purposes; these are not removed when you delete your account. An automated retention schedule for them is being set up." The strong wording and the evidence file land in the SAME commit, never apart.
+> **R12, redesigned — a switch, not a scanner.** Scanning prose for a retention period cannot work: `{90} days`, `<strong>90</strong> days`, "eighteen months" and "2160 hours" are all the same claim and no regex closes that set, while an anchored evidence format rejects every output `psql` actually emits. The mechanism was becoming more complex than the thing it guards and generating its own defects. Replaced by a two-state gate with no text matching at all:
+> 1. `lib/copy.ts` exports `AUDIT_RETENTION_VERIFIED: boolean` — the ONLY switch. The /privacy paragraph is chosen by it: `true` → strong wording (states 90 days), `false` → fallback wording (states none). A period may appear in exactly one branch of one ternary, nowhere else in the app.
+> 2. **R12**: if `AUDIT_RETENTION_VERIFIED` is `true`, then `docs/eval/audit-retention-evidence.md` must exist, exceed 200 bytes, and not contain the placeholder marker `<PASTE RUN OUTPUT HERE>`. If it is `false`, nothing else is checked. Binary, unevadable, no vocabulary to go blind on.
+> 3. The evidence file ships as a template carrying that placeholder. The owner replaces it with the verbatim `cron.job_run_details` output in whatever format the client produced — table, expanded, CSV, JSON, all fine — and flips the constant in the same commit.
+> Consequence: the strong wording is unreachable while the placeholder stands, and the gate never asks anyone to hand-type a format a database cannot emit.
+> **Why**: this wording may ship only once a purge run has actually SUCCEEDED. `cron.schedule` returning a job id proves nothing — the `auth` schema is owned by `supabase_auth_admin`, so the job can fail with permission denied every night and leave no user-visible trace. The owner verifies `select status, return_message, end_time from cron.job_run_details where jobid = (select jobid from cron.job where jobname = 'purge-auth-audit-log') order by end_time desc limit 3;` shows `succeeded`. If it does not, the page reverts to the fallback wording ("...for security purposes; we are working on an automated retention schedule for them") and the purge is fixed before the claim is restored — the page never promises a deletion that is not happening.
+> Decision (scope): Phase 1 makes /privacy ACCURATE (no false claims, audit-log truth, email listed, reachable) — it is not yet public. COMPLETENESS — controller identity, legal bases per purpose, retention table, data-subject rights section, and a REAL Impressum (§5 DDG; a placeholder is abmahnfähig once public) — is a hard gate before ANY deployment reachable by anyone but the owner — preview and share URLs included, not just a public launch (the likely first exposure is a preview link handed to someone, and that is the day a real email gets typed in). Enforced by eu-compliance-reviewer + vercel-security. Owner task before Phase 2: `docs/openrouter-processing.md` (+ one sentence on /privacy), written as deployment configuration, never as project history: "Data retention and training opt-out for LLM processing are governed by the OpenRouter account a deployment is configured with (`OPENROUTER_API_KEY`). The reference deployment runs on a shared account whose privacy settings are managed by the account holder and processes demo data only. Operators serving real users must configure their own OpenRouter account with explicit retention (Zero Data Retention) and training settings." Consequence for the reference deployment: synthetic data only (the fictional persona).
 > Decision: Supabase project region = EU (Frankfurt) — closest to the user base and simplifies the GDPR story.
 
 ### Actions table (cross-screen)
@@ -573,10 +648,20 @@ Application notes: ≤2,000 chars ("Notes are limited to 2000 characters."), inl
 - **Login**: `signInWithPassword` → redirect `/scan`. Invalid → copy per Block E.
 - **Logout**: `signOut()` → `/login`.
 - **Password reset**: OUT of MVP. > Decision: cut — requires email delivery; reviewer flow doesn't need it; noted in README known-limitations.
-- **Sessions**: Supabase SSR cookies (`@supabase/ssr`), httpOnly, strictly necessary → no consent banner.
+- **Sessions**: Supabase SSR cookies (`@supabase/ssr`), strictly necessary → no consent banner. `@supabase/ssr` DEFAULTS are `httpOnly: false`, no `secure`, 400-day maxAge — NOT acceptable for a personal-data app. Both `createServerClient` call sites (server.ts, middleware.ts) MUST pass the SHARED object from `lib/supabase/cookie-options.ts`: `{ httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 60 * 60 * 24 * 30 }`.
+> Decision: `maxAge` = 30 days. Middleware rewrites the cookie on every request, so this is a SLIDING 30-day inactivity window, not a hard expiry; the access token inside still expires hourly and rotates. 30 days balances GDPR data-minimisation against a job search that runs for weeks.
+> Decision (mechanism): `@supabase/ssr` DISCARDS `maxAge` from `cookieOptions` on write. The cap is therefore enforced in BOTH adapters' `setAll` via `cappedMaxAge(options)` from `lib/supabase/cookie-options.ts`, which clamps every outgoing cookie to ≤30 days. check.mjs R11d requires `cappedMaxAge(` in both adapters, and `tests/unit/cookie-options.test.mjs` asserts the clamp — without these, deleting one call would silently revert sessions to 400 days with every rule and test still green.
+> Decision: check.mjs R11 pins `createServerClient` to exactly `lib/supabase/server.ts` and `src/middleware.ts` and FAILs on any `createBrowserClient` import — the cookie rule is enforced by code, not prose (a future OAuth callback or reset handler that omits cookieOptions would otherwise downgrade the session silently). R11a matches the BARE token so `import { createServerClient as makeClient }` cannot evade it.
+- **Client-side validation**: auth forms KEEP `noValidate` (so the browser's native bubble cannot pre-empt our copy) AND run the same Zod schema on the client before submit, rendering the exact Block F strings inline; the server re-validates regardless. Removing `noValidate` is a defect: native validation fires first and `AUTH.invalidEmail` would never be seen.
+> Decision: `tests/e2e/auth.spec.ts` must assert BOTH client-validation paths — a malformed email AND a too-short password — since only the second one reaches Zod when native validation is active; a suite covering only the password case passes while the email path is unverified.
+- **Evidence for auth (pulled forward from Phase 7)**: `tests/e2e/auth.spec.ts` (Playwright) ships in Phase 1 — sign-up → /career, sign-in → /scan, sign-out → /login, visitor redirect from /scan and /applications/<uuid>, wrong-password copy, cookie attributes httpOnly+SameSite=Lax+Max-Age≤2592000 observed on the response. Manual "live verification" is not accepted as evidence; the spec run is.
+> Decision: all auth flows are Server Actions; `createBrowserClient` is NOT used anywhere (it writes the session via `document.cookie`, which can never be httpOnly — using it would make this rule unachievable). Adding a browser Supabase client later requires an owner amendment.
+- **Cache invalidation on auth change**: `signIn`, `signUp` and `signOut` each call `revalidatePath('/', 'layout')` before redirecting. Without it a cached layout can render the previous auth state after the session changes — a signed-out user seeing a signed-in shell is a correctness bug, not a cosmetic one.
+- **Middleware cookie propagation**: every redirect branch must copy the refreshed session cookies from the Supabase response onto the redirect response — a bare `NextResponse.redirect()` silently drops a token refresh (production-shaped bug: dev sessions rarely cross the refresh boundary).
+- **Middleware matcher** is anchored: `/applications/x.png`, `/apifoo`, `/privacyleak` must NOT slip past it (the (app) layout is a second net, not the boundary). `/privacy` is excluded as an EXACT path — it has no subtree, so no `privacy(?:/|$)` prefix exclusion.
 - **Route protection**: `src/middleware.ts` — no session on member route → redirect `/login`; session on /login|/signup → redirect `/scan`. `/privacy` is EXCLUDED from the middleware matcher (public page — no getUser() round trip).
 > Decision: keep the filename `middleware.ts`. Next 16 deprecates it in favour of `proxy.ts` and prints a build warning, but `middleware.ts` is still read and wired (build output shows `ƒ Proxy (Middleware)`). SPEC and CLAUDE.md name `middleware.ts`; revisit only if a future Next removes it, not silently.
-> Decision: `src/app/api/` does not exist until Phase 2 — the first route handlers (career import/items) land there then; scan/generate/etc. follow in Phases 3–4. Its absence in the Phase 0 scaffold is intended, not a gap.
+> Decision (superseded in Phase 1): `src/app/api/` is absent from the Phase 0 scaffold by design. Its FIRST route handler is `DELETE /api/account` (Phase 1 — account lifecycle, the sole service-role consumer); career import/items follow in Phase 2, scan/generate/etc. in Phases 3–4.
 - **Rate limiting**: Supabase Auth built-in limits + B7 for AI endpoints. No custom limiter in MVP.
 
 ### Security (M2/M3)

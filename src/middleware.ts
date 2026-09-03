@@ -1,6 +1,8 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { AUTH_COOKIE_OPTIONS, cappedMaxAge } from '@/lib/supabase/cookie-options';
+
 /**
  * Public routes — everything else under the matcher requires a session.
  * `/privacy` is also excluded from the matcher below, so this entry is
@@ -22,6 +24,7 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: AUTH_COOKIE_OPTIONS,
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -32,7 +35,8 @@ export async function middleware(request: NextRequest) {
           }
           supabaseResponse = NextResponse.next({ request });
           for (const { name, value, options } of cookiesToSet) {
-            supabaseResponse.cookies.set(name, value, options);
+            // cappedMaxAge, not `options`: the library discards our maxAge.
+            supabaseResponse.cookies.set(name, value, cappedMaxAge(options));
           }
         },
       },
@@ -48,21 +52,35 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  if (!user && !startsWithPath(pathname, PUBLIC_PATHS)) {
+  /**
+   * A bare NextResponse.redirect() would DISCARD everything getUser() just
+   * wrote — including a rotated refresh token. The old token is already spent
+   * on the Auth server, so dropping the new one leaves the browser holding a
+   * dead credential and the user is logged out at random. It does not reproduce
+   * locally: a dev session rarely lives long enough to cross the refresh
+   * boundary. Every redirect out of this function carries the cookies.
+   */
+  const redirectTo = (path: string) => {
     const url = request.nextUrl.clone();
-    url.pathname = '/login';
+    url.pathname = path;
     url.search = '';
-    return NextResponse.redirect(url);
+    const response = NextResponse.redirect(url);
+    for (const cookie of supabaseResponse.cookies.getAll()) {
+      response.cookies.set(cookie);
+    }
+    return response;
+  };
+
+  if (!user && !startsWithPath(pathname, PUBLIC_PATHS)) {
+    return redirectTo('/login');
   }
 
   if (user && startsWithPath(pathname, AUTH_PATHS)) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/scan';
-    url.search = '';
-    return NextResponse.redirect(url);
+    return redirectTo('/scan');
   }
 
-  // Must be returned as-is so the refreshed cookies reach the browser.
+  // Returned as-is so the refreshed cookies reach the browser — the same
+  // guarantee redirectTo() makes for the two branches above.
   return supabaseResponse;
 }
 
@@ -73,11 +91,19 @@ export const config = {
   //                redirect to an HTML page.
   //  - `privacy` — a public static page; running getUser() on it would buy a
   //                pointless auth round trip and force the route dynamic
-  //                (SPEC Block F, Route protection).
+  //                (SPEC Block F). Excluded as an EXACT path, not a subtree:
+  //                `api` keeps `(?:/|$)` because it genuinely has children,
+  //                but /privacy has none, and a prefix exclusion would put a
+  //                future /privacy/export outside the fence.
   //  - static assets.
   // Dots are written [.] so a later edit cannot silently un-escape them into
   // "any character".
+  // Every exclusion is ANCHORED to a path segment. An unanchored `api` also
+  // excluded /apifoo, `privacy` excluded /privacyleak, and the trailing
+  // extension alternative excluded ANY path ending in an image suffix — so
+  // /applications/x.png skipped the fence entirely. The (app) layout caught
+  // those, but a second net is not the boundary.
   matcher: [
-    '/((?!api|privacy|_next/static|_next/image|favicon[.]ico|.*[.](?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api(?:/|$)|privacy$|_next/static(?:/|$)|_next/image(?:/|$)|favicon[.]ico$|[^/]+[.](?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest)$).*)',
   ],
 };

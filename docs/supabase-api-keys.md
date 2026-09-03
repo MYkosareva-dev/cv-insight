@@ -7,13 +7,15 @@ Also: https://github.com/supabase/supabase/blob/master/apps/docs/content/guides/
 Fetched via Context7 from `/supabase/supabase`.
 Content below is pasted as returned. Annotations are ours.
 
-> **ANNOTATION (applies to this whole file):** this file exists for one reason — the
-> setup instructions in `README.md` and `.env.example` named a dashboard label
-> ("anon public") that this project's own key no longer matches, which is a rule 18
-> divergence and, worse, sent the operator to improvise next to the one key that must
-> never be in this repo. It was found by the security audit on `lab/agents` (finding
-> W3). CLAUDE.md rule 4 is unchanged and unconditional: **this project uses only the
-> low-privilege key**, whichever of its two names the dashboard shows.
+> **ANNOTATION (applies to this whole file):** this file exists because the Supabase
+> dashboard now shows two key panels at once, under names that do not match the
+> variables in `.env.example` — an operator looking for `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+> finds a panel offering a "publishable" key and a "secret" one, and has to decide which
+> is which while standing next to the one key that must never be in this repo. That is
+> the whole risk this file addresses. CLAUDE.md "Secrets" is unchanged and
+> unconditional: **client-side code uses only the low-privilege key**, whichever of its
+> two names the dashboard shows; the service-role key is read in exactly one module
+> (`lib/supabase/admin.ts`) and never reaches the browser.
 
 ---
 
@@ -36,14 +38,15 @@ const supabase = createClient(
 ```
 
 > **ANNOTATION:** this is the key `NEXT_PUBLIC_SUPABASE_ANON_KEY` holds. The variable
-> keeps its name for continuity with the rest of the sprint's docs; the *role* is
+> keeps its name for continuity with SPEC.md Block H and `.env.example`; the *role* is
 > identical, which is why nothing in `lib/supabase/` changed when the panel did. The
 > corresponding admin snippet in the same upstream guide — a client built with the
 > secret key — is **deliberately not quoted here.** It is a copy-paste-ready line
-> whose only purpose is to bypass row-level security, and the audit found that such a
-> snippet already sitting in `docs/` is what made the widened `npm run check` needle
-> necessary in the first place (W2). The one thing worth knowing from it is recorded
-> as prose instead: secret keys bypass RLS.
+> whose only purpose is to bypass row-level security. `scripts/check.mjs` would NOT
+> catch it here — R4 exempts `docs/` so a reference file can quote a forbidden pattern,
+> and R10 only scans `src/` and `tests/` — so nothing but this decision keeps it out.
+> The one thing worth knowing from it is recorded as prose instead: secret keys bypass
+> RLS.
 
 ## Key format
 
@@ -54,13 +57,17 @@ sb_publishable_<22-char-random>_<8-char-checksum>
 sb_secret_<22-char-random>_<8-char-checksum>
 ```
 
-> **ANNOTATION:** this is what makes the boot-time guard in `lib/supabase/env.ts`
-> possible and also what bounds it. The two prefixes are distinguishable by string
-> comparison, so a secret key pasted into either `NEXT_PUBLIC_*` variable is refused
-> before the app serves a byte. The **legacy** pair is not distinguishable that way:
-> `anon` and `service_role` are both JWTs, differing only in a `role` claim inside the
-> base64 payload. So the guard catches the new-format mistake and not the old-format
-> one, and `env.ts` says so in place rather than implying wider cover than it has.
+> **ANNOTATION — no code depends on this; it is recorded because a future guard would.**
+> This project performs NO boot-time key-format check: `src/lib/supabase/` holds exactly
+> `server.ts`, `cookie-options.ts` and `admin.ts` (SPEC Block A), and nothing inspects a
+> key's prefix at startup. What the format buys, should one ever be proposed, is bounded:
+> the two NEW prefixes are distinguishable by string comparison, so a secret key pasted
+> into a `NEXT_PUBLIC_*` variable could be refused before the app serves a byte — but the
+> **legacy** pair is not distinguishable that way, since `anon` and `service_role` are
+> both JWTs differing only in a `role` claim inside the base64 payload. A guard would
+> therefore catch the new-format mistake and not the old-format one, and would have to
+> say so in place rather than implying wider cover than it has. Adding one is a SPEC
+> Block A change first, not a drive-by.
 
 ## Why the change
 
@@ -74,5 +81,7 @@ switch to publishable/secret keys even if you're not taking advantage of the new
 signing keys feature.
 
 > **ANNOTATION:** relevant to this repo only as the reason the dashboard has two panels
-> at once, which is why `README.md` documents both and says either works. Nothing here
-> asks for a code change: neither key type changes how `@supabase/ssr` is called.
+> at once — the confusion this file exists to settle. Nothing here asks for a code
+> change: neither key type changes how `@supabase/ssr` is called, and `.env.example`
+> names the variables rather than any dashboard label, so it stays correct under either
+> naming.

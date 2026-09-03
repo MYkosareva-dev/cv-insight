@@ -3,6 +3,8 @@ import 'server-only';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
+import { AUTH_COOKIE_OPTIONS, cappedMaxAge } from '@/lib/supabase/cookie-options';
+
 /**
  * Supabase client for Server Components, route handlers and Server Actions.
  * Carries the user's session cookies, so RLS enforces ownership on every query.
@@ -18,6 +20,7 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: AUTH_COOKIE_OPTIONS,
       cookies: {
         getAll() {
           return cookieStore.getAll();
@@ -25,7 +28,8 @@ export async function createClient() {
         setAll(cookiesToSet) {
           try {
             for (const { name, value, options } of cookiesToSet) {
-              cookieStore.set(name, value, options);
+              // cappedMaxAge, not `options`: the library discards our maxAge.
+              cookieStore.set(name, value, cappedMaxAge(options));
             }
           } catch {
             // Called from a Server Component, which cannot write cookies.

@@ -3,7 +3,7 @@
  * Repo invariants that a type-checker cannot see (SPEC v1.9 Block A, CLAUDE.md).
  * Runs as `npm run check`, and as `prebuild` so a build cannot skip it.
  *
- * Nine rules:
+ * Thirteen rules:
  *   R1  `.from(` outside lib/db — one DAL per table, and DALs are the only
  *       files allowed to reach the database. Non-database receivers such as
  *       `Array.from(` and `Buffer.from(` are excluded.
@@ -26,6 +26,34 @@
  *   R9  `getSession(` anywhere in src/ — it does not validate the token, so
  *       using it for any access decision is prohibited (CLAUDE.md auth rule 2).
  *       No exemptions: the only valid server-side check is getUser().
+ *   R10 SUPABASE_SERVICE_ROLE_KEY read anywhere but lib/supabase/admin.ts. The
+ *       service role bypasses RLS entirely, so "exactly one module" was a
+ *       documented rule with nothing enforcing it — R7 only proves SOME reader
+ *       imported `server-only`, which a second consumer would also do.
+ *   R11 createServerClient outside lib/supabase/server.ts + middleware.ts, or
+ *       ANY createBrowserClient import. Passing cookieOptions is what makes the
+ *       session httpOnly, it must be repeated at each call site, and a third
+ *       site that forgets it downgrades the cookie SILENTLY — no error, no test
+ *       failure. Pinning the call sites is what makes that impossible.
+ *   R12 AUDIT_RETENTION_VERIFIED set true in lib/copy.ts while
+ *       docs/eval/audit-retention-evidence.md is missing, still carries its
+ *       placeholder, or is too small to be a real run. That constant is the only
+ *       thing that lets /privacy state a retention period, so the claim and its
+ *       proof ship together or not at all: a pg_cron job scheduled against the
+ *       `auth` schema (owned by supabase_auth_admin) can fail with permission
+ *       denied every night and leave no user-visible trace, so a page saying
+ *       "deleted automatically" would be the app promising an erasure nothing
+ *       performs. A source comment saying "do not deploy this" is itself a
+ *       configured mechanism, not a working one — this is the working one.
+ *   R13 a backticked repo path in a docs/ shelf reference that does not resolve
+ *       against the tree. Three consecutive keyword sweeps declared docs/ clean
+ *       while an annotation described a boot-time guard in `lib/supabase/env.ts`,
+ *       a module that has never existed — because a keyword sweep can only look
+ *       for strings already known to be wrong. What makes such an annotation
+ *       wrong is a PROPERTY (it asserts something about this repo that is not the
+ *       case), and a property belongs in the build. A stale note is an
+ *       instruction to the next agent to do the wrong thing (CLAUDE.md, docs/ is
+ *       THIS project's reference shelf).
  *
  * This script opens exactly one dotfile — `.env.example`, the committed
  * template of NAMES — and for that file it prints only the matched variable
@@ -46,7 +74,7 @@
  *   - Runtime indirection generally: `eval`, dynamic property names, a helper
  *     that forwards `process.env`.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -64,6 +92,13 @@ const DAL_FILES = [
 
 /** The connection module — the only file allowed to name the OpenRouter host. */
 const CONNECTION_FILE = 'src/lib/openrouter/server.ts';
+
+/** The one module allowed to read the service-role key (SPEC v2.0 Block A). */
+const SERVICE_ROLE_FILE = 'src/lib/supabase/admin.ts';
+const SERVICE_ROLE_KEY_NAME = 'SUPABASE_SERVICE_ROLE_KEY';
+
+/** The only files allowed to construct a Supabase server client (SPEC v2.1). */
+const SERVER_CLIENT_FILES = ['src/lib/supabase/server.ts', 'src/middleware.ts'];
 
 /** The committed template of variable NAMES. The only dotfile this script reads. */
 const ENV_TEMPLATE = '.env.example';
@@ -101,12 +136,28 @@ const rel = (abs) => path.relative(ROOT, abs).split(path.sep).join('/');
 const files = walk(ROOT);
 const failures = [];
 
-/** Strip block and line comments, so prose about a rule never trips it. */
-function stripComments(text) {
+/**
+ * Strip block and line comments, so prose about a rule never trips it.
+ *
+ * MARKDOWN IS NOT STRIPPED AT ALL. Neither `//` nor comments exist there,
+ * and pretending they do blinded the rules that read `.md`:
+ *  - `//` blanked the rest of any prose line containing one;
+ *  - worse, a backticked glob such as `lib/db/*` opened a FAKE block comment
+ *    that closed at a real `*​/` in a later code sample, blanking 148 lines of
+ *    one shelf doc and 22 of another — so R13 was blind across most of the
+ *    file class it exists to police. A bogus annotation failed the build at
+ *    line 5 of that doc and passed at line 200.
+ * A .md file is prose plus fenced samples; every rule that reads one wants the
+ * text as written.
+ */
+function stripComments(text, isMarkdown = false) {
+  if (isMarkdown) return text;
   return text
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
+
+const isMarkdown = (abs) => rel(abs).endsWith('.md');
 
 /**
  * Per-line rule. The matcher sees the comment-stripped line, the file, and the
@@ -121,7 +172,7 @@ function scanLines(label, predicate, matcher) {
   for (const abs of files.filter(predicate)) {
     const text = readFileSync(abs, 'utf8');
     const raw = text.split(/\r?\n/);
-    const stripped = stripComments(text).split(/\r?\n/);
+    const stripped = stripComments(text, isMarkdown(abs)).split(/\r?\n/);
     raw.forEach((line, i) => {
       const verdict = matcher(stripped[i] ?? '', abs, stripped, i);
       if (!verdict) return;
@@ -137,7 +188,7 @@ function scanFiles(label, predicate, matcher) {
   const hits = [];
   for (const abs of files.filter(predicate)) {
     const raw = readFileSync(abs, 'utf8');
-    const reason = matcher(raw, stripComments(raw), abs);
+    const reason = matcher(raw, stripComments(raw, isMarkdown(abs)), abs);
     if (reason) hits.push(`${rel(abs)}: ${reason}`);
   }
   if (hits.length) failures.push({ label, hits });
@@ -372,6 +423,194 @@ scanLines(
   (line) => /\bgetSession\s*\(/.test(line),
 );
 
+// R10. The service-role key is pinned to one module. R7 only proves that SOME
+//      reader imported 'server-only' — a second service-role consumer in a
+//      later phase would import it too and sail through. This rule is what
+//      makes CLAUDE.md's "exactly one module" enforceable rather than written.
+scanLines(
+  `R10 ${SERVICE_ROLE_KEY_NAME} outside ${SERVICE_ROLE_FILE} — the service role bypasses RLS`,
+  (abs) => isCode(abs) && rel(abs) !== SERVICE_ROLE_FILE,
+  (line) => line.includes(SERVICE_ROLE_KEY_NAME),
+);
+
+// R11a. createServerClient is pinned to the two files that pass cookieOptions.
+scanLines(
+  `R11 createServerClient outside ${SERVER_CLIENT_FILES.join(' + ')} — it would miss cookieOptions`,
+  (abs) => isCode(abs) && !SERVER_CLIENT_FILES.includes(rel(abs)),
+  // Bare token, not `createServerClient(`: matching only the call site let
+  // `import { createServerClient as makeClient }` build an unguarded client and
+  // pass all rules. Verified. R11c already matched bare and was strictly stronger.
+  (line) => /createServerClient/.test(line),
+);
+
+// R11b. Both pinned files must actually pass the shared options. Pinning the
+//       call sites is worthless if one of them stops using them.
+scanFiles(
+  'R11 a pinned createServerClient file does not pass AUTH_COOKIE_OPTIONS',
+  (abs) => SERVER_CLIENT_FILES.includes(rel(abs)),
+  (raw, stripped) =>
+    stripped.includes('cookieOptions: AUTH_COOKIE_OPTIONS')
+      ? null
+      : 'constructs a Supabase server client without the shared cookieOptions',
+);
+
+// R11d. Both pinned files must route every cookie write through cappedMaxAge().
+//       R11b checks `cookieOptions: AUTH_COOKIE_OPTIONS`, whose maxAge the library
+//       DISCARDS (cookies.js:325-329) — so on its own R11b enforces the inert half
+//       of the contract. Deleting cappedMaxAge( from one adapter would silently
+//       restore 400-day sessions with every rule and test still green.
+scanFiles(
+  'R11 a pinned createServerClient file does not call cappedMaxAge() in setAll',
+  (abs) => SERVER_CLIENT_FILES.includes(rel(abs)),
+  (raw, stripped) =>
+    stripped.includes('cappedMaxAge(')
+      ? null
+      : 'writes session cookies without clamping maxAge - the library default is 400 days',
+);
+
+// R11c. createBrowserClient is banned outright: it writes the session through
+//       document.cookie, which can never be httpOnly (CLAUDE.md, SPEC v2.1).
+scanLines(
+  'R11 createBrowserClient is banned — it writes the session via document.cookie',
+  isCode,
+  (line) => /createBrowserClient/.test(line),
+);
+
+// R12. The 90-day audit-retention claim may not ship ahead of its evidence.
+//      Scans ALL of src/ plus README.md rather than an allow-list of the two files
+//      that carry the claim today: an allow-list fails OPEN the moment the sentence
+//      is inlined in a component or lifted into a <PrivacySection>, which is exactly
+//      the edit a later phase makes without thinking about this rule. Every other
+//      rule here scans broadly and exempts narrowly; this one now matches.
+//      tests/ is OUT of scope, unlike the other code rules: a fixture asserting that
+//      the claim is gated has to contain the claim, and nothing under tests/ can
+//      render to a user. The surfaces this rule protects are the ones that ship.
+//      Matched on comment-STRIPPED text, so the block comment archiving the strong
+//      sentence (and this rule's own prose) never trips it — what a reader sees is
+//      what is judged.
+//      A SWITCH, NOT A SCANNER (SPEC v2.9). Two earlier versions tried to read the
+//      page and decide whether it stated a period. That cannot be made to work:
+//      `{90} days`, `<strong>90</strong> days`, "eighteen months" and "2160 hours"
+//      are the same promise and no regex closes the set, while the anchored
+//      evidence format it demanded matched no output psql actually emits — so the
+//      guard was generating its own defects and asking for hand-typed proof.
+//      Now there is nothing to match. `lib/copy.ts` exports one boolean, the
+//      /privacy paragraph is a ternary on it, and this rule only asks whether the
+//      evidence behind a `true` is real. A boolean has no vocabulary to go blind on.
+const RETENTION_EVIDENCE = 'docs/eval/audit-retention-evidence.md';
+const RETENTION_SWITCH_FILE = 'src/lib/copy.ts';
+const RETENTION_PLACEHOLDER = '<PASTE RUN OUTPUT HERE>';
+const RETENTION_MIN_BYTES = 200;
+scanFiles(
+  `R12 AUDIT_RETENTION_VERIFIED is true without real evidence in ${RETENTION_EVIDENCE}`,
+  (abs) => rel(abs) === RETENTION_SWITCH_FILE,
+  (raw, stripped) => {
+    const on = /AUDIT_RETENTION_VERIFIED\s*(?::\s*boolean\s*)?=\s*true\b/.test(stripped);
+    if (!on) return null;
+    const evidence = path.join(ROOT, RETENTION_EVIDENCE);
+    const fix =
+      `paste the verbatim cron.job_run_details output into ${RETENTION_EVIDENCE} ` +
+      '(any format the client produced), in this same commit — or set it back to false';
+    if (!existsSync(evidence)) return `is true but ${RETENTION_EVIDENCE} does not exist; ${fix}`;
+    const body = readFileSync(evidence, 'utf8');
+    if (body.includes(RETENTION_PLACEHOLDER)) {
+      return `is true but ${RETENTION_EVIDENCE} still carries its placeholder; ${fix}`;
+    }
+    if (Buffer.byteLength(body, 'utf8') <= RETENTION_MIN_BYTES) {
+      return `is true but ${RETENTION_EVIDENCE} is too small to be a real run; ${fix}`;
+    }
+    return null;
+  },
+);
+
+/**
+ * R13. Every backticked repo path in a docs/ reference must resolve against the
+ *      tree.
+ *
+ *      Scope is the vendored reference shelf — `docs/*.md` — and NOT `docs/reviews/`
+ *      or `docs/eval/`. A review report is a DATED record of the tree as it stood
+ *      when it was written; `docs/reviews/phase-0.md` correctly names
+ *      `src/lib/supabase/client.ts`, which existed at Phase 0 and was deleted in
+ *      Phase 1. Failing on that would push the next agent to falsify a historical
+ *      record. The shelf is different: it is read as current instruction.
+ *
+ *      A path is EXEMPT when the annotation itself says it is gone — "was deleted",
+ *      "is deleted", "deleted in Phase N". That is the one case where naming a
+ *      non-existent file is the point of the sentence. The marker must sit within
+ *      80 characters of the backtick, not merely somewhere on the line: retention
+ *      prose in this repo says "rows ARE DELETED when they age out", which would
+ *      otherwise exempt every stale path sharing a line with it.
+ *
+ *      DIRECTORIES count too (`src/lib/supabase/`). The annotation that closed the
+ *      round-5 blocker asserts that directory "holds exactly server.ts,
+ *      cookie-options.ts and admin.ts" — a claim about a path, and one a
+ *      file-extension-only rule would never revisit.
+ *
+ *      Known limit, in the spirit of the others: this checks that a path RESOLVES,
+ *      not that the claim around it is true. An annotation can still describe a real
+ *      file inaccurately. It closes the specific failure that recurred three times —
+ *      a confident description of a module that is not there.
+ */
+const DOC_PATH_PREFIXES = /^(?:src|lib|scripts|tests|supabase|docs|app|components)\//;
+const DOC_ROOT_FILES = /^(?:README|SPEC|CLAUDE|package|next\.config|eslint\.config|tsconfig)\./;
+const DELETED_MARKER = /\b(?:was|is|were|are)\s+deleted\b|\bdeleted\s+in\s+Phase\b/i;
+
+/**
+ * Does this repo-relative path exist, matching CASE exactly?
+ *
+ * `existsSync` alone is case-insensitive on NTFS and APFS, so a doc naming
+ * `src/lib/Supabase/Server.ts` passed on the author's machine and would fail the
+ * same check on Vercel's Linux builder — and `check` is `prebuild`, so that is a
+ * green local tree and a red deploy. Walking the segments and comparing against
+ * the real directory entries makes the rule mean the same thing everywhere.
+ */
+function existsCaseSensitive(relPath) {
+  const segments = relPath.split('/').filter((s) => s.length > 0 && s !== '.');
+  let dir = ROOT;
+  for (let i = 0; i < segments.length; i += 1) {
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return false;
+    }
+    if (!entries.includes(segments[i])) return false;
+    dir = path.join(dir, segments[i]);
+  }
+  return segments.length > 0;
+}
+
+/** Resolve a path that may carry a `*` segment (e.g. `src/app/api/*\/route.ts`). */
+function resolvesInTree(p) {
+  if (!p.includes('*')) return existsCaseSensitive(p);
+  const parent = p.slice(0, p.indexOf('*')).replace(/\/[^/]*$/, '');
+  return parent.length > 0 && existsCaseSensitive(parent);
+}
+
+scanLines(
+  'R13 a docs/ annotation names a repo path that does not exist',
+  (abs) => {
+    const r = rel(abs);
+    return r.startsWith('docs/') && r.endsWith('.md') && r.split('/').length === 2;
+  },
+  (line) => {
+    // Either a file (trailing extension) or a directory (trailing slash).
+    const token =
+      /`([A-Za-z0-9_@.()[\]/*-]+(?:\.(?:ts|tsx|mjs|cjs|js|jsx|sql|json|md)|\/))`/g;
+    for (const m of line.matchAll(token)) {
+      let p = m[1];
+      if (p.startsWith('@/')) p = `src/${p.slice(2)}`;
+      if (!DOC_PATH_PREFIXES.test(p) && !DOC_ROOT_FILES.test(p)) continue;
+      if (resolvesInTree(p) || resolvesInTree(`src/${p}`)) continue;
+      // The "it is gone" marker must be NEAR this path, not anywhere on the line.
+      const near = line.slice(Math.max(0, m.index - 80), m.index + m[0].length + 80);
+      if (DELETED_MARKER.test(near)) continue;
+      return `names \`${m[1]}\`, which does not exist — describe what the repo actually does`;
+    }
+    return false;
+  },
+);
+
 if (failures.length) {
   for (const { label, hits } of failures) {
     console.error(`\nFAIL: ${label}`);
@@ -381,9 +620,14 @@ if (failures.length) {
   process.exit(1);
 }
 
+const NL = String.fromCharCode(10);
 console.log(
-  'check passed (9 rules): .from( and .rpc( confined to lib/db; no security definer;\n' +
-    '  NEXT_PUBLIC_ hygiene incl. .env.example; no openrouter.ai URL or connection import\n' +
-    "  outside the gates; every secret reader imports 'server-only'; next.config.* clean\n" +
-    '  of secrets and env injection; no getSession() in src/.',
+  'check passed (13 rules): .from( and .rpc( confined to lib/db; no security definer;' +
+    NL + '  NEXT_PUBLIC_ hygiene incl. .env.example; no openrouter.ai URL or connection' +
+    NL + '  import outside the gates; every secret reader imports server-only;' +
+    NL + '  next.config.* clean of secrets and env injection; no getSession() in src/;' +
+    NL + '  service-role key pinned to lib/supabase/admin.ts; createServerClient pinned to' +
+    NL + '  server.ts + middleware.ts with shared cookieOptions, no createBrowserClient;' +
+    NL + '  AUDIT_RETENTION_VERIFIED only with real evidence behind it; every' +
+    NL + '  backticked repo path in the docs/ shelf resolves against the tree.',
 );

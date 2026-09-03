@@ -5,11 +5,11 @@ Source: https://github.com/supabase/supabase/blob/master/apps/docs/content/guide
 Fetched via Context7 from `/supabase/supabase`.
 Content below is pasted as returned. Annotations are ours.
 
-> **ANNOTATION (applies to this whole file):** CLAUDE.md rules 1–5 override anything in
-> these docs, and for queries **rule 7** is the one that governs: *every* notes query
-> filters by the signed-in user's id (`.eq('user_id', user.id)`). RLS is the second
+> **ANNOTATION (applies to this whole file):** CLAUDE.md overrides anything in
+> these docs, and for queries the **Data access rules** are what govern: *every* query
+> against an app table filters by the signed-in user's id (`.eq('user_id', user.id)`). RLS is the second
 > fence; the explicit filter is still mandatory. All of these queries live in
-> `lib/notes.ts` (rule 3b) — no page, component or Server Action queries the `notes`
+> `lib/db/*` (CLAUDE.md "Data access rules") — no page, component or Server Action queries an app
 > table directly.
 
 ---
@@ -27,17 +27,17 @@ const { data } = supabase
   .eq('user_id', userId)
 ```
 
-> **ANNOTATION — this is the shape of every query in `lib/notes.ts`.** Note *why* the
-> official docs recommend the duplicate filter: query planning. Rule 7 requires it for a
-> second reason — defense in depth, so a missing or mis-scoped RLS policy is not the only
-> thing standing between two users' notes.
+> **ANNOTATION — this is the shape of every query in `lib/db/*`.** Note *why* the
+> official docs recommend the duplicate filter: query planning. This project requires it
+> for a second reason — defense in depth, so a missing or mis-scoped RLS policy is not
+> the only thing standing between two users' career bases.
 >
 > Two adaptations:
 > 1. `userId` must come from `await supabase.auth.getUser()` inside the DAL — never from
->    a Server Action parameter or any client input (rule 3b).
+>    a Server Action parameter or any client input (CLAUDE.md "Data access rules").
 > 2. Destructure and handle `error`, not just `data`. supabase-js resolves with
 >    `{ data, error }` and does **not** throw on a Postgres error; `data` is `null` and an
->    unchecked read looks like "no notes" instead of "the query failed" (rule 13).
+>    unchecked read looks like "no rows" instead of "the query failed" (the three-retrieval-outcomes rule).
 > 3. The snippet omits `await`. `.select()` returns a thenable builder — without `await`
 >    you get the builder, not the rows.
 
@@ -56,9 +56,9 @@ const { data } = supabase
 ```
 
 > **ANNOTATION — PROHIBITED IN THIS PROJECT.** The docs call this merely "suboptimal";
-> rule 7 makes it a hard error. A bare `.select()` on `notes` is exactly the query that
-> returns every user's notes the moment an RLS policy is dropped, renamed, or disabled
-> during a schema change. If you see one in a review, it is a finding.
+> the DAL boundary makes it a hard error. A bare `.select()` on an app table is exactly the query that
+> returns every user's career items the moment an RLS policy is dropped, renamed, or
+> disabled during a schema change. If you see one in a review, it is a finding.
 
 ---
 
@@ -83,10 +83,10 @@ Demonstrates the general composition pattern: `.eq()` filter followed by `.order
 > `await`, an explicit column list in `.select()` rather than `*`, `.eq()` before
 > `.order()`, and `error` destructured alongside `data`.
 >
-> For the notes list: name the columns explicitly so a later schema addition cannot
-> silently start shipping a new column to the client, and derive any `.limit()` from
-> `LIMITS` in code — never a typed-out number (rules 10 and 11 — import constants, never
-> redeclare them).
+> For a list query (the career base, the applications list): name the columns explicitly
+> so a later schema addition cannot silently start shipping a new column to the client,
+> and derive any `.limit()` from the shared `LIMITS` constants rather than typing a
+> number — a redeclared limit drifts from the one the UI and SPEC agree on.
 
 ---
 
@@ -121,7 +121,7 @@ const { data, error } = await supabase
 // full docs here: /docs/reference/javascript/filter
 ```
 
-> **ANNOTATION — `.or()` is the one filter that can defeat rule 7.** `.or()` takes a
+> **ANNOTATION — `.or()` is the one filter that can defeat owner-scoping.** `.or()` takes a
 > raw PostgREST filter string, and it applies to the *whole* `where` clause at its
 > nesting level — so `.eq('user_id', user.id).or('a.eq.1,b.eq.2')` still scopes
 > correctly, but putting a user-scoping term *inside* an `.or()` string does not. Never
@@ -149,16 +149,16 @@ Canonical documentation example from the Supabase API docs showing the .in() fil
 > queries did **not** return the supabase-js `.contains()` reference page. What came back
 > instead is the underlying Postgres/pg_graphql containment material, reproduced below,
 > plus SQL-level equivalents. Nothing below is a verified supabase-js code example, so do
-> not paste a `.contains()` call from memory into `lib/notes.ts` on the strength of this
+> not paste a `.contains()` call from memory into `lib/db/*` on the strength of this
 > file — confirm the exact signature against
 > <https://supabase.com/docs/reference/javascript/contains> (or the installed
 > `@supabase/postgrest-js` type definitions in `node_modules`) first.
 >
-> Also note: **SPEC.md is the source of truth for whether Notera has tags at all.** If
-> the `notes` table has no array or `jsonb` column this sprint, `.contains()` has no
-> caller and adding one would be inventing scope (rules 17 and "do not invent"). Check
+> Also note: **SPEC.md is the source of truth for whether CV Insight has such a column at all.** If
+> no app table has an array or `jsonb` column, `.contains()` has no caller and adding
+> one would be inventing scope this project has not asked for. Check
 > SPEC.md Block B before writing any containment query, and remember any column that
-> would need one is a schema change that goes through `supabase/schema.sql` (rule 8).
+> would need one is a schema change that goes through `supabase/migrations/001_init.sql` (SPEC Block C).
 
 ### Filtering array column types
 
@@ -187,7 +187,7 @@ GraphQL query to filter `blogCollection` where the `tags` column contains both '
 }
 ```
 
-> **ANNOTATION:** This is **pg_graphql**, not supabase-js. Notera uses the PostgREST
+> **ANNOTATION:** This is **pg_graphql**, not supabase-js. CV Insight uses the PostgREST
 > client (`supabase.from(...)`), not the GraphQL endpoint, and adding pg_graphql would be
 > a new dependency requiring owner approval. The transferable fact is only the *semantics*
 > — `contains` means "the column contains **all** of these values", i.e. Postgres `@>`,
@@ -206,10 +206,10 @@ where documents.metadata @> filter_metadata
 
 > **ANNOTATION:** `@>` is the operator `.contains()` compiles down to — useful for
 > reasoning about behavior and for indexing (a containment filter wants a **GIN** index to
-> avoid a sequential scan). If a containment query ever lands in `lib/notes.ts`, the index
-> belongs in `supabase/schema.sql` in the same change (rule 8). Also: a SQL-function
-> approach like this bypasses `lib/notes.ts` unless the RPC is called *from* the DAL —
-> keep the single entry point (rule 3b).
+> avoid a sequential scan). If a containment query ever lands in `lib/db/*`, the index
+> belongs in `supabase/migrations/001_init.sql` in the same change (SPEC Block C). Also: a SQL-function
+> approach like this bypasses `lib/db/*` unless the RPC is called *from* the DAL —
+> keep the single entry point (CLAUDE.md "Data access rules").
 
 ### Querying JSONB data
 
@@ -225,8 +225,8 @@ select * from students where grades->>'geography' = 'A';
 > **ANNOTATION:** `->>` (extract as text, equality) is a *different* operation from `@>`
 > (containment) and is not what `.contains()` does. Raw SQL like this runs in the SQL
 > Editor with elevated rights and **bypasses RLS**; anything schema-shaped that gets run
-> there must be mirrored into `supabase/schema.sql` (rule 8), and a bare `select *` with
-> no `user_id` predicate must never become an app query (rule 7).
+> there must be mirrored into `supabase/migrations/001_init.sql` (SPEC Block C), and a bare `select *` with
+> no `user_id` predicate must never become an app query (CLAUDE.md "Data access rules").
 
 ---
 
@@ -273,10 +273,10 @@ export const run = async () => {
 
 > **ANNOTATION — IRRELEVANT AND DANGEROUS AS A TEMPLATE. Do not copy any of it.**
 > Flagged because Context7 surfaced it under a containment-filter query:
-> 1. `SUPABASE_SECRET_KEY` passed to `createClient` is the **service-role key** — rule 4
->    forbids it from this repo entirely. A client built with it **bypasses RLS**, so the
+> 1. `SUPABASE_SECRET_KEY` passed to `createClient` is the **service-role key** — CLAUDE.md
+>    "Secrets" allows it in exactly one module, `lib/supabase/admin.ts`, and nowhere else. A client built with it **bypasses RLS**, so the
 >    `user_id: 3` filter here is the *only* thing scoping the data. That is the exact
->    single-fence failure mode rule 7 exists to prevent.
+>    single-fence failure mode RLS-plus-DAL exists to prevent.
 > 2. `@langchain/community`, `@langchain/openai` and vector search are new dependencies
 >    and out of scope — no other dependencies without explicit owner approval.
 > 3. The `user_id` is a literal passed by the caller, not derived from `getUser()`.

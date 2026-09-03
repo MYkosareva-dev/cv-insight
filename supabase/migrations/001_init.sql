@@ -126,7 +126,7 @@ begin
 end $$;
 
 -- > Decision: Supabase-linter hardening (extensions schema, SET search_path, `to authenticated`,
--- `(select auth.uid())` wrapping) is DEFERRED to a future 002 migration. None is security-relevant
+-- `(select auth.uid())` wrapping) is DEFERRED to a future 003 migration (002 is audit retention). None is security-relevant
 -- under this RLS design (anon has no policies → denied; auth.uid() is null for anon); search_path
 -- has a real HNSW-inlining tradeoff; scale is tiny. Revisit only if the linter matters pre-deploy.
 
