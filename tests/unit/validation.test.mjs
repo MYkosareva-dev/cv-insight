@@ -3,10 +3,15 @@ import test, { describe } from 'node:test';
 
 import { AUTH, RESULT, SCAN, SETTINGS, VACANCY_LENGTH } from '../../src/lib/copy.ts';
 import {
+  MAX_CONTACT_EMAIL_CHARS,
   MAX_DISPLAY_NAME_CHARS,
+  MAX_LINK_CHARS,
+  MAX_PHONE_CHARS,
   MAX_RESUME_CHARS,
   MAX_SCAN_RESUME_CHARS,
   MIN_RESUME_CHARS,
+  contactsFieldErrors,
+  contactsSchema,
   credentialsSchema,
   cleanDisplayName,
   displayNameSchema,
@@ -483,5 +488,142 @@ describe('displayNameSchema — the Settings field', () => {
       displayNameSchema.parse({ displayName: 'МИРА ШТАЙНБЕРГ' }).displayName,
       'МИРА ШТАЙНБЕРГ',
     );
+  });
+});
+
+/**
+ * The contact fields (SPEC v2.20, migration 005).
+ *
+ * THE URL BOUNDARY IS THE PART THAT MATTERS. The owner's requirement is explicit:
+ * the URLs are untrusted input, `https` only, rejected here. The app renders them
+ * as text nodes and builds no anchor from them, and migration 005 puts a
+ * `like 'https://%'` CHECK behind this — but a URL column outlives the render
+ * site that happened to be careful, so what may be STORED is decided here and
+ * asserted here.
+ *
+ * The rejected spellings below are the ones a prefix test gets wrong: a leading
+ * space, a scheme in capitals, and a value that merely CONTAINS "https://".
+ */
+const EMPTY_FORM = {
+  contactEmail: '',
+  phone: '',
+  location: '',
+  linkedinUrl: '',
+  githubUrl: '',
+  openToRemote: undefined,
+};
+
+describe('contactsSchema — every field optional', () => {
+  test('an entirely empty form parses, and stores nothing', () => {
+    const parsed = contactsSchema.parse(EMPTY_FORM);
+    assert.deepEqual(parsed, {
+      contactEmail: null,
+      phone: null,
+      location: null,
+      linkedinUrl: null,
+      githubUrl: null,
+      openToRemote: false,
+    });
+  });
+
+  test('a blank field is NULL and never an empty string', () => {
+    // The column would otherwise hold a present-and-empty value, which is a
+    // third state nothing needs and which renders as a dangling separator.
+    const parsed = contactsSchema.parse({ ...EMPTY_FORM, phone: '   ' });
+    assert.equal(parsed.phone, null);
+  });
+
+  test('values are trimmed and kept', () => {
+    const parsed = contactsSchema.parse({
+      ...EMPTY_FORM,
+      contactEmail: ' mira@example.com ',
+      phone: ' +49 40 123456 ',
+      location: ' Hamburg, Germany ',
+    });
+    assert.equal(parsed.contactEmail, 'mira@example.com');
+    assert.equal(parsed.phone, '+49 40 123456');
+    assert.equal(parsed.location, 'Hamburg, Germany');
+  });
+
+  test('an EMPTY email is not an invalid one', () => {
+    // A field the user chose not to fill in must not be reported as a malformed
+    // address — that is the difference between optional and broken.
+    assert.equal(contactsSchema.safeParse(EMPTY_FORM).success, true);
+  });
+
+  test('a malformed email is refused with its own copy', () => {
+    const result = contactsSchema.safeParse({ ...EMPTY_FORM, contactEmail: 'mira@' });
+    assert.equal(result.success, false);
+    assert.equal(contactsFieldErrors(result.error).contactEmail, SETTINGS.contactEmailInvalid);
+  });
+
+  test('each field answers with the copy for ITS OWN bound', () => {
+    const result = contactsSchema.safeParse({
+      ...EMPTY_FORM,
+      contactEmail: `${'x'.repeat(MAX_CONTACT_EMAIL_CHARS)}@example.com`,
+      phone: '1'.repeat(MAX_PHONE_CHARS + 1),
+    });
+    assert.equal(result.success, false);
+    const errors = contactsFieldErrors(result.error);
+    assert.equal(errors.contactEmail, SETTINGS.contactEmailTooLong);
+    assert.equal(errors.phone, SETTINGS.phoneTooLong);
+  });
+});
+
+describe('contactsSchema — the URL fields are https only', () => {
+  test('an https URL is kept exactly as written', () => {
+    const url = 'https://www.linkedin.com/in/mira-steinberg';
+    assert.equal(contactsSchema.parse({ ...EMPTY_FORM, linkedinUrl: url }).linkedinUrl, url);
+  });
+
+  test('HTTPS in capitals is a legal spelling and is accepted', () => {
+    // A case-sensitive prefix test refuses this, which would be the app being
+    // wrong about the user's own link.
+    assert.equal(contactsSchema.safeParse({ ...EMPTY_FORM, githubUrl: 'HTTPS://github.com/mira' }).success, true);
+  });
+
+  for (const rejected of [
+    'http://github.com/mira',
+    'javascript:alert(1)',
+    ' javascript:alert(1)',
+    'data:text/html;base64,PHNjcmlwdD4=',
+    'ftp://example.com/cv',
+    'www.linkedin.com/in/mira',
+    'github.com/mira',
+    // Contains the blessed prefix without starting with it — the exact case a
+    // substring test waves through.
+    'javascript:void("https://github.com")',
+    // Parses, but names no host: a link to nowhere is not a link.
+    'https://',
+  ]) {
+    test(`refuses ${JSON.stringify(rejected)}`, () => {
+      const result = contactsSchema.safeParse({ ...EMPTY_FORM, linkedinUrl: rejected });
+      assert.equal(result.success, false);
+      const message = contactsFieldErrors(result.error).linkedinUrl;
+      assert.ok(
+        message === SETTINGS.linkNotHttps || message === SETTINGS.linkTooLong,
+        `answered with ${JSON.stringify(message)}`,
+      );
+    });
+  }
+
+  test('an over-long link is refused for its length, and never stored', () => {
+    const long = `https://github.com/${'x'.repeat(MAX_LINK_CHARS)}`;
+    const result = contactsSchema.safeParse({ ...EMPTY_FORM, githubUrl: long });
+    assert.equal(result.success, false);
+    assert.equal(contactsFieldErrors(result.error).githubUrl, SETTINGS.linkTooLong);
+  });
+});
+
+describe('contactsSchema — the checkbox', () => {
+  test('an HTML checkbox sends "on" when ticked', () => {
+    assert.equal(contactsSchema.parse({ ...EMPTY_FORM, openToRemote: 'on' }).openToRemote, true);
+  });
+
+  test('and NOTHING when unticked, which is false and not an error', () => {
+    // The form sends no key at all, so the absent case has to parse. Reading it
+    // as an error would make the box impossible to untick.
+    assert.equal(contactsSchema.parse({ ...EMPTY_FORM, openToRemote: undefined }).openToRemote, false);
+    assert.equal(contactsSchema.parse({ ...EMPTY_FORM, openToRemote: null }).openToRemote, false);
   });
 });

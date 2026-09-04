@@ -559,6 +559,138 @@ export const displayNameSchema = z.object({
     .transform((v) => (v.length > 0 ? v : null)),
 });
 
+/**
+ * CONTACT DETAILS (SPEC v2.20, migration 005) — the resume's header block.
+ *
+ * THE URLS ARE UNTRUSTED INPUT AND THIS IS THE BOUNDARY THAT SAYS SO. Only
+ * `https://` is accepted, and it is checked by PARSING the value rather than by
+ * matching its prefix: `new URL()` is what settles what the scheme actually is,
+ * where a regex has to guess. `https:/\/evil` is not a URL, ` javascript:…` has a
+ * leading space a prefix test would miss, and `HTTPS://` is a legal spelling a
+ * case-sensitive test would refuse — a parser gets all three right for free.
+ *
+ * Two fences behind it, neither a substitute for this one: migration 005 puts a
+ * `like 'https://%'` CHECK on both columns, and every render site writes the value
+ * as a React text node or a plain `.docx` run and builds no anchor from it. The
+ * reason for all three is that a URL column outlives the render site that
+ * happened to be careful, and the day someone makes these clickable is the day a
+ * stored `javascript:` value would matter.
+ *
+ * EVERY FIELD IS OPTIONAL, and an empty field is how one is CLEARED — the same
+ * rule the display name follows, and for the same reason: a settings field a user
+ * cannot empty is one they cannot take back. So a blank input transforms to null
+ * rather than failing validation, and the columns never hold a present-and-empty
+ * value.
+ */
+export const MAX_CONTACT_EMAIL_CHARS = 254;
+export const MAX_PHONE_CHARS = 40;
+export const MAX_LOCATION_CHARS = 120;
+export const MAX_LINK_CHARS = 200;
+
+/** Trim, and treat a blank as absent. Shared by every contact field. */
+const blankToNull = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+/**
+ * An optional field that is either null or a bounded string.
+ *
+ * The generous pre-bound refuses a megabyte of text before any work is done on
+ * it; the real bound is the column's own CHECK and is applied after trimming,
+ * because trimming can only ever shorten the value.
+ */
+const optionalText = (max: number, tooLong: string) =>
+  z
+    .string()
+    .max(max * 10, tooLong)
+    .transform(blankToNull)
+    .refine((v) => v === null || v.length <= max, tooLong);
+
+/**
+ * `https://` ONLY, decided by the URL parser.
+ *
+ * The host is required to be non-empty as well, so `https://` on its own — which
+ * parses — is refused rather than stored as a link to nowhere.
+ */
+function isHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+const optionalHttpsUrl = () =>
+  z
+    .string()
+    .max(MAX_LINK_CHARS * 10, SETTINGS.linkTooLong)
+    .transform(blankToNull)
+    .refine((v) => v === null || v.length <= MAX_LINK_CHARS, SETTINGS.linkTooLong)
+    .refine((v) => v === null || isHttpsUrl(v), SETTINGS.linkNotHttps);
+
+export const contactsSchema = z.object({
+  contactEmail: optionalText(MAX_CONTACT_EMAIL_CHARS, SETTINGS.contactEmailTooLong).refine(
+    // Checked AFTER the blank-to-null transform, so an empty field is not an
+    // invalid address — it is a field the user chose not to fill in.
+    (v) => v === null || z.email().safeParse(v).success,
+    SETTINGS.contactEmailInvalid,
+  ),
+  phone: optionalText(MAX_PHONE_CHARS, SETTINGS.phoneTooLong),
+  location: optionalText(MAX_LOCATION_CHARS, SETTINGS.locationTooLong),
+  linkedinUrl: optionalHttpsUrl(),
+  githubUrl: optionalHttpsUrl(),
+  /**
+   * An HTML checkbox sends `"on"` when ticked and NOTHING when not, so the two
+   * states arrive as a string and as `undefined` — never as a boolean. Coercing
+   * with `z.coerce.boolean()` would read the absent case as false, which is the
+   * right answer here but for the wrong reason; this says what the form actually
+   * sends.
+   */
+  openToRemote: z.union([z.literal('on'), z.literal('true'), z.undefined(), z.null()]).transform(
+    (v) => v === 'on' || v === 'true',
+  ),
+});
+
+export type ContactsInput = z.infer<typeof contactsSchema>;
+
+/**
+ * The contacts form's action state. Here rather than beside the action for the
+ * reason `AuthState` and `DisplayNameState` are: a `'use server'` module may
+ * export only async functions.
+ *
+ * `fieldErrors` and not one message, because five fields can each be wrong for
+ * their own reason and a single line at the bottom would leave the user guessing
+ * which one. `formError` is the save that did not happen at all.
+ */
+export type ContactsFieldErrors = Partial<Record<keyof ContactsInput, string>>;
+
+export type ContactsState = {
+  fieldErrors: ContactsFieldErrors;
+  formError: string | null;
+  notice: string | null;
+};
+
+export const EMPTY_CONTACTS_STATE: ContactsState = {
+  fieldErrors: {},
+  formError: null,
+  notice: null,
+};
+
+/** First error per field, for rendering under the input it belongs to. */
+export function contactsFieldErrors(error: z.ZodError<ContactsInput>): ContactsFieldErrors {
+  const errors: ContactsFieldErrors = {};
+  for (const issue of error.issues) {
+    const field = issue.path[0];
+    if (typeof field === 'string' && !(field in errors)) {
+      errors[field as keyof ContactsInput] = issue.message;
+    }
+  }
+  return errors;
+}
+
 // ---------------------------------------------------------------------------
 // Phase 4 — generation, judging, re-scoring and export
 // ---------------------------------------------------------------------------

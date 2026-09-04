@@ -801,6 +801,60 @@ export const SETTINGS = {
    */
   displayNameSignedOut: 'Your session has expired — sign in again to save your name.',
 
+  /**
+   * CONTACT DETAILS (SPEC v2.20, migration 005).
+   *
+   * The words earn the asking the same way the name field's do: they say what the
+   * fields are FOR — a document a recruiter has to be able to reply to — and they
+   * say optional in prose as well as in the schema, because the app genuinely
+   * works with every one of them empty.
+   *
+   * ONE FIELD PER LINE OF THE HEADER, and no field the app cannot use. There is
+   * no second email, no address, no date of birth: a resume tool collecting
+   * personal data it does not print is collecting it for nothing.
+   */
+  contactsHeading: 'Contact details',
+  contactsHint:
+    'Optional. These become the header block of every resume you generate, so an employer can reply to it. Leave any of them empty and that line is left out.',
+  contactEmailLabel: 'Contact email',
+  contactEmailHint:
+    'The address you want to be contacted on. It does not have to be the one you sign in with.',
+  contactEmailPlaceholder: 'e.g. mira.steinberg@example.com',
+  phoneLabel: 'Phone',
+  phonePlaceholder: 'e.g. +49 40 123456',
+  locationLabel: 'Location',
+  locationPlaceholder: 'e.g. Hamburg, Germany',
+  linkedinLabel: 'LinkedIn URL',
+  githubLabel: 'GitHub URL',
+  linkPlaceholder: 'https://…',
+  /** Said once, above both link fields, because it is one rule for both. */
+  linkHint: 'Links must start with https://.',
+  openToRemoteLabel: 'Open to remote work',
+  openToRemoteHint: 'Adds “Open to remote” beside your location on the resume.',
+  contactsSave: 'Save contact details',
+  contactsSaving: 'Saving…',
+  contactsSaved: 'Contact details saved.',
+  contactsCleared: 'Contact details removed.',
+  contactsFailed: 'Could not save your contact details — try again.',
+  /**
+   * The MIGRATION is not applied. Its own outcome, because "try again" is advice
+   * that cannot work: the columns do not exist yet, so every save fails
+   * identically until the owner runs `005_profile_contacts.sql`. Telling a user
+   * to retry a thing guaranteed to refuse is the same defect rule B7a's refusal
+   * copy was fixed for.
+   */
+  contactsNotMigrated:
+    'Contact details cannot be saved yet — this part of the app is still being set up. Your name and everything else still work.',
+  contactsLoadFailed:
+    'Could not load your saved contact details, so the fields below are blank — they may not be empty. Saving will still work.',
+  contactsSignedOut: 'Your session has expired — sign in again to save your contact details.',
+  contactEmailInvalid: 'Enter a valid email address, or leave it empty.',
+  contactEmailTooLong: 'An email address is limited to 254 characters.',
+  phoneTooLong: 'A phone number is limited to 40 characters.',
+  locationTooLong: 'A location is limited to 120 characters.',
+  linkNotHttps: 'A link must start with https:// — or leave it empty.',
+  linkTooLong: 'A link is limited to 200 characters.',
+
   dangerZone: 'Danger zone',
   deleteAccount: 'Delete account and data',
   /**
