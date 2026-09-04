@@ -124,16 +124,31 @@ export default function PrivacyPage() {
           The contact details you may save do not travel with them at all — the section above says
           what happens to those instead.
         </p>
+        {/*
+         * PROVIDERS, NOT MODEL SLUGS (v2.25, owner instruction reversing the
+         * v2.24 wording). Art. 13(1)(e) asks for recipients, and the recipients
+         * are the three companies — a version string like `gpt-5.4` is not a
+         * recipient, and it rots: the generation model changed twice in two SPEC
+         * revisions. A privacy page that names it is a page that goes quietly
+         * wrong. The exact slugs live in docs/openrouter-processing.md, which is
+         * where they are already maintained and verified against the key.
+         *
+         * This page also points at nothing the reader cannot open: no link to a
+         * repository file, because a data subject cannot read docs/.
+         */}
         <p className="text-muted-foreground text-sm">
-          OpenRouter is established outside the EU/EEA, and it routes each request onward to the
-          company that runs the requested model.{' '}
-          <strong>This means your resume and vacancy text are transferred to the United States.</strong>{' '}
-          The models currently used are <code>openai/gpt-5.4</code> (OpenAI) to write the tailored
-          resume, <code>anthropic/claude-haiku-4.5</code> (Anthropic) to read the job posting and
-          to run the quality check on the generated resume, <code>google/gemini-2.5-flash</code>{' '}
-          (Google) as a fallback when one of those is unavailable, and{' '}
-          <code>openai/text-embedding-3-small</code> (OpenAI) to index your career items so they
-          can be searched by meaning.
+          OpenRouter is the routing service that receives these requests and passes each one to
+          the company that runs the model it needs. It is established outside the EU/EEA, and so
+          are those companies:{' '}
+          <strong>
+            your resume and vacancy text are transferred to the United States, to Anthropic, OpenAI
+            and Google
+          </strong>{' '}
+          — Anthropic&rsquo;s models read the job posting and run the quality check, OpenAI&rsquo;s
+          write the tailored resume and build the search index over your career items, and
+          Google&rsquo;s stand in when one of the others is unavailable. Which specific model
+          version handles a request changes over time; the companies receiving the data are the
+          three named here.
         </p>
         <p className="text-muted-foreground text-sm">
           No account identifier goes with any of it. The request carries the text and nothing that
@@ -167,12 +182,30 @@ export default function PrivacyPage() {
 
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium">Who else processes this data</h2>
+        {/*
+         * THE FRANKFURT CLAIM IS NOW TRUE OF COMPUTE, NOT ONLY OF STORAGE
+         * (v2.25, gate findings `vs-6` / `eu-10`). Vercel's default function
+         * region is `iad1` (Washington DC), so before `vercel.json` pinned
+         * `fra1` this page named Frankfurt twice while every request would have
+         * been PROCESSED in the United States.
+         *
+         * The wording stops at the application and the database on purpose.
+         * Vercel's routing layer is a global network and is not pinned by the
+         * region setting — but resume and vacancy text are only ever handled in
+         * route handlers and Server Components, which are the pinned functions.
+         * What the routing layer sees is the request and its session cookie,
+         * which is what the IP-address sentence already discloses. Claiming
+         * "everything happens in Frankfurt" would be the same species of
+         * overclaim this finding existed to fix.
+         */}
         <p className="text-muted-foreground text-sm">
           Two service providers process data on our behalf and on our instructions. Supabase
           provides the database and the sign-in system, in the EU (Frankfurt). Vercel hosts the
-          application: every request passes through it, and it keeps short-lived infrastructure
-          logs that include IP addresses and request metadata. OpenRouter and the model companies
-          named above receive the text described in the previous section.
+          application, and the application runs in the EU (Frankfurt) too, so your resume and
+          vacancy text are processed there rather than being sent elsewhere first. Every request
+          still reaches us across Vercel&rsquo;s global network, which keeps short-lived
+          infrastructure logs that include IP addresses and request metadata. OpenRouter and the
+          three model companies named above receive the text described in the previous section.
         </p>
       </section>
 
