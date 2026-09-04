@@ -8,6 +8,13 @@
 VERDICT: REVISE
 ```
 
+> **STATUS — updated 2026-09-04, after two rounds of owner triage. EVERY FINDING IN**
+> **THIS REPORT IS NOW EITHER FIXED OR CARRIED WITH AN ID; NOTHING IS UNTRIAGED.**
+> The verdict above and every finding below are left EXACTLY as the review produced
+> them, including the two that turned out to be partly wrong (see §7.3) — a review is a
+> record of what was said at the time, and editing it to agree with what happened next
+> destroys the only thing it is good for. **What happened next is §7, appended.**
+
 **Two BLOCKERs, and neither is a code defect.** Both are the rule book and the evidence file falling behind the code: an eighth table whose DAL and RLS policies appear nowhere in CLAUDE.md's authoritative lists, and a user-facing promise shipping ahead of the run that would witness it. Both need the owner rather than the agent — one is a CLAUDE.md amendment, the other is one `npx playwright test`. Five MAJORs and eleven smaller items follow. The pipeline itself is in good shape: the chokepoints hold, the retry budget caps rather than multiplies, the grounding gate and the base gate are arithmetic in code, and no secret goes anywhere near the client.
 
 **Gates run on this branch, quoted (clean tree at `60221b6`):**
@@ -224,3 +231,103 @@ Recorded so a later reviewer does not re-litigate it, and so a later agent does 
 **Checked:** secrets ✓ (no new env var; nothing client-accessible; no value printed) · RLS ✓ in the database, ✗ in CLAUDE.md's matrix (**B-1**) · chokepoints ✓ (`check.mjs` 13/13; `.from(` only in the eight DALs; no connection import outside the two gates; no `getSession()`; no `security definer`) · zod ✓ (every new API input, the P3 output, and the display name — with the sanitiser running before the length check) · `llm_calls` logging ✓ (chat and embed, success and failure, real usage-derived `cost_usd_micro`, `fallback_used`, `application_id` now threaded through the generate and rescore runs)
 
 **Still open for the owner, carried forward unchanged from Phase 3:** `eu-compliance-reviewer` has not run on the Phase-2 owner-feedback round, on Phase 3, or on this phase — which adds a `profiles` table holding a person's name, a new `/privacy` paragraph about it, and a .docx export of personal data. `nextjs-security` has not run on this phase's four new route handlers. `vercel-security` owes the `maxDuration = 300` reconciliation (`p4-1`, `p3-2`) and the body-size ceiling (`p3-1`) before deploy. Block H item 9's dev-route production fence still needs its owner-run verification.
+
+---
+
+# 7 — WHAT HAPPENED NEXT (appended 2026-09-04; the review above is unedited)
+
+Two rounds of owner triage closed this report. Round one took the two blockers and
+two majors; round two ruled on the remaining twelve, fixing ten and carrying two.
+Every item now has an outcome, and the carried ones have ids.
+
+## 7.1 — Round one: the two blockers and two majors (SPEC v2.18)
+
+| id | outcome | where |
+|---|---|---|
+| **B-1** | **FIXED** — `lib/db/profiles.ts` added to CLAUDE.md's DAL roster, and `profiles S/I/U (no DELETE — the row dies with the account through the cascade from auth.users…)` to the RLS matrix. Owner amendment | `CLAUDE.md:138`, `:146-149` |
+| **B-2** | **FIXED, and it produced a finding this report did not predict** — see §7.3 | `docs/eval/phase-4-e2e-run.txt` |
+| **M-1** | **FIXED in both directions, per entry.** `parse_vacancy: 1200` restored to the code (an accidental deletion; the spec was right about what the map should say); SPEC's enumeration corrected to `judge 3000` (a measured, argued raise, so the record was the stale half). Both maps are now total over a new `ChatStep`, so the next omission is a build failure rather than a silent `?? 1200` — which also makes Block F's `max_tokens: MAX_TOKENS_BY_STEP[step]` snippet literally true | `lib/openrouter/server.ts`, `lib/chat.ts`, `SPEC.md:921` |
+| **M-2** | **CARRIED — `p4-27` widened** to name SPEC Block C, which reproduces `001_init.sql` verbatim including `create extension if not exists moddatetime` and therefore fails on its second line against the project it describes; and to note that Block C never gained `profiles` at all | `docs/backlog.md` |
+| **M-5** | **FIXED — new rule B7a.** 100 `rescore` rows per rolling 24 h, `assertUnderRescoreCap` in the GATE rather than the route, declared in SPEC's rules table with its overshoot bound (≤6 rows, the same shape B7 carries) and the reason `embed` stays uncapped. It needed a second edit the finding did not anticipate: `editorTextCorpus`'s catch turned everything into `could_not_search` → 502, so the cap would have reported a budget decision as an outage and told the user to retry the one thing guaranteed to refuse identically. `DailyLimitError` is now rethrown ahead of that catch | `lib/retrieval.ts`, `lib/db/llmCalls.ts`, `lib/coverage.ts`, `lib/copy.ts` |
+
+## 7.2 — Round two: the owner triage, ten fixed and two carried (SPEC v2.19)
+
+| id | outcome | where |
+|---|---|---|
+| **M-3** | **FIXED** — each policy guarded by its own `pg_policies` lookup, so a second run converges instead of aborting at `42710`. The commit message had promised the whole file was re-runnable while `create table if not exists` and `drop trigger if exists` covered only the first three statements | `supabase/migrations/004_profiles.sql` |
+| **M-3b** | **FIXED** — header restored in `003`'s form, carrying the "Run in the Supabase SQL editor AFTER 001 and 002" ordering instruction. A comment changes nothing a database executes, so "must match what ran byte for byte" never reached it | same |
+| **M-3c** | **FIXED** — renamed `public.m004_touch_profiles_updated_at()` with `set search_path = ''`. Not `security definer`: it needs no privileges of its own, and `check.mjs` fails the build on that anywhere under `supabase/`. **APPLIED to the live database, so repo and production agree.** The old `public.touch_updated_at()` is deliberately left in place, because `001` installs `moddatetime` for the `career_items` and `applications` touch triggers and `p4-27` records the extension is unavailable here — a `drop function` would either fail on a dependency or cascade a trigger 004 never created | same |
+| **M-4** | **FIXED — the sentence moved, not the behaviour.** `CLAUDE.md:9-11` now reads "…before showing it**, or says plainly that the check did not run**". The two `judge: null` branches are correct: rule B7's cap or an outage refusing the judge step returns the draft the user already paid for, with `RESULT.judgeNotRun` and both bars on "Not checked yet". Discarding it to report "nothing was saved" would take the user's money and their work | `CLAUDE.md:9-11` |
+| **§4.1** | **FIXED** — `/judge` and `/export` gate on `application.coverage !== null` as `/generate` always did, so neither appends a row the detail page can never render. Not reachable through the UI, which is the argument FOR the gate: a route reachable only directly is the one whose gate has to be its own | `judge/route.ts`, `export/route.ts` |
+| **§4.2** | **FIXED — the code moved to match the comment, not the comment to match a wasted request.** `retrieveItemsFor` counts `documents` first (a `head: true` count over the caller's own RLS-scoped rows, no metered call) and returns an empty payload before embedding. It costs that one read on the happy path, the honest trade in front of a pipeline whose worst case is four chat calls. Zero documents is NOT `found_nothing`: there is nothing to search, so no search runs and none is reported | `lib/tailoring.ts` |
+| **§4.3** | **FIXED** — `RESULT.resumeTooShort: 'A resume needs at least 100 characters.'`, with two lower checks in declaration order: `.min(1, emptyEditor)` then `.min(100, resumeTooShort)`. All three consumers read `issues[0]`, so the emptiness check must come first for an empty editor to keep US-5's own sentence. Both outcomes AND the declaration order they depend on are pinned by two new unit tests rather than assumed | `lib/copy.ts`, `lib/validation.ts`, `tests/unit/validation.test.mjs` |
+| **§4.5** | **FIXED, with a correction to the finding** — see §7.3 | `SPEC.md` endpoint #5 notes |
+| **§4.6** | **FIXED — declared kept**, following Phase 3's precedent for `copyBullet` beside it. The three constants are one mechanism, a label and its two outcomes, so deleting only the middle would leave a label and a failure message for a success nobody could report | `lib/copy.ts` |
+| **§4.7** | **FIXED** — `.eq('user_id', userId)` added, so the read filters on the owner AND rests on RLS: the pairing CLAUDE.md requires of `match_documents`. The id is an argument rather than a `getUser()` inside the DAL, matching `upsertDisplayName`'s stated rule — an id from anywhere but the verified session could disagree with it — and all four call sites already hold a verified user | `lib/db/profiles.ts` + 4 call sites |
+| **§5.2** | **FIXED** — members checked, not only the container, and a non-string entry is dropped rather than stringified, on the same reasoning as the existing fallback: a term nobody can vouch for is not suggested. The fallback-to-empty design is kept | `result-workspace.tsx` |
+| **§5.4** | **FIXED as documentation; heuristic kept.** The docblock names the all-caps company name it wrongly bolds and says why a word list is worse: it would bold EXPERIENCE and not BERUFSERFAHRUNG, while rule B10 allows a non-English posting. A shape test is wrong about one line; a word list is wrong about whole documents | `lib/docx.ts` |
+| **§4.4** | **CARRIED as `p4-28`** (MINOR, owner decision). The duplication is justified and stays; the three `as` casts are the part with no defence — no-ops today, and exactly what would absorb a future divergence without a build error | `docs/backlog.md` |
+| **§5.3** | **CARRIED as `p4-29`** (NIT, owner decision). Cosmetic on an append-only table, and no single-statement fix exists: `resume_versions` has no uniqueness to lean on, and adding one would forbid a legitimate re-save of unchanged text | `docs/backlog.md` |
+| **§5.1** | **Already carried as `p4-13`** before this report was written; the report says so in its own text | `docs/backlog.md` |
+
+## 7.3 — Where this report was WRONG, recorded because a review that only keeps its hits is not a record
+
+Three corrections. None of them changes an outcome above; all three change what the
+next reader should trust in a report of this kind.
+
+- **B-2 predicted the wrong culprit, and the run found it.** The blocker was right that
+  the display-name feature was unwitnessed and that `/privacy` carried the promise
+  anyway. It was wrong about what stood in the way: with migration 004 applied the
+  suite came back **30 passed, 2 failed**, and both failures were the same PROBE rather
+  than the same feature. It read the outcome with `locator.isVisible({ timeout: 10_000 })`
+  — which does not auto-wait, and whose timeout Playwright ignores — so it returned
+  false the instant the click dispatched and then demanded the FAILURE copy of a save
+  that had succeeded. Playwright's own error context shows `- status: Name saved.` on
+  screen at the moment of the assertion. That guard could only ever pass as a SKIP, and
+  applying 004 turned it red for precisely the right reason: the feature started working
+  and the probe could not see it. Fixed with `.or()`; nothing in `src/` was changed to
+  make those two cases pass.
+- **B-2's expected number was arithmetically impossible.** It predicted "33 passed, 1
+  skipped". The suite holds 33 cases in total and the prior run was 31 passed + 2
+  skipped, so un-skipping one yields **32 + 1**. The prediction double-counted the case
+  it was about. Recorded because the number in a spec run is the thing nobody
+  re-derives.
+- **§4.5 overstated its own stakes.** It claimed the endpoint-#5 notes are
+  "cross-referenced by number from four files". They are not: `rescore/route.ts` and two
+  SPEC lines cite **v2.12**'s notes, and `generation.ts` cites the ARCHITECT report's
+  finding number. No repo file cited the endpoint-#5 numbering at all, so renumbering
+  broke nothing there. What it did threaten was this report and
+  `phase-4-architect-diff.md`, both of which cite the OLD "note 13" and "note 14" — and
+  neither was edited, because a review is a record of what was said. SPEC's note block
+  now carries the mapping (old 13→12, old 14→13, old 12→14), which is what keeps those
+  two citations resolvable instead of silently wrong. The finding's stated hazard was
+  real; its inventory of who was exposed to it was not.
+
+## 7.4 — Raised while fixing, and RULED
+
+- **`p4-30` (RULED, first item of Phase 5).** Rule B7a shipped with the defect its own
+  hand-over named: `DAILY_RESCORE_LIMIT` sits beside `DAILY_CALL_LIMIT` in
+  `src/lib/db/llmCalls.ts`, which imports `server-only`, and `check.mjs` R6 keeps
+  `tests/` away from it — so both ceilings are untestable by construction, exactly as
+  `MAX_CHAT_REQUESTS_PER_STEP` was until backlog `m-4` moved it to `lib/budget.ts`. The
+  two were deliberately kept together rather than split so one became testable and the
+  other did not. The owner has ruled that **both move to `lib/budget.ts` as the first
+  item of Phase 5**; it is a decision, not an open question.
+
+## 7.5 — Still open for the owner, unchanged by either round
+
+The process gates this report listed are all still outstanding, and none of them is
+something these two rounds could close: `eu-compliance-reviewer` has not run on the
+Phase-2 owner-feedback round, on Phase 3, or on Phase 4 — which adds a `profiles` table
+holding a person's name, a `/privacy` paragraph about it, and a .docx export of personal
+data. `nextjs-security` has not run on Phase 4's four route handlers, two of which
+gained a gate in round two. `vercel-security` owes the `maxDuration = 300`
+reconciliation (`p4-1`, `p3-2`) and the body-size ceiling (`p3-1`) before deploy. Block
+H item 9's dev-route production fence still needs its owner-run verification.
+
+**Gates at the close of round two:** `check.mjs` 13/13 · `tsc` clean · `eslint` clean ·
+unit **258/258** (two added) · `next build` compiled · Playwright **32 passed, 1
+skipped, exit 0** — unchanged across the round, which is the claim worth having given
+that four of the ten fixes sit in front of paid calls. `docs/eval/phase-4-e2e-run.txt`
+names which cases are the evidence for which fix, and states plainly that the migration
+change is not witnessed by that suite and cannot be.
