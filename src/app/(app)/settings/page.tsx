@@ -38,7 +38,15 @@ export default async function SettingsPage() {
   let displayName: string | null = null;
   let readFailed = false;
   try {
-    const profile = await getProfile();
+    /**
+     * `getProfile` takes the owner id and filters on it, so RLS is no longer the
+     * only thing keeping this read to one user's row. `user` is nullable here
+     * because `getUser()` says so — the middleware fence means a signed-out
+     * visitor never reaches this page, and the ternary states that rather than
+     * asserting it with a `!`: no user means no profile to read, which is the
+     * same empty field a user without a saved name sees.
+     */
+    const profile = user ? await getProfile(user.id) : null;
     displayName = profile?.display_name?.trim() || null;
   } catch (err) {
     readFailed = true;

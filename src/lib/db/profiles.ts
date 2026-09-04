@@ -20,10 +20,28 @@ import type { Profile } from '@/lib/db/types';
  * optional, so "no row" and "a row with a null name" mean the same thing to
  * every reader and neither is an error. Callers that want the name should use
  * `getDisplayName`.
+ *
+ * FILTERED BY OWNER *AND* FENCED BY RLS, which is the pairing CLAUDE.md
+ * requires of `match_documents` — `security invoker`, filtering on `auth.uid()`
+ * inside the function, with RLS underneath. This read used to rest on RLS alone
+ * for at-most-one-row. It was safe (a second row would make `maybeSingle()`
+ * throw rather than pick one), and safe on one mechanism is still one mechanism,
+ * on a table that exists to hold a person's name.
+ *
+ * `userId` comes from the caller's verified session, the same rule
+ * `upsertDisplayName` states below: an id from anywhere else could disagree with
+ * the session, and the filter would then be describing a different user from the
+ * one RLS is about to enforce. Taken as an argument rather than read here,
+ * because all four call sites already hold a verified user and a second
+ * `getUser()` is a real auth round trip.
  */
-export async function getProfile(): Promise<Profile | null> {
+export async function getProfile(userId: string): Promise<Profile | null> {
   const supabase = await createClient();
-  const { data, error } = await supabase.from('profiles').select('*').maybeSingle();
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
   if (error) throw error;
   return (data as Profile | null) ?? null;
 }
@@ -58,10 +76,10 @@ export async function getProfile(): Promise<Profile | null> {
  * on with the placeholder, and the Settings field — which does NOT swallow —
  * reports the error where the feature lives.
  */
-export async function getDisplayName(): Promise<string | null> {
+export async function getDisplayName(userId: string): Promise<string | null> {
   let profile: Profile | null;
   try {
-    profile = await getProfile();
+    profile = await getProfile(userId);
   } catch (err) {
     // Metadata only: an error message could carry the name, which is personal
     // data. The name of the error is enough to tell a missing table from a

@@ -143,7 +143,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
      * Read under the user's own session through the DAL, so RLS scopes it; a
      * missing profile is a normal answer and not an error.
      */
-    const displayName = await getDisplayName();
+    const displayName = await getDisplayName(user.id);
 
     const outcome = await generateWithJudge({
       parsed: vacancy.parsed,
