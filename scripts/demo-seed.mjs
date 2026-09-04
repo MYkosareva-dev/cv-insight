@@ -15,20 +15,26 @@
  * script cannot create an account at all: the owner creates one by hand in the
  * Supabase dashboard and this script signs into it.
  *
- * CREDENTIALS COME FROM THE ENVIRONMENT AND NOWHERE ELSE.
+ * CREDENTIALS COME FROM `.env.demo.local`, WHICH ONLY THIS SCRIPT OPENS.
  *
  *     CVI_DEMO_EMAIL      the demonstration account's address
  *     CVI_DEMO_PASSWORD   its password
  *
- * Set them in the shell that runs this, and nowhere that is written down:
+ * The file sits at the repository root and is git-ignored by `/.env.*`. An
+ * already-exported environment variable of the same name still wins, so the
+ * shell route keeps working; the file is what makes the run reproducible
+ * without one.
  *
- *     $env:CVI_DEMO_EMAIL='…'; $env:CVI_DEMO_PASSWORD='…'   (PowerShell)
- *     export CVI_DEMO_EMAIL='…' CVI_DEMO_PASSWORD='…'        (bash)
+ * IT REFUSES TO READ THE FILE UNLESS GIT IGNORES IT. `assertIgnored()` below
+ * asks `git check-ignore` before the file is opened, because "it is in
+ * .gitignore" is a claim about a PATTERN and this has to be a fact about THIS
+ * path. A credential that reaches a repository is not recoverable by deleting
+ * the file afterwards, so the check belongs in the mechanism rather than in a
+ * reader's memory.
  *
- * This file never opens a `.env` of any kind, never writes either value
- * anywhere, and never prints them — the address is masked in every line of
- * output, because a screenshot run that leaks the account it used into a
- * terminal transcript defeats the point of the run.
+ * Neither value is ever printed, logged or written anywhere: the address is
+ * masked in every line of output, because a screenshot run that leaks the
+ * account it used into a terminal transcript defeats the point of the run.
  *
  * THE ACCOUNT MUST BE A DEDICATED DEMONSTRATION ACCOUNT, AND THE SCRIPT CHECKS.
  * The images are published in the README, so nothing real may be in them. A
@@ -47,11 +53,13 @@
  *     node scripts/demo-seed.mjs --shots-only         # capture from what is there
  *     node scripts/demo-seed.mjs --case <file.json>   # a different fixture
  *     node scripts/demo-seed.mjs --base-url http://localhost:3000
+ *     node scripts/demo-seed.mjs --credentials <file>   # default .env.demo.local
  *
  * It prints the judge's four criteria for the run, which is the measurement
  * `docs/eval/generation-coverage-control.md` is written from.
  */
-import { mkdirSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { chromium } from '@playwright/test';
@@ -77,15 +85,55 @@ const ALLOW_EXISTING = has('allow-existing-base');
  */
 const VIEWPORT = { width: 1440, height: 900 };
 
+const CREDENTIALS_FILE = flag('credentials', '.env.demo.local');
+
+/**
+ * Refuse to open a credentials file that git would commit.
+ *
+ * `git check-ignore` exits 0 when the path is ignored and 1 when it is not, and
+ * it answers about THIS path rather than about a pattern someone believes
+ * covers it. Exit 1 is the dangerous answer and stops the run. A git that
+ * cannot answer is also a stop: "I could not check" is not "it is fine".
+ */
+function assertIgnored(file) {
+  let ignored = false;
+  try {
+    execFileSync('git', ['check-ignore', '--quiet', file], { stdio: 'ignore' });
+    ignored = true;
+  } catch (err) {
+    if (err && err.status === 1) ignored = false;
+    else {
+      throw new Error(
+        `could not ask git whether ${file} is ignored (${err && err.message}). ` +
+          'Refusing to read credentials I cannot prove are un-committable.',
+      );
+    }
+  }
+  if (!ignored) {
+    throw new Error(
+      `${file} is NOT ignored by git. Refusing to read it. Add it to .gitignore ` +
+        'first — a credential that reaches a repository is not recoverable by ' +
+        'deleting the file afterwards.',
+    );
+  }
+}
+
+if (existsSync(CREDENTIALS_FILE)) {
+  assertIgnored(CREDENTIALS_FILE);
+  // Node's own loader. It does not override variables already exported, so a
+  // value set in the shell still wins over the file.
+  process.loadEnvFile(CREDENTIALS_FILE);
+}
+
 const EMAIL = process.env.CVI_DEMO_EMAIL;
 const PASSWORD = process.env.CVI_DEMO_PASSWORD;
 
 if (!EMAIL || !PASSWORD) {
   console.error(
-    'demo-seed: set CVI_DEMO_EMAIL and CVI_DEMO_PASSWORD in your shell first.\n' +
-      '           They are the demonstration account created by hand in the Supabase\n' +
-      '           dashboard — registration is closed, so this script cannot make one.\n' +
-      '           Do not put them in a file; this script reads the environment only.',
+    'demo-seed: no credentials. Expected CVI_DEMO_EMAIL and CVI_DEMO_PASSWORD in ' +
+      `${CREDENTIALS_FILE} (git-ignored), or already exported in the shell. The ` +
+      'account is the demonstration one created by hand in the Supabase dashboard — ' +
+      'registration is closed, so this script cannot make one.',
   );
   process.exit(2);
 }
@@ -140,7 +188,37 @@ async function signIn(page) {
   await page.getByLabel('Email').fill(EMAIL);
   await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.waitForURL(/\/(scan|career)$/, { timeout: 30_000 });
+  try {
+    await page.waitForURL(/\/(scan|career)$/, { timeout: 30_000 });
+  } catch {
+    /*
+     * A bare "navigation timed out" is the least useful thing this script could
+     * say: the four reasons a sign-in does not navigate need four different
+     * fixes, and the app already renders exactly which one it was. Report the
+     * COPY. It is the app's own words and carries no credential — which is the
+     * only reason it can be printed at all.
+     */
+    const shown = [];
+    for (const line of [
+      'Email or password is incorrect.',
+      'Confirm your email before signing in.',
+      'Too many attempts — try again in a minute.',
+      'Sign-in is temporarily unavailable. Try again.',
+      'Enter a valid email address.',
+      'Password must be at least 8 characters.',
+    ]) {
+      if ((await page.getByText(line).count()) > 0) shown.push(line);
+    }
+    throw new Error(
+      [
+        `sign-in did not reach the app. The page says: ${shown.length ? shown.join(' / ') : '(no error copy on screen)'}`,
+        `  still on ${new URL(page.url()).pathname}, with the address read as ${maskedEmail}.`,
+        '  Neither credential is printed here, or anywhere else — the mask is the domain only.',
+        '  "Email or password is incorrect" means the file\u2019s values do not match the account.',
+        '  "Confirm your email" means the dashboard user was created without Auto Confirm.',
+      ].join(String.fromCharCode(10)),
+    );
+  }
   console.log(`signed in as ${maskedEmail}`);
 }
 
