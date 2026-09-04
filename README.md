@@ -407,6 +407,15 @@ supabase/migrations/004_profiles.sql
 supabase/migrations/005_profile_contacts.sql
 ```
 
+**Known caveat before you run them.** `001_init.sql` installs and uses the
+`moddatetime` extension for the `updated_at` touch triggers, and that extension
+was *not* available on the project this app actually runs against —
+`004_profiles.sql` was rewritten to work without it and the other three were not
+re-read. So the committed set is not confirmed to apply cleanly to a fresh
+project, and if `001` fails on its second line that is this, not you. It is
+tracked as `p4-27` in `docs/backlog.md`, and SPEC Block C reproduces the same
+file verbatim, so the specification carries the assumption too.
+
 Then:
 
 ```bash
@@ -491,6 +500,11 @@ account. `/privacy` states this rather than implying the erasure story is
 complete. It is carried deliberately — with registration closed the store holds
 one person's own data — and it reopens the moment a second real person holds an
 account.
+
+**The committed migrations are not confirmed against a fresh project.** See the
+caveat under *Running it locally* and `p4-27` in `docs/backlog.md`. The schema
+this app runs on and the schema in `supabase/migrations/` agree on everything the
+app reads; what is unverified is whether the files apply cleanly from empty.
 
 **Password reset is not implemented.** It needs email delivery, which is out of
 scope; accounts are created by hand.
