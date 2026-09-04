@@ -855,6 +855,22 @@ export const ERROR_CODES = {
 export const ERROR_MESSAGES = {
   DAILY_LIMIT: 'Daily AI limit reached (50 calls). Try again tomorrow.',
   /**
+   * Rule B7a, the re-score ceiling. 429 DAILY_LIMIT like rule B7, because a quota
+   * is what was reached — a second error CODE would say the same thing to a client
+   * that already handles this one, and Block D would grow a row for it.
+   *
+   * IT DOES NOT NAME THE NUMBER, and B7's message does. B7 caps chat calls one for
+   * one with the actions the user took, so "(50 calls)" is a number they can count.
+   * B7a caps embedding REQUESTS, and one re-score is 2 to 7 of them depending on
+   * how long the posting and the resume are — so naming 100 would invite a user
+   * who clicked thirty times to conclude the app had miscounted.
+   *
+   * It names what still works instead, because nothing about this cap costs the
+   * user their edit: [Download .docx] makes no embeddings call, and it is the path
+   * that turns the draft in the editor into a saved version.
+   */
+  RESCORE_LIMIT: 'Daily re-score limit reached. Try again tomorrow — [Download .docx] still works.',
+  /**
    * 409 for a second generate while the first is still running (Block D #5).
    *
    * It names WAITING as the remedy, because that is the true one: the first run

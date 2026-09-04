@@ -10,9 +10,13 @@ import {
   matchDocuments as matchDocumentsRpc,
   type NewDocument,
 } from '@/lib/db/documents';
-import { logLlmCall } from '@/lib/db/llmCalls';
+import {
+  DAILY_RESCORE_LIMIT,
+  countRescoreCallsInLast24h,
+  logLlmCall,
+} from '@/lib/db/llmCalls';
 import { ERROR_MESSAGES } from '@/lib/copy';
-import { AiUnavailableError, UnauthorizedError } from '@/lib/errors';
+import { AiUnavailableError, DailyLimitError, UnauthorizedError } from '@/lib/errors';
 import { getUser } from '@/lib/supabase/server';
 import {
   EMBEDDING_BATCH_SIZE,
@@ -160,6 +164,33 @@ function logEmbedCall(
 }
 
 /**
+ * Rule B7a — the re-score ceiling, checked ONCE per re-score run, in the GATE.
+ *
+ * The same shape as rule B7's check at the head of `lib/chat.ts`: read the
+ * COMMITTED rows, refuse before the first request goes out, and let a run that
+ * has started finish. It lives here and not in the route handler for the reason
+ * this whole module exists — a fence a caller has to remember is a fence the
+ * next caller does not have.
+ *
+ * DECLARED OVERSHOOT, the same bound rule B7 carries: `logLlmCall` writes through
+ * `after()`, so a run's own batches are invisible to its own check and a run that
+ * starts under the cap may finish over it by at most its batch count minus one —
+ * 6 rows on the largest permitted input. Re-checking mid-run would refuse a
+ * re-score whose first batch was already billed, which buys a half-measured score
+ * for money already spent.
+ *
+ * `embed` is deliberately NOT capped: indexing must never be able to fail a save
+ * (CLAUDE.md, Embeddings), and it is already bounded by rule B9 and by the
+ * skip-when-unchanged rule. A ceiling on it would be a new way for a saved item
+ * to lose its index, which is the failure those two rules exist to prevent.
+ */
+async function assertUnderRescoreCap(): Promise<void> {
+  if ((await countRescoreCallsInLast24h()) >= DAILY_RESCORE_LIMIT) {
+    throw new DailyLimitError(ERROR_MESSAGES.RESCORE_LIMIT);
+  }
+}
+
+/**
  * Embed texts for the verified user. Batched at EMBEDDING_BATCH_SIZE.
  *
  * Throws AiUnavailableError on failure — `OpenRouterError` never escapes this
@@ -172,6 +203,8 @@ export async function embedTexts(
   applicationId: string | null = null,
 ): Promise<number[][]> {
   const user = await requireUser();
+  // Rule B7a. The one step here whose spend is a repeatable user action.
+  if (step === 'rescore') await assertUnderRescoreCap();
   return embedFor(user.id, texts, step, applicationId);
 }
 
