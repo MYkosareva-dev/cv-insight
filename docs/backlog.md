@@ -8,6 +8,221 @@ entry in this file is by definition something the owner has agreed can wait. The
 is the one the review report used, so `docs/reviews/` stays the full record and this
 stays the worklist.
 
+## How to read this file
+
+Two halves, and the second one is the reason the first can be short.
+
+**This half is the worklist**: what a reader should know before touching anything,
+then the items that are waiting on a CONDITION rather than on someone's time,
+grouped by the condition. **The half below the rule is the record**, one section
+per review round in the order the rounds happened. Entry text there is never
+rewritten — a closure is marked with a blockquote beside the entry, the way this
+file has always marked one, so the reasoning that produced a fix survives the fix.
+
+An id appearing in a group up here is a pointer. Its full entry, with the argument
+behind it, is in the round that raised it.
+
+Anything not listed in a group up here is ordinary open work with no precondition:
+it is in the rounds below, waiting on nothing but a decision to do it.
+
+---
+
+## Read these first
+
+Seven, chosen for consequence rather than for severity label. Three are product
+findings, two are money or correctness, two are one-line owner actions that gate
+sharing the link.
+
+1. **`p5-16` — grounding fails on the first draft in 3 of 3 measured runs, on
+   BOTH generators.** The strongest open finding in the file, and the one most
+   likely to be misread: changing the model did not fix it, so the remaining
+   suspects are prompt P2 and a fixture whose career base deliberately
+   under-covers its vacancy. Nothing about prompt quality should be concluded
+   from the one case that exists. Phase 5, guardrail round.
+
+2. **`p3-23` — the coverage gate compares term FORMS.** A base saying
+   "Microsoft Office" or "NodeJS" does not satisfy a posting saying "MS Office"
+   or "Node.js", and that row is a false Gap at any similarity — the same class
+   of error the gate was built to remove, narrowed from topic to spelling.
+   User-visible on every scan. Phase 3, lexical-gate round.
+
+3. **`M-3` (= `ns-4`) — the career `[id]` route still does not parse its
+   segment**, so a non-UUID reaches Postgres and returns 500 where Block D
+   mandates 404. Open since Phase 2 across two review rounds, and easy to believe
+   is fixed: a comment on `src/app/api/applications/[id]/route.ts` says the
+   finding was "closed here rather than repeated", which it was — for that route
+   only. Phase 2, and again Phase 6.
+
+4. **`M-4` — `POST /api/career/import` spends a metered model call before rule
+   B9's cap refuses the save.** Re-checked while writing this section and still
+   open: the handler has no item count in front of the model call. It is the one
+   open item that costs money every time it fires. Phase 2.
+
+5. **`p4-27` — the committed migrations may not run on a fresh project.**
+   `001_init.sql` installs and uses `moddatetime`, which was not available on the
+   project this app actually runs against; `004_profiles.sql` was rewritten to
+   match reality and the other three were not re-read. SPEC Block C reproduces
+   `001_init.sql` verbatim, so the canonical set-up script carries the same
+   assumption, and Block C never gained `profiles` at all. This is what a reader
+   following the README's local-setup steps would hit first. Phase 4.
+
+6. **The Playwright suite can no longer create accounts on this project.**
+   Registration is closed in Supabase and that setting is the deployment's only
+   gate, so all four specs now fail at their fixture. The next change to a tested
+   path has no green suite behind it until a second Supabase project exists or the
+   specs sign in to pre-created accounts. Recorded at the end of
+   `docs/eval/phase-6-e2e-run.txt` with the three options and their costs.
+   Phase 6, owner triage.
+
+7. **Two one-line owner actions gate sharing the link.** `IMPRESSUM_FILLED` is
+   still `false`, so `/impressum` correctly states the operator is not published —
+   accurate, and not a substitute for filling it in. And **Speed Insights must be
+   off** in the Vercel dashboard: it beacons per-visit data to a third party, and
+   `/privacy` states in its own words that there are no analytics and no trackers.
+   The CSP would currently stop the beacon leaving, which is a reason to turn the
+   setting off, not a reason to lean on a header to keep a promise the page makes
+   in prose. Phase 6.
+
+---
+
+## Grouped by what would reopen them
+
+These are not waiting on someone's time. Each is waiting on a condition, named
+here so that when the condition arrives the work is already identified.
+
+### When a second real person holds an account
+
+- **`eu-8`** — granular erasure. Carried by owner decision precisely because the
+  store holds one person's own data today and account deletion removes all of it.
+  A second account holder is the event that makes it an exposure rather than a
+  limitation `/privacy` states plainly. The fix needs an owner amendment to
+  CLAUDE.md's RLS matrix, which is deliberate and should stay deliberate.
+
+### When the test suite can create accounts again
+
+Every evidence gap below is blocked on the same fixture problem, not on anyone
+being unwilling to write the test.
+
+- **`e-1`, `e-2`, `e-3`, `e-4`** — the Phase-2 evidence gaps: the dedup bound, the
+  Edit-save request count, `CAREER.truncated` reaching a screen, the target-role
+  round trip.
+- **`p3-3`, `p3-4`** — a successful draft re-run, and "exactly one `parse_vacancy`
+  row per scan".
+- **`p4-6`** — the auto-revision wiring has no deterministic test.
+- **`p5-8`** — [Regenerate] has no request-count assertion, the only one of five
+  metered buttons without one.
+- **`m-5`, `n-5`** — edge case S6 asserted nowhere; a substring count assertion
+  that also matches the wrong number.
+
+### When a second calibration case exists
+
+Everything here is entangled with one fixture whose career base deliberately
+under-covers its vacancy, so none of it can be separated from the corpus until a
+second, well-covered case is built.
+
+- **`p3-14`, `p3-15`** — seven labeled requirements, and the weakest number in the
+  set is `SIMILARITY_FLOOR`.
+- **`p4-11`** — the thresholds are reused against the re-score's ephemeral corpus,
+  which no labeled set has been run against.
+- **`p5-16`, `p5-17`** — the grounding finding, and the fact that the comparison
+  used the same case but a fresh account each time rather than the same row.
+- **`p3-24`, `p3-25`, `p3-26`** — the gate and the keyword table read different
+  corpora and can legitimately disagree; whitespace normalization on a term; the
+  `terms` bound.
+- **`p3-19`** — the enumeration split is a shape test, so prose built from four
+  short clauses splits like a skills list.
+
+### When `resume_versions` learns which model wrote a version
+
+One migration, and three things resolve together.
+
+- **`p5-14`** — "written by" describes the application's most recent generation,
+  not the version on screen.
+- **`p5-15`** — the rail names whose measurement it shows; the judge card does not.
+- The measurement this unlocks is the one worth having: rubric outcomes grouped
+  BY MODEL on `/quality`, which turns "does the fallback fail grounding more
+  often" from an impression into rows.
+
+### When the app runs on more than one instance, or a user opens two tabs
+
+Each of these is a race that a single warm serverless instance hides.
+
+- **`p4-4`** — the generate lock is per-instance, so two instances can each hold
+  one for the same application and run two full pipelines.
+- **`p3-10`** — the draft re-run has no in-flight lock at all, while `/generate`
+  has a 409.
+- **`p4-29`, `p4-5`** — two concurrent exports both append; and text identical to
+  an OLDER version is not deduped. One fix, if the version list ever starts
+  reading as a download log.
+- **`a-3`, `a-5`** — the import's two statements have no transaction; the dedup
+  guard is not idempotent under concurrency.
+- **`p4-14`** — no server-side one-click guard on `POST …/judge`, which has only
+  the client's own ref in front of it.
+
+### When the thirteen check rules are unfrozen
+
+- **`vs-10`** — nothing stops a THIRD `src/app/api/dev/` route shipping without
+  its production 404 guard. An R14 asserting the guard is the first statement of
+  every such handler would convert code review into a build failure. It needs an
+  owner decision because it means unfreezing the rule set, which is why it is
+  here and not done.
+
+### On the next deployment, or the next dashboard change
+
+- **`vs-8`** — pin the Vercel project's Node version to 22.x rather than
+  inheriting a default that moves. It is in `docs/deploy.md` as a precondition;
+  what is missing is a record that it was set.
+- **`vs-9`** — if any Deployment Protection is ever enabled, its bypass token is a
+  secret under CLAUDE.md's rules and `scripts/check.mjs` would not catch it pasted
+  into a config file.
+- **`vs-11`** — the middleware calls `getUser()` on every non-excluded request.
+  Now that functions are in `fra1`, measure a signed-in navigation from a European
+  client before doing anything; it is a NIT precisely because it is unmeasured.
+- **The `reportAllChanges` console error** — established as NOT this app's code,
+  with the investigation recorded so nobody repeats it. Kept because it is a
+  finding about the platform, and the next person to see it should find the answer
+  rather than the search.
+- **Speed Insights**, above.
+
+### Parked product decisions, not defects
+
+Four **FEATURE** entries in the Phase-2 owner-feedback section: grouping `/career`
+by source, near-duplicate detection on the review screen, a `summary` item type,
+and an inline import panel on the empty state. Asked for explicitly and not built.
+They reopen when the owner wants them, and on no other condition.
+
+---
+
+## Closed since Phase 5
+
+Marked here and again beside the entries below, because a closure that exists in
+only one place is a closure the next reader argues with.
+
+| id | Closed by | What makes it checkable |
+|---|---|---|
+| `p4-30` | Phase 5, SPEC v2.20 | `DAILY_CALL_LIMIT` and `DAILY_RESCORE_LIMIT` are in `src/lib/budget.ts` with `underDailyCallCap` / `underRescoreCap`, and `tests/unit/budget.test.mjs` pins the boundaries |
+| `p3-1`, `m-3`, `ns-5`, `vs-7` | Phase 6, SPEC v2.25 | `MAX_PDF_BYTES` is 4 MB in `src/lib/copy.ts`, under the platform's 4.5 MB body limit, and `src/app/api/career/import/route.ts` checks `Content-Length` before buffering |
+| `p3-2`, `p4-1` | Phase 6, SPEC v2.24 | the function-duration table in SPEC Block D, measured against the verified plan ceiling |
+| `ns-1`, `vs-3` | Phase 6 | `docs/eval/dev-routes-production-evidence.md` — the fence run against a production build |
+| `eu-9` | Phase 6 | `docs/eval/erasure-evidence.md` — all eight owner-scoped tables to zero, deleted through the app's own control |
+| `eu-11`, `eu-14`, `eu-15` | Phase 6 | the `/privacy` rewrite and the Impressum work |
+| `vs-1`, `vs-4`, `vs-5`, `vs-6`, `ns-2`, `eu-2`, `eu-5`, `eu-6`, `eu-7`, `eu-10` | Phase 6, SPEC v2.25 | the owner triage round — its own section below says what each one was |
+| `p3-13`, `p3-17`, `p4-19`, `p3-8`, `m-4` (budget half only) | Phases 3–4 | already marked beside their entries |
+| `eu-12` | Phase 7 | `README.md` now points at `docs/openrouter-processing.md` for the provider retention decision, which is what the finding asked for |
+
+Two things this table deliberately does not say. `p3-22` is not a closure — it
+**moved**, from a backlog item to a pre-deploy gate, and its entry says so.
+`M-3`/`ns-4` and `M-4` are **not** closed; both were re-checked against the code
+while this section was written and both are still open, which is why they are in
+*Read these first* above.
+
+---
+
+# The record, by round
+
+Everything below is the history, in the order it was written. Entry text is not
+rewritten here; closures are marked beside the entries.
+
 ## Phase 2 — from `docs/reviews/phase-2.md` (2026-09-03)
 
 > **M-1 and M-2 were CLOSED in the owner-feedback round** (commit "feat(career):
@@ -22,6 +237,14 @@ stays the worklist.
 - **MINOR m-1** — SPEC's declared B7 bound says the overshoot is zero, but a step that spends its second retry request commits two `llm_calls` rows against one cap check; restate as "zero per user-initiated step, at most +1 per step that retries" in `SPEC.md` and in the `CallLedger` doc block in `src/lib/chat.ts`.
 - **MINOR m-2** — two Zod bounds in `src/lib/validation.ts` carry no message, so raw Zod text ("Too big: expected string to have <=20000 characters") renders in the app's own voice; give both constants in `src/lib/copy.ts` and extend `ItemFieldErrors` to cover `period`, which currently has no field to attach to.
 - **MINOR m-3** — the 5 MB ceiling is checked after `formData()` has already buffered the body, and `MAX_PDF_BYTES` exceeds Vercel's 4.5 MB request limit, so a 4.6 MB PDF fails with the generic copy instead of edge case L5's exact string; pre-check `Content-Length`, correct the comment in `src/app/api/career/import/route.ts`, and reconcile the advertised ceiling before deploy.
+
+> **`m-3` is CLOSED** — as `ns-5`/`vs-7` in Phase 6, which answered the ceiling
+> question this entry opened: the platform limit is 4.5 MB, `MAX_PDF_BYTES` is
+> now 4 MB, and the `Content-Length` pre-check is in the import route. **`M-3`
+> and `M-4` above are NOT closed** and were re-checked against the code in
+> Phase 7 — the career `[id]` route still has no uuid parse, and the import
+> route still has no item count in front of its model call.
+
 - **MINOR m-4** — load-bearing pure logic is untested or untestable where it sits: `importedResumeText` and `isPdfUpload` in `src/lib/validation.ts` have no test, `indexWarningFor` is pure but buried in `src/app/api/career/items/route.ts`, and the retry budget cannot be tested at all from `server-only` `src/lib/chat.ts`; extract the budget arithmetic into a pure module (the same argument that moved the price table into `src/lib/pricing.ts`) and pin "two requests maximum, in either order of exception".
 - **MINOR m-5** — edge case S6 is cited as the reason for a design decision in `src/lib/db/careerItems.ts`, `src/lib/errors.ts` and the `[id]` handler but asserted nowhere; add a two-account test that PATCHes and DELETEs user A's item as user B and expects 404 with `NOT_FOUND`.
 - **MINOR m-6** — stale annotations now that `tests/e2e/career.spec.ts` ships: `playwright.config.ts` still says the suite is auth-only until Phase 7, and the `SPEC.md` Block A layout still enumerates only auth/scan/privacy specs; correct both, and Block H item 3's green-suite list with them.
@@ -86,6 +309,13 @@ build itself turned up, plus the architect items that were agreed to be
 non-blockers.
 
 - **MINOR p4-1** — `maxDuration = 300` in `src/app/api/applications/[id]/generate/route.ts` is the honest budget for four chat steps, and nothing verifies it against the deployment plan's own function-duration limit; this is `p3-2`'s question on a route whose worst case is four times longer, and a platform cut below it kills `after()` and drops the `llm_calls` rows for calls that WERE billed (rule B8). Check both numbers at the vercel-security gate, before deploy.
+
+> **CLOSED by SPEC v2.24, together with `p3-2`.** Block D’s "Function duration
+> on the deployment plan" carries the verified ceiling, every route’s declared
+> value and what a run exceeding one actually does. `maxDuration = 300` on
+> `/generate` stands against a worst case of roughly 248 s, which is the
+> comparison this entry asked for and nobody had made.
+
 - **MINOR p4-2** — ~~diagnosed as schema strictness~~ **re-diagnosed on the architect's diff review, and half-fixed on this branch.** A real run logged `[chat] judge output failed validation, one repair retry`. The likelier cause is not the schema but the OUTPUT CEILING: `MAX_TOKENS_BY_STEP.judge` was 1200 against a `judgeReportSchema` that permits fifty violations with two 2,000-character fields each, plus a 4,000-character `evidence` and three more lists. A token cut produces a TRUNCATED JSON, which is non-empty, so it returns as a success, fails Zod, and spends the single repair retry at the same ceiling to truncate in the same place — two Haiku calls, a 502, and on `/judge` nothing saved. Raised to 3000 here. What is still open: **`chatCompletion` does not read `finish_reason`**, so a length cut is indistinguishable from a model that got the JSON wrong, and only the second of those is worth a retry — the same argument the connection already makes for a non-2xx response ("the service answered; asking again buys the same refusal at the same price"). Treat `finish_reason === 'length'` as its own failure, and measure the retry rate on `/quality` before touching the schema.
 - **MINOR p4-3** — `POST /api/applications/[id]/judge` re-retrieves its own career items, so [Check quality] can judge against a different item set than the one the AI draft was written from, and the two grounding verdicts are not strictly comparable. Declared in SPEC v2.16 and honest for what the button means ("is what I have now supported by what I have now"), but the fix is to store the retrieved item ids on the version row — which needs a `resume_versions` column and therefore a migration this phase does not make.
 - **MINOR p4-4** — the generate lock in the same route is per-INSTANCE, so two serverless instances can each hold one for the same application and run two full pipelines. It closes the double click and the second tab, which is what actually happens; a concurrent-invocation race needs a row or an advisory lock, and `applications` has no column for one. Decide before the app has more than one warm instance.
@@ -107,6 +337,7 @@ What is below is what the round turned up alongside them.
 > **p4-19 is CLOSED by the PR-review run (SPEC v2.18).** 004 is applied, the suite was re-run, and `docs/eval/phase-4-e2e-run.txt` carries it: 32 passed, 1 skipped, with the display-name path and the `profiles` cascade both witnessed for the first time. The entry was right that the feature was unwitnessed and wrong about why it would stay that way — the PROBE was broken, not the migration. `locator.isVisible()` does not auto-wait and ignores the timeout it is handed, so the guard could only ever pass as a skip, and applying 004 turned it red because the feature started working and the probe could not see it. Struck rather than deleted: "a never-executed guard eventually produces a finding about itself" is the reasoning worth keeping. The item as written:
 >
 > ~~**MINOR p4-19** — the display-name e2e SKIPS until `004_profiles.sql` is applied, probing by performing the feature's own first save. That is the right shape (it starts running by itself, and it cannot drift from what it guards), but it means the whole feature is unwitnessed on any machine where the migration has not been run — including a fresh clone. Re-run the suite once after applying 004 and record it in `docs/eval/phase-4-e2e-run.txt`.~~
+
 - **MINOR p4-20** — the `X-Name-Placeholder` response header is a private contract between the export route and one client, and nothing types it: a rename on either side fails silently and the warning stops appearing. It is a header rather than a body field because the response IS the file, which is the right trade; pin the name in a shared constant if a second such header ever appears.
 - **NIT p4-21** — the judge panel's "supported by your base" split is computed at THREE sites (the detail page, `/generate`, `/judge`) from one pure function. The card's required prop makes forgetting a compile error, so the invariant holds, but a fourth render site would mean a fourth call; if one appears, move the partition into a small server helper that returns the report and its terms together.
 - **NIT p4-22** — `RESULT.generating` lost its ellipsis so `<BusyDots />` can supply it, while `rescoring` / `checkingQuality` / `exporting` keep theirs. Deliberate — only the generate button runs long enough to need motion — but it makes one of four sibling constants shaped differently, which is the kind of thing a later reader "tidies".
@@ -146,6 +377,15 @@ deviations they produced. What is left is below. The `p3-` ids are this gate's.
 
 - **MINOR p3-1** — `MAX_SCAN_BODY_BYTES` and `MAX_PDF_BYTES` advertise 5 MB while a serverless request body is commonly capped lower (4.5 MB on Vercel), so a 4.6 MB PDF fails with a platform error instead of edge case L5's exact copy; this is backlog `m-3`'s ceiling question now reaching a second endpoint — reconcile the advertised number once, before deploy, and adopt the `Content-Length` pre-check in `src/app/api/career/import/route.ts` too (the scan route already has it).
 - **MINOR p3-2** — `maxDuration = 120` in `src/app/api/scan/route.ts` is the honest budget for two 60 s chat attempts plus embeddings, but nothing verifies it against the deployment plan's own function-duration limit; check it at the vercel-security gate, because a platform cut below it drops the `llm_calls` row for a call that WAS billed (rule B8) with /quality as the only witness.
+
+> **`p3-1` and `p3-2` are both CLOSED, by different rounds.** `p3-1` went with
+> `ns-5`/`vs-7` in Phase 6: the ceiling is 4 MB, under the platform’s 4.5 MB
+> request limit, and the import route adopted the `Content-Length` pre-check
+> this entry asked it to. `p3-2` is closed by SPEC v2.24’s function-duration
+> table in Block D, which is what "check it at the vercel-security gate"
+> asked for — the number was checked against the verified plan ceiling and it
+> stands. Both entries kept: they are the questions that produced the table.
+
 - **MINOR p3-3** — a successful RE-RUN of a draft has no test: `tests/e2e/scan.spec.ts` proves the button is wired and honest against a failing service, and the success path is the same server code as a first scan, but nothing exercises draft → scored. Needs either two dev servers in one run or a stubbed chat gate.
 - **MINOR p3-4** — "exactly one `parse_vacancy` row per scan" is structural (one call site, plus check.mjs R5/R6) and not asserted anywhere: `tests/` may not touch a DAL or the service-role key, so no spec can count `llm_calls` rows. The `/quality` dashboard (Phase 6) is where this becomes observable in the app; until then it is an owner query.
 - **MINOR p3-5** — the keyword table's `inResume` count for a **career-base** scan is measured against the base as it stood AT SCAN TIME (stored in `coverage.keywords`), so an item added later is invisible until a re-scan; correct and deliberate, but the screen does not say when the measurement was taken. Consider showing the scan's timestamp beside the ring.
@@ -167,6 +407,7 @@ These are the parts that were deliberately not done.
 > **p3-13 is CLOSED by SPEC v2.14** (commit "feat(retrieval): one chunk per claim…"). Semantic-unit chunking ships, existing rows are re-indexable through a dev-only endpoint, and the before/after is measured in `docs/eval/coverage-thresholds.md`. It fixed what chunk size can fix — attribution and concentration — and did NOT fix the two named-tool false positives, which is now `p3-17`. Struck rather than deleted, because the original entry is the reasoning that produced the fix. The item as written:
 >
 > ~~**MAJOR p3-13** — chunk granularity is the underlying cause of the compressed similarity band: `CHUNK_TARGET_CHARS = 2_000` with `MAX_CHUNKS_PER_ITEM = 2` embeds a career item as one or two ~2,000-character blobs, so a 60-character requirement can never score high against it however well one sentence of that blob answers it — the measured band tops out at 0.43 and the generic "Skills" item was the best match for three of seven requirements, twice for requirements its own text answers literally. The fix is **one chunk per resume bullet** (~80–300 chars, split on bullet and sentence boundaries): a requirement then meets a claim its own size. Not done here because it is a Phase-2 rebuild with three consequences — every `documents` row must be deleted and re-inserted (no UPDATE policy, by design), B9's `200 × 2 = 400 ≤ 500` reconciliation breaks and the document ceiling has to be re-derived, and the thresholds in `docs/eval/coverage-thresholds.md` are calibrated against blob-sized chunks and would have to be re-derived after it.~~ (All three consequences were paid: every row re-embedded through the dev endpoint, `MAX_DOCUMENTS` raised 500 → 4,000 so the item cap stays binding, and the thresholds re-derived — and left unchanged, because the best cut moved one hundredth.)
+
 - **MINOR p3-14** — the calibration rests on SEVEN labeled requirements from ONE case, and the weakest number in it is `SIMILARITY_FLOOR = 0.20`, which rests on a single labeled gap (0.1759). A second labeled case would either confirm the floor or show unrelated requirements landing at 0.25–0.30, in which case the S term is crediting noise; run `node scripts/coverage-probe.mjs --seed <case>` on a second posting and append to the same file.
 - **MINOR p3-15** — the 0.36 threshold knowingly admits one of the two labeled-partial requirements as "covered" (the annotation-platform one, 0.4319, against a base that names no platform), because no single number can separate covered from partial in the labeled set — the highest similarity in it is a partial. A third coverage status ("partially supported") would express what a threshold cannot, and needs a Block D status value, Block E copy and a migration-free `CoverageStatus` widening.
 - **MINOR p3-16** — `coverage.keywordsDropped` is stored and never surfaced: nothing renders it and `/quality` (Phase 6) is where a parser drifting back to canonical forms would become visible. Until then it is an owner query against the column.
@@ -178,6 +419,7 @@ These are the parts that were deliberately not done.
 > **p3-17 is CLOSED by SPEC v2.15** (commit "feat(scan): a lexical evidence gate on coverage"). P1 classifies each requirement by the evidence it demands and copies the verbatim terms; rule B1 refuses `covered` for a tool or credential requirement whose terms are absent from the CAREER BASE, and the entry names the missing term so Block E can say why. Measured in `docs/eval/coverage-thresholds.md` Part 3: both false positives are Gaps naming their term, all five `general` requirements unchanged, and the one tool requirement the base DOES satisfy (Python) stayed Covered. Struck rather than deleted — the entry is the reasoning that produced the fix. The item as written:
 >
 > ~~**MAJOR p3-17** — a requirement naming tools the base does not contain is still Covered, and chunking made it stronger, not weaker: "Experience with annotation tools such as Labelbox or Supervisely" scores 0.4587 and "Proficient with MS Office or Google Suite" 0.4438 against a base mentioning none of them — the top two of eight similarities, so no threshold can exclude them without excluding every true positive. Cosine similarity between short texts measures TOPICAL resemblance and both requirements are adjacent to work the base does contain; the distinguishing evidence is LEXICAL. The app already stores it one field away: the same `coverage` payload records `'Labelbox' inResume=0` and `'MS Office' inResume=0` from rule B1a, so the result screen asserts both things at once. The fix is to gate the `covered` decision on that evidence (or to introduce the third status the two signals together support) — a change to rule B1 and to keyword matching, which the p3-13 task placed out of scope. Measured in `docs/eval/coverage-thresholds.md`, Part 2.~~
+
 - **MINOR p3-18** — `POST /api/dev/reindex` re-embeds the whole base in ONE REQUEST-CYCLE, and two bounds break before `maxDuration = 120` does on a base near the item cap: ~4,000 chunks are ~63 sequential embedding requests, and every vector is held in memory until the last arrives (1,536 floats per chunk, ~50 MB at the cap). It is idempotent, so a timeout costs money and corrupts nothing, but a base that large needs slicing (a `?from=&to=` window or a cursor) before the endpoint is useful at that size.
 - **MINOR p3-19** — the enumeration split is a SHAPE test (≥4 comma-separated segments averaging ≤45 characters), so a prose sentence built from four short clauses is split like a list and a two-item list is not split at all. Both failure modes are self-healing at the floor — fragments merge with their neighbour — but neither is asserted: the unit tests cover a bulleted item, a prose item, a one-line item and a 600-character sentence, not the enumeration boundary itself.
 - **MINOR p3-20** — indexing cost per career item rose with the chunk count (5 rows → 9 rows for the same five items) and every chunk repeats the item title, so the embedded token count grows by roughly `title length × chunks per item`. Measured at 8 → 9 micro-USD for a five-item base, i.e. nothing at this size; worth a number before a 200-item base is re-indexed on a paid plan.
@@ -207,6 +449,15 @@ Not an open question. The decision is made and recorded here so Phase 5 starts w
 rather than re-litigating it.
 
 - **RULED p4-30** — **`DAILY_CALL_LIMIT` and `DAILY_RESCORE_LIMIT` both move to `lib/budget.ts`, as the first item of Phase 5.** Both ceilings currently live in `src/lib/db/llmCalls.ts`, which imports `server-only`, and check.mjs R6 keeps `tests/` away from it — so rule B7's 50 and rule B7a's 100 are untestable by construction, exactly as `MAX_CHAT_REQUESTS_PER_STEP` was until backlog `m-4` moved it. That precedent is the whole argument: the untestable file is where the arithmetic bug hides, `m-4` was raised because the retry budget's number could not be pinned, and `tests/unit/budget.test.mjs` now pins it in both orders of exception. B7a arrived in v2.18 with the same defect and it was raised in the same breath as shipping it (`docs/reviews/phase-4.md`, the hand-over after rule B7a). The two ceilings were deliberately kept TOGETHER in the DAL rather than split so one became testable and the other did not; moving both is what closes it. `lib/budget.ts` is already the home for metered-request arithmetic, is not `server-only`, and reads no environment — so the move is a re-export plus a test, not a redesign. What the tests should pin: the rolling-window comparison at the boundary (committed + ledger vs the ceiling, at limit-1, limit and limit+1) for B7, and the same for B7a's committed-rows-only check, since neither boundary has ever been asserted.
+
+> **CLOSED in Phase 5 (SPEC v2.20).** Both ceilings are in `src/lib/budget.ts`
+> as `DAILY_CALL_LIMIT` and `DAILY_RESCORE_LIMIT`, with `underDailyCallCap`
+> and `underRescoreCap` beside them, and `tests/unit/budget.test.mjs` pins the
+> boundaries the entry named. The queries stayed in `src/lib/db/llmCalls.ts`;
+> only the numbers moved, which is what made it a re-export and not a
+> redesign. Struck rather than deleted: the argument from `m-4` — the
+> untestable file is where the arithmetic bug hides — is the reasoning that
+> produced the fix.
 
 ## Phase 5 — from the ai-architect diff gate (2026-09-04)
 
@@ -264,6 +515,7 @@ workspace is not the owner's. SPEC v2.23 declares it; the probe and the
 before/after are `docs/eval/generation-model-comparison.md`.
 
 > **CLOSED — CLAUDE.md's model list was amended by the owner (2026-09-04).** Its "AI model calls" section named `anthropic/claude-sonnet-4.6` as the generation model, and CLAUDE.md wins on conflict, so the rule book was naming a model the code does not use and this key cannot reach. The owner dictated the amendment: the generation slug is now `openai/gpt-5.4`, embeddings are named in that section for the first time, and the list carries a new rule — a model named there must be one verified to serve on the configured key, with the verification in `docs/openrouter-processing.md`. The replacement sentence this entry was holding is gone because it is no longer waiting: it is in the file.
+
 - **MAJOR p5-16 — grounding fails on the first draft in 3 of 3 runs, on BOTH models, so P2 is the remaining suspect.** The model change did not rescue it; it only made the single rewrite capable of converging (once in two). The next step is not another model: it is either a second fixture whose career base DOES cover the vacancy — which would separate "the writer over-claims" from "the corpus is thin", the same confound backlog `p3-14` records for the thresholds — or a P2 change measured against both. Nothing about prompt quality should be concluded from one deliberately under-covered case.
 - **MINOR p5-17** — the comparison ran on the same FIXTURE but a fresh account each time, so the application row differs. A true same-row comparison needs the generate model switchable per run rather than per deployment, which is a dev-only affordance nobody should ship as product surface. Worth building only if a second model comparison is ever run.
 - **NIT p5-18** — `MAX_TOKENS_BY_STEP.generate = 2500` was chosen for Sonnet. gpt-5.4 accepts `temperature` silently (it is not in its supported parameters) and billed 0 reasoning tokens at default effort, both verified — but a future OpenRouter default that turns reasoning on would spend that budget before any resume text, and the app would report a truncated draft rather than a refusal. If the generator stays a reasoning-capable model, send an explicit low reasoning effort rather than relying on a default.
@@ -292,10 +544,23 @@ the Phase-4 triage contract. What follows is minors and nits only.
 
 - **MINOR ns-4** — `src/app/api/career/items/[id]/route.ts` is the last `[id]` route that does not parse its segment, so a non-UUID reaches Postgres and returns 500 where Block D mandates 404; every other handler does `if (!z.uuid().safeParse(id).success) throw new NotFoundError();` first. This is backlog `M-3` from Phase 2, still open, and the comment at `src/app/api/applications/[id]/route.ts` saying the finding was "closed here rather than repeated" is easy to misread as meaning the career endpoints were fixed too. They were not. Add the parse to both verbs and close `M-3`.
 - **MINOR ns-5 / vs-7 / p3-1 / m-3** — the same ceiling question, now answered: Vercel's request-body limit is **4.5 MB** (`/docs/functions/limitations`, verified 2026-09-04), and the app advertises 5 MB while `/api/scan`'s outer bound is 5 MB + 64 KB. A 4.6 MB PDF is legal by the app's copy and refused by the platform, so the user gets an opaque 413 instead of edge case L5's exact string and the careful `Content-Length` pre-check never runs. Lower `MAX_PDF_BYTES` to 4 MB and update the two copy strings; and adopt the pre-check in `src/app/api/career/import/route.ts`, which still calls `request.formData()` before it looks at the size.
+
+> **CLOSED in this branch, and it closed `p3-1` and `m-3` with it.**
+> `MAX_PDF_BYTES` is 4 MB in `src/lib/copy.ts`, under the platform limit, and
+> `src/app/api/career/import/route.ts` checks `Content-Length` before
+> `formData()` buffers the body — the pre-check half this entry asked for.
+> Both halves re-verified against the code in Phase 7.
+
 - **MINOR vs-8** — `prebuild` runs `check` + `test`, which is right and should stay, but it makes a docs edit able to fail a production deploy (R12 and R13 both read files under `docs/`), and `npm test` needs Node ≥ 22 for its glob. Pin the Vercel project's Node version to 22.x explicitly rather than inheriting a default that moves.
 - **MINOR vs-9** — if any Deployment Protection is enabled, Vercel offers a Protection Bypass token that defeats it, optionally as `VERCEL_AUTOMATION_BYPASS_SECRET`. It is a secret under CLAUDE.md's rules and `scripts/check.mjs` would not catch it pasted as a literal into a config file. Do not enable automation bypass unless CI needs it; never commit the value.
 - **MINOR vs-10** — the `/api/dev/*` production fence is now witnessed for the two routes that exist, but nothing stops a THIRD dev route shipping without the guard: the thirteen check rules are frozen and none covers it, so the control is code review. An R14 asserting the guard is the first statement of every `route.ts` under `src/app/api/dev/` would convert that into a build failure. Needs an owner decision, because it means unfreezing the rule set.
 - **MINOR eu-12** — SPEC Block G edge case G2 says the retention decision is "documented in README", and README is five lines that do not contain it; the decision lives in `docs/openrouter-processing.md`, which is the better home. Either point README at it or amend G2 to name the doc. Block H item 8 wants a full README anyway.
+
+> **CLOSED in Phase 7.** `README.md` now points at
+> `docs/openrouter-processing.md` for the model-provider retention decision,
+> which is the first of the two options this entry offered. SPEC Block G edge
+> case G2 keeps its wording and is now true of the file it names.
+
 - **MINOR eu-13** — the EU AI Act classification is favourable and is argued in full in `docs/reviews/phase-6-eu-compliance.md`, but nowhere a reader would look for it, and it is not self-evident: a model scoring a CV against a job posting *looks* like Annex III(4)(a), and the reason it is not is a fact about who the user is. Lift that section into a new docs/ai-act-note.md file (deliberately not backticked: R13 requires a backticked repo path to resolve, and this one is a proposal rather than a file), especially the four tripwires that would change the answer — an employer-facing mode, offering it to recruiters, any output a third party acts on, or a claim that the score predicts hiring outcomes.
 - **NIT ns-6** — only `/export` sets `Cache-Control: no-store`. Harmless today (every other handler is POST/PATCH/DELETE and the only GET is dev-only), but the default is safe by accident rather than by design; setting it in `apiErrorResponse` and the data-returning handlers would make the next authenticated GET inherit the right thing.
 - **NIT ns-7** — `apiErrorResponse` logs `err.name`, which is `'object'` for a PostgREST error, so a UUID syntax error, an RLS refusal and a connection failure are indistinguishable in the log. `saveContactsAction` already solved this leak-free by logging the `code` alongside; Postgres codes are fixed identifiers and carry no user content.
