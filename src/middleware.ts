@@ -5,11 +5,16 @@ import { AUTH_COOKIE_OPTIONS, cappedMaxAge } from '@/lib/supabase/cookie-options
 
 /**
  * Public routes — everything else under the matcher requires a session.
- * `/privacy` is also excluded from the matcher below, so this entry is
- * belt-and-braces: if the matcher is ever widened, the public page must still
- * not redirect.
+ * `/privacy` and `/impressum` are also excluded from the matcher below, so these
+ * entries are belt-and-braces: if the matcher is ever widened, the public pages
+ * must still not redirect.
+ *
+ * `/impressum` joins them in v2.24. Both pages exist to be readable by someone
+ * with no account — an Impressum a visitor is redirected away from does not
+ * identify anyone, and a privacy statement you must sign up to read is the same
+ * defect. They are the only two member-less pages that render content.
  */
-const PUBLIC_PATHS = ['/login', '/signup', '/privacy'];
+const PUBLIC_PATHS = ['/login', '/signup', '/privacy', '/impressum'];
 /** Signed-in users are bounced away from these. */
 const AUTH_PATHS = ['/login', '/signup'];
 
@@ -95,6 +100,11 @@ export const config = {
   //                `api` keeps `(?:/|$)` because it genuinely has children,
   //                but /privacy has none, and a prefix exclusion would put a
   //                future /privacy/export outside the fence.
+  //  - `impressum` — the same page shape and the same reasoning (v2.24), so
+  //                the same EXACT-path form: `impressum$`, never
+  //                `impressum(?:/|$)`. It has no children either, and the day
+  //                it grows one, that child should be inside the fence until
+  //                someone decides otherwise.
   //  - static assets.
   // Dots are written [.] so a later edit cannot silently un-escape them into
   // "any character".
@@ -104,6 +114,6 @@ export const config = {
   // /applications/x.png skipped the fence entirely. The (app) layout caught
   // those, but a second net is not the boundary.
   matcher: [
-    '/((?!api(?:/|$)|privacy$|_next/static(?:/|$)|_next/image(?:/|$)|favicon[.]ico$|[^/]+[.](?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest)$).*)',
+    '/((?!api(?:/|$)|privacy$|impressum$|_next/static(?:/|$)|_next/image(?:/|$)|favicon[.]ico$|[^/]+[.](?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest)$).*)',
   ],
 };

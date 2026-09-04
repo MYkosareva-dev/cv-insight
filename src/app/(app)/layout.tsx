@@ -41,9 +41,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           Art. 12(1): the privacy statement has to be reachable from anywhere in the
           app, not only from the signed-out screens.
         */}
-        <footer className="text-muted-foreground p-4 text-xs md:px-8">
+        <footer className="text-muted-foreground flex gap-4 p-4 text-xs md:px-8">
           <Link href="/privacy" className="underline-offset-4 hover:underline">
             {AUTH.privacyLink}
+          </Link>
+          <Link href="/impressum" className="underline-offset-4 hover:underline">
+            {AUTH.impressumLink}
           </Link>
         </footer>
       </div>

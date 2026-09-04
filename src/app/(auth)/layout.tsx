@@ -21,12 +21,19 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <div className="border-border w-full max-w-[400px] rounded-lg border p-6 shadow-sm">
         {children}
       </div>
-      <Link
-        href="/privacy"
-        className="text-muted-foreground text-xs underline-offset-4 hover:underline"
-      >
-        {AUTH.privacyLink}
-      </Link>
+      {/*
+        Both legal pages sit here, not just Privacy (v2.24). The signed-out
+        screens are where a visitor who has not decided to sign up reads them,
+        so this footer is the one that matters most for reachability.
+      */}
+      <div className="text-muted-foreground flex gap-4 text-xs">
+        <Link href="/privacy" className="underline-offset-4 hover:underline">
+          {AUTH.privacyLink}
+        </Link>
+        <Link href="/impressum" className="underline-offset-4 hover:underline">
+          {AUTH.impressumLink}
+        </Link>
+      </div>
     </div>
   );
 }

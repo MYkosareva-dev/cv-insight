@@ -45,6 +45,9 @@ const EXPECTATIONS = [
   ['/applications/abc.svg', RUNS],
   ['/apifoo', RUNS],
   ['/privacyleak', RUNS],
+  // v2.24: the same lookalike, one page later. `impressum` unanchored would
+  // also excuse /impressumleak from the fence.
+  ['/impressumleak', RUNS],
 
   ['/', RUNS],
   ['/scan', RUNS],
@@ -63,6 +66,9 @@ const EXPECTATIONS = [
   ['/privacy', BYPASSED],
   ['/privacy/export', RUNS],
   ['/privacy/dpa', RUNS],
+  // The Impressum is public for the same reason and on the same terms (v2.24).
+  ['/impressum', BYPASSED],
+  ['/impressum/contact', RUNS],
   // Real static assets.
   ['/favicon.ico', BYPASSED],
   ['/logo.png', BYPASSED],
@@ -87,7 +93,13 @@ describe('middleware matcher — the fence must cover every member route', () =>
 
   test('every exclusion is anchored to a path segment or the end of the string', () => {
     const pattern = matcher.source;
-    for (const bare of ['api|', 'privacy|', 'privacy(?:/|$)|']) {
+    for (const bare of [
+      'api|',
+      'privacy|',
+      'privacy(?:/|$)|',
+      'impressum|',
+      'impressum(?:/|$)|',
+    ]) {
       assert.ok(
         !pattern.includes(bare),
         `"${bare.slice(0, -1)}" is excluded without a segment anchor — it would also match a prefix`,
