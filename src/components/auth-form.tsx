@@ -34,8 +34,15 @@ export function AuthForm({
   action: (state: AuthState, formData: FormData) => Promise<AuthState>;
   submitLabel: string;
   pendingLabel: string;
-  altHref: string;
-  altLabel: string;
+  /**
+   * The link to the OTHER auth form, and both halves are optional together
+   * (v2.25). On a deployment registration is closed, so /login must not invite
+   * anyone to "Create one" — a link whose destination exists only to say no is
+   * worse than no link. Omitting both renders nothing; passing one without the
+   * other is a type error rather than a half-rendered link.
+   */
+  altHref?: string;
+  altLabel?: string;
 }) {
   const [state, formAction] = useActionState(action, EMPTY_AUTH_STATE);
   const [clientErrors, setClientErrors] = useState<FieldErrors>({});
@@ -105,12 +112,14 @@ export function AuthForm({
 
       <Submit label={submitLabel} pendingLabel={pendingLabel} />
 
-      <Link
-        href={altHref}
-        className="text-primary self-start text-sm underline-offset-4 hover:underline"
-      >
-        {altLabel}
-      </Link>
+      {altHref && altLabel ? (
+        <Link
+          href={altHref}
+          className="text-primary self-start text-sm underline-offset-4 hover:underline"
+        >
+          {altLabel}
+        </Link>
+      ) : null}
     </form>
   );
 }
