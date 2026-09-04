@@ -9,7 +9,7 @@ import { MAX_CHAT_REQUESTS_PER_GENERATE, withinBudget } from '@/lib/budget';
 import { newCallLedger } from '@/lib/chat';
 import { ERROR_MESSAGES, NAME_PLACEHOLDER, RESULT } from '@/lib/copy';
 import { getApplication } from '@/lib/db/applications';
-import { getDisplayName } from '@/lib/db/profiles';
+import { getContacts, getDisplayName } from '@/lib/db/profiles';
 import { insertResumeVersion } from '@/lib/db/resumeVersions';
 import { getVacancy } from '@/lib/db/vacancies';
 import type { ResumeVersion } from '@/lib/db/types';
@@ -145,12 +145,28 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
      */
     const displayName = await getDisplayName(user.id);
 
+    /**
+     * THE CONTACT HEADER (SPEC v2.20). Read the same way and for the same
+     * reason: through the DAL under the user's own session, with every field
+     * optional and a failed read degrading to no header rather than losing a
+     * paid run. The app composes the block; P2 rule 7 tells the writer not to.
+     *
+     * A separate read from `getDisplayName` and not one `getProfile` call,
+     * because the two answer differently when the row cannot be read: a name
+     * falls back to a VISIBLE placeholder the user is told about, and the
+     * contacts fall back to silence, since there is nothing honest to put in
+     * their place. One read returning one object would have to pick one of those
+     * two behaviours for both.
+     */
+    const contacts = await getContacts(user.id);
+
     const outcome = await generateWithJudge({
       parsed: vacancy.parsed,
       items: retrieved.items,
       applicationId: id,
       ledger,
       candidateName: displayName ?? NAME_PLACEHOLDER,
+      contacts,
     });
 
     if (!withinBudget(ledger, MAX_CHAT_REQUESTS_PER_GENERATE)) {

@@ -27,6 +27,16 @@ import { AlignmentType, Document, Packer, Paragraph, TextRun } from 'docx';
 
 export { exportFilename } from '@/lib/utils';
 
+/**
+ * THE CONTACT HEADER NEEDS NO CODE HERE (SPEC v2.20), and that is the point of
+ * putting it in the stored text rather than in the exporter. The block is already
+ * part of `resume_versions.content` — `withContactHeader` inserted it before the
+ * version was judged and saved — so the editor, the judge and this document all
+ * read the same lines, and there is no second composition step that could put a
+ * different header in the file from the one on screen. The user can also edit it,
+ * which is right: the header is part of their resume.
+ */
+
 /** Word's default body size, in half-points: 11 pt. */
 const BODY_HALF_POINTS = 22;
 
@@ -51,9 +61,22 @@ const BODY_HALF_POINTS = 22;
  */
 const MAX_HEADING_CHARS = 40;
 
+/**
+ * A field separator, i.e. the contact header block's own shape (v2.20).
+ *
+ * A section heading is ONE phrase; a line that enumerates fields is not one,
+ * whatever its case. Without this, a user who types their location in capitals
+ * gets `HAMBURG, GERMANY · OPEN TO REMOTE` bolded as a section heading in their
+ * own document — the app's own generated line tripping the app's own shape test.
+ * Cheaper and narrower than a heading word list, which the note above explains
+ * why this file will not have.
+ */
+const FIELD_SEPARATOR = '·';
+
 function isHeading(line: string): boolean {
   const trimmed = line.trim();
   if (trimmed.length === 0 || trimmed.length > MAX_HEADING_CHARS) return false;
+  if (trimmed.includes(FIELD_SEPARATOR)) return false;
   // At least one cased letter, and no lower-case one. `toUpperCase` rather than a
   // Latin-only class, so a heading in another script is not mis-detected by an
   // alphabet this app does not assume.

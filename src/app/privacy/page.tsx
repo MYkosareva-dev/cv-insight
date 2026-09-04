@@ -28,6 +28,15 @@ export default function PrivacyPage() {
           fill the name in yourself. You can change or remove it in Settings at any time, and it is
           deleted along with everything else when you delete your account.
         </p>
+        <p className="text-muted-foreground text-sm">
+          The same applies to the contact details you may save in Settings — a contact email
+          address, a phone number, a location, a LinkedIn address, a GitHub address and whether you
+          are open to remote work. They are stored with your account and used for one thing: the
+          header block at the top of the resumes you generate and download, so an employer can
+          reply to one. Each of them is optional and the app works with all of them empty; you can
+          change or remove any of them in Settings at any time, and they are deleted along with
+          everything else when you delete your account.
+        </p>
       </section>
 
       <section className="flex flex-col gap-2">

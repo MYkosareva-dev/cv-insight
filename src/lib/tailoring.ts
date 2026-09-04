@@ -16,6 +16,7 @@ import {
 } from '@/lib/generation';
 import { type Rubric, needsRevision, revisionFindings, withComputedVerdict } from '@/lib/judge';
 import { P2_GENERATE, P3_JUDGE, fillPrompt, revisionFeedbackBlock } from '@/lib/prompts';
+import { EMPTY_CONTACTS, type ResumeContacts, withContactHeader } from '@/lib/resumeHeader';
 import { matchDocuments } from '@/lib/retrieval';
 import { MAX_RESUME_CHARS, judgeReportSchema } from '@/lib/validation';
 
@@ -199,6 +200,18 @@ export async function generateResume(args: {
   ledger: CallLedger;
   /** The profile's display name, or the visible placeholder standing in for one. */
   candidateName: string;
+  /**
+   * The profile's contact details, composed into the header block by the APP
+   * after the model has written (SPEC v2.20). P2 rule 7 tells the writer not to
+   * produce contact lines at all, because a paraphrased phone number or a
+   * shortened URL is a document that reaches nobody — and a writer with an empty
+   * slot in a familiar layout fills it.
+   *
+   * Defaulted to none, so a caller with no profile to offer gets a resume with
+   * no header block rather than a type error: every field is optional and the
+   * app works with all of them empty.
+   */
+  contacts?: ResumeContacts;
 }): Promise<string> {
   const prompt = fillPrompt(P2_GENERATE, {
     // The WRITER gets no keyword list — see `requirementsJson`.
@@ -226,8 +239,14 @@ export async function generateResume(args: {
    * turn a run the user has already paid for into a 500 saying nothing was
    * saved. Cutting the tail costs the last lines of a resume that was already
    * past one page; losing the whole run costs everything.
+   *
+   * THE HEADER BLOCK GOES IN BEFORE THE SLICE, not after, because the slice is
+   * what enforces the column's CHECK and a block added past it would violate
+   * the very bound this comment claims to hold. Two lines of contacts can only
+   * ever cost the last two lines of a resume that was already over one page.
    */
-  return result.data.trim().slice(0, MAX_RESUME_CHARS);
+  const written = withContactHeader(result.data.trim(), args.contacts ?? EMPTY_CONTACTS);
+  return written.slice(0, MAX_RESUME_CHARS);
 }
 
 /**
@@ -326,6 +345,14 @@ export async function generateWithJudge(args: {
   applicationId: string;
   ledger: CallLedger;
   candidateName: string;
+  /**
+   * The header block's source (SPEC v2.20). It reaches the GENERATE step, and
+   * the judge never receives the values separately: the block is already in the
+   * resume text P3 reads, and P3 is told those lines come from the profile
+   * rather than from a career item — so telling it twice would only add a way
+   * for the two statements to disagree.
+   */
+  contacts?: ResumeContacts;
 }): Promise<GenerateOutcome> {
   /**
    * The corpus every claim about "what your base supports" is checked against —
