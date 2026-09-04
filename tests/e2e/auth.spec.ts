@@ -326,15 +326,22 @@ test.describe('auth', () => {
     if (await nameField.isVisible().catch(() => false)) {
       await nameField.fill(DISPLAY_NAME);
       await page.getByRole('button', { name: COPY.displayNameSave }).click();
-      const saved = await page
-        .getByText(COPY.displayNameSaved)
-        .isVisible({ timeout: 10_000 })
-        .catch(() => false);
-      if (!saved) {
-        // The one failure migration 004 explains. Anything else is a defect and
-        // must not be swallowed by a test that is only passing through.
-        await expect(page.getByText(COPY.displayNameFailed)).toBeVisible();
-      }
+      /**
+       * WAITED FOR, NOT SAMPLED. `isVisible()` does not auto-wait and ignores the
+       * timeout handed to it, so this read false the instant the click dispatched
+       * and then demanded the failure copy of a save that had succeeded — which
+       * is what applying migration 004 turned red, four lines before this test
+       * reaches the delete it exists to prove.
+       *
+       * One of the two outcomes must be on screen. Anything else — a hang, a
+       * crash, a silently-wrong success — is a defect and must not be swallowed
+       * by a test that is only passing through. Either way the delete below runs:
+       * with the migration it proves the cascade for eight tables, without it for
+       * seven.
+       */
+      await expect(
+        page.getByText(COPY.displayNameSaved).or(page.getByText(COPY.displayNameFailed)),
+      ).toBeVisible({ timeout: 15_000 });
     }
 
     await page.getByRole('button', { name: COPY.deleteAccount }).click();

@@ -572,25 +572,32 @@ test.describe('generate', () => {
     await page.goto('/settings');
     await page.getByLabel(SETTINGS.displayNameLabel).fill(DISPLAY_NAME);
     await page.getByRole('button', { name: SETTINGS.displayNameSave }).click();
-    const saved = await page
-      .getByText(SETTINGS.displayNameSaved)
-      .isVisible({ timeout: 10_000 })
-      .catch(() => false);
-
     /**
      * SKIP ONLY ON THE ONE OUTCOME THE MIGRATION EXPLAINS. "the success copy did
      * not appear" was the first condition and it was too wide: the save action
      * answers with the same `displayNameFailed` for a missing relation and for a
      * genuine regression, so the one test guarding this feature would have
-     * skipped on the defect it exists to catch. Asserting the failure copy is on
-     * screen before skipping means any OTHER outcome — a hang, a crash, a
+     * skipped on the defect it exists to catch. Requiring one of the two outcomes
+     * on screen before deciding means any OTHER outcome — a hang, a crash, a
      * silently-wrong success — fails here instead of disappearing.
+     *
+     * WAITED FOR, NOT SAMPLED, and this is the half that had never run. The first
+     * version read the success copy with `locator.isVisible({ timeout: 10_000 })`.
+     * `isVisible()` does not auto-wait and Playwright IGNORES the timeout given
+     * to it, so it returned false the instant the click dispatched — before the
+     * Server Action had answered — and the test then demanded the FAILURE copy of
+     * a save that was about to succeed. It could only ever pass as a SKIP, on the
+     * one path where the failure copy renders immediately, which is exactly why
+     * applying migration 004 turned it red: the feature started working and the
+     * probe could not see it. `.or()` waits for whichever outcome arrives.
      */
-    if (!saved) {
-      await expect(
-        page.getByText(SETTINGS.displayNameFailed),
-        'the save neither succeeded nor reported the failure it is allowed to report',
-      ).toBeVisible();
+    const savedMsg = page.getByText(SETTINGS.displayNameSaved);
+    const failedMsg = page.getByText(SETTINGS.displayNameFailed);
+    await expect(
+      savedMsg.or(failedMsg),
+      'the save neither succeeded nor reported the failure it is allowed to report',
+    ).toBeVisible({ timeout: 15_000 });
+    if (await failedMsg.isVisible()) {
       test.skip(true, 'needs migration 004_profiles.sql applied in the Supabase dashboard');
     }
 
