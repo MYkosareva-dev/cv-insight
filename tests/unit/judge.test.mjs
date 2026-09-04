@@ -7,7 +7,9 @@ import {
   bestVersion,
   groundingFailed,
   judgeIssueCounts,
+  mergeVersionsNewestFirst,
   needsRevision,
+  newestJudgedVersion,
   openingVersion,
   partitionMissingHonest,
   revisionFindings,
@@ -365,5 +367,144 @@ describe('partitionMissingHonest — the base is the only source of truth', () =
     assert.equal(withComputedVerdict(report).verdict, 'revise');
     assert.equal(revisionFindings(report, BASE).length, 0);
     assert.equal(needsRevision(report, BASE), false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mergeVersionsNewestFirst — the regenerate action's version list (SPEC v2.20)
+// ---------------------------------------------------------------------------
+
+/**
+ * A regenerate appends, so the client has to MERGE the run's own rows into the
+ * list it already holds. Taking the response as the whole list was correct while
+ * a generate could only happen on an empty history; with [Regenerate] it would
+ * make every older version disappear from the screen until the next server
+ * render landed, on a table whose whole point is that nothing is ever lost.
+ */
+describe('mergeVersionsNewestFirst', () => {
+  const row = (id, created_at) => ({ id, created_at, source: 'ai', judge: null });
+
+  test('keeps the rows already held and adds the run own', () => {
+    const merged = mergeVersionsNewestFirst(
+      [row('old', '2026-09-01T10:00:00Z')],
+      [row('new-a', '2026-09-04T10:00:00Z'), row('new-b', '2026-09-04T10:00:05Z')],
+    );
+    assert.deepEqual(
+      merged.map((v) => v.id),
+      ['new-b', 'new-a', 'old'],
+    );
+  });
+
+  test('is newest first, which is the order the DAL and the version list use', () => {
+    const merged = mergeVersionsNewestFirst(
+      [row('b', '2026-09-02T00:00:00Z'), row('a', '2026-09-01T00:00:00Z')],
+      [row('c', '2026-09-03T00:00:00Z')],
+    );
+    assert.deepEqual(
+      merged.map((v) => v.id),
+      ['c', 'b', 'a'],
+    );
+  });
+
+  test('the response own oldest-first pair comes out the right way up', () => {
+    // The 200 body is `[original, revision]`. Rendered verbatim it showed one
+    // run's pair upside down relative to every other render in the app.
+    const merged = mergeVersionsNewestFirst([], [
+      { id: 'ai', created_at: '2026-09-04T10:00:00Z', source: 'ai', judge: null },
+      { id: 'rev', created_at: '2026-09-04T10:00:09Z', source: 'ai_revision', judge: null },
+    ]);
+    assert.deepEqual(
+      merged.map((v) => v.id),
+      ['rev', 'ai'],
+    );
+  });
+
+  test('an id appearing twice appears ONCE, and the incoming row wins', () => {
+    const merged = mergeVersionsNewestFirst(
+      [{ id: 'x', created_at: '2026-09-04T10:00:00Z', source: 'ai', judge: null }],
+      [{ id: 'x', created_at: '2026-09-04T10:00:00Z', source: 'ai', judge: approved() }],
+    );
+    assert.equal(merged.length, 1);
+    assert.notEqual(merged[0].judge, null, 'the fresher read of the row is the one kept');
+  });
+
+  test('a tie on created_at keeps the revision ahead of its original', () => {
+    /**
+     * Defensive: the two inserts are separate transactions with distinct `now()`
+     * values, so this is the case that should not arise. `openingVersion` needs
+     * the revision first in order to make its comparison at all, so the sort
+     * being stable over a reversed `incoming` is a property worth pinning rather
+     * than a coincidence to rely on.
+     */
+    const same = '2026-09-04T10:00:00Z';
+    const merged = mergeVersionsNewestFirst([], [
+      { id: 'ai', created_at: same, source: 'ai', judge: null },
+      { id: 'rev', created_at: same, source: 'ai_revision', judge: null },
+    ]);
+    assert.deepEqual(
+      merged.map((v) => v.id),
+      ['rev', 'ai'],
+    );
+  });
+
+  test('two empty lists are an empty list', () => {
+    assert.deepEqual(mergeVersionsNewestFirst([], []), []);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// newestJudgedVersion — the rail's own answer (v2.22)
+// ---------------------------------------------------------------------------
+
+/**
+ * The screen contradicted itself: "ATS format — Not checked yet" in the left
+ * column, above a version list showing the verdicts of runs that HAD been
+ * checked. The bars were reading the report of the version the editor opens
+ * with, and that version can legitimately carry none — the export path appends a
+ * `judge: null` row, and so does a run whose judge step was refused.
+ *
+ * So "not checked yet" has to mean what it says: nothing here has ever been
+ * judged.
+ */
+describe('newestJudgedVersion', () => {
+  const v = (id, created_at, source, judge) => ({ id, created_at, source, judge });
+
+  test('nothing judged is null, which is what makes "not checked yet" true', () => {
+    assert.equal(newestJudgedVersion([]), null);
+    assert.equal(
+      newestJudgedVersion([v('a', '2026-09-04T10:00:00Z', 'user', null)]),
+      null,
+    );
+  });
+
+  test('skips a judge-less row on top and finds the newest report under it', () => {
+    // The reachable case: the user exported (a `user` row with judge null) after
+    // a run that WAS judged. The bars said "Not checked yet"; the list below said
+    // "Approved".
+    const list = [
+      v('export', '2026-09-04T12:00:00Z', 'user', null),
+      v('rev', '2026-09-04T11:00:00Z', 'ai_revision', approved()),
+      v('ai', '2026-09-04T10:00:00Z', 'ai', approved()),
+    ];
+    assert.equal(newestJudgedVersion(list).id, 'rev');
+  });
+
+  test('the newest report wins when several exist', () => {
+    const list = [
+      v('run2', '2026-09-04T12:00:00Z', 'ai', approved()),
+      v('run1', '2026-09-04T10:00:00Z', 'ai', approved()),
+    ];
+    assert.equal(newestJudgedVersion(list).id, 'run2');
+  });
+
+  test('it reads the order it is given, which is the DAL order', () => {
+    // Newest-first is what `listResumeVersions` and `mergeVersionsNewestFirst`
+    // both produce, so this is a find and not a sort — and passing a list the
+    // other way round is the caller's defect, not something to paper over here.
+    const list = [
+      v('newest', '2026-09-04T12:00:00Z', 'ai', approved()),
+      v('older', '2026-09-04T10:00:00Z', 'ai', approved()),
+    ];
+    assert.equal(newestJudgedVersion([...list].reverse()).id, 'older');
   });
 });

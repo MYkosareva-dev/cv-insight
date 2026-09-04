@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { expect, test, type Page } from '@playwright/test';
 
-import { NAME_PLACEHOLDER, NO_SCORE, RESULT, SETTINGS, SCAN } from '../../src/lib/copy';
+import { NAME_PLACEHOLDER, NO_SCORE, QUALITY, RESULT, SETTINGS, SCAN } from '../../src/lib/copy';
 
 /**
  * Phase-4 evidence: US-4 and US-5, end to end, against a real Supabase project
@@ -37,6 +37,21 @@ const password = 'phase-4-e2e-password';
 
 /** The fictional persona's own name (SPEC Block B). Synthetic data only. */
 const DISPLAY_NAME = 'Mira Steinberg';
+
+/**
+ * The persona's contact details (SPEC v2.20). SYNTHETIC: `example.com` is the
+ * reserved documentation domain, the number is a documentation prefix, and the
+ * two profile URLs point at accounts that do not exist. Nothing in this file may
+ * ever carry a real person's contact details — it is committed, and the resume
+ * header it produces is printed into the run log.
+ */
+const CONTACTS = {
+  email: 'mira.steinberg@example.com',
+  phone: '+49 30 901820',
+  location: 'Hamburg, Germany',
+  linkedin: 'https://www.linkedin.com/in/mira-steinberg-example',
+  github: 'https://github.com/mira-steinberg-example',
+} as const;
 
 /** Accounts created by the running test, removed through the app's own flow. */
 let created: string[] = [];
@@ -291,11 +306,25 @@ test.describe('generate', () => {
         autoRevised: run.autoRevised,
         revisionNotBetter: run.revisionNotBetter,
         revisionWithheld: run.revisionWithheld,
+        /**
+         * ALL FOUR CRITERIA, not just the verdict (SPEC v2.23). The generation
+         * model had to change because a guardrail on the provider account blocks
+         * the configured one, and comparing two models on this fixture needs the
+         * scores rather than a pass/fail — a rubric that moves 3 → 4 on keyword
+         * coverage while grounding still fails is a different finding from one
+         * that does not move at all. Metadata only: scores and counts, never the
+         * resume text or a violated claim.
+         */
         verdicts: (run.versions as JudgedVersion[]).map((v) => ({
           source: v.source,
           verdict: v.judge?.verdict ?? 'not_checked',
           grounding: v.judge?.grounding.verdict ?? 'not_checked',
           violations: v.judge?.grounding.violations.length ?? 0,
+          keywordCoverage: v.judge?.keywordCoverage.score ?? null,
+          relevance: v.judge?.relevance.score ?? null,
+          atsFormat: v.judge?.atsFormat.score ?? null,
+          missingHonest: v.judge?.keywordCoverage.missingHonest.length ?? 0,
+          atsIssues: v.judge?.atsFormat.issues.length ?? 0,
         })),
       }),
     );
@@ -312,6 +341,23 @@ test.describe('generate', () => {
       await expect(page.getByText(RESULT.autoRevised)).toBeVisible();
     }
     await expect(page.getByRole('heading', { name: RESULT.versionsHeading })).toBeVisible();
+
+    /**
+     * WHICH MODEL WROTE IT (SPEC v2.22), read off the screen and printed.
+     *
+     * The line exists because owner testing found every generate call served by
+     * the fallback — a guardrail on the provider account blocks the configured
+     * Sonnet slug, and `models: [primary, fallback]` routing answers that
+     * silently. Asserted as PRESENT and logged rather than asserted to name a
+     * particular model: which model serves is a fact about the provider account
+     * on the day of the run, not something a spec run may pin, and a test that
+     * demanded Sonnet would go red the moment the account was fixed OR stay red
+     * while it was broken. What must always hold is that the app SAYS which one
+     * it was.
+     */
+    const writtenBy = page.getByText(/^Most recent draft written by /);
+    await expect(writtenBy).toBeVisible();
+    console.log('[phase-5] generation provenance:', (await writtenBy.innerText()).trim());
 
     /**
      * GROUNDING, OBSERVED RATHER THAN TRUSTED. The base names none of MS Office,
@@ -517,6 +563,109 @@ test.describe('generate', () => {
 
     // --- the scan's own application id is still the one being edited --------
     expect(page.url()).toContain(scan.applicationId);
+
+    // --- NOTES ARE IN THE LEFT COLUMN, not at the bottom (SPEC v2.20) -------
+    /**
+     * Asserted as a POSITION and not merely as presence, because presence is
+     * what the previous layout also had: the field was on the page, under the
+     * tabs, far below the fold. What the owner asked for is that it be
+     * REACHABLE, so the test compares it against the thing it must sit near.
+     */
+    const notes = page.getByRole('textbox', { name: RESULT.notesLabel });
+    await expect(notes).toBeVisible();
+    const notesBox = await notes.boundingBox();
+    const editorBox = await page
+      .getByRole('textbox', { name: RESULT.editorLabel })
+      .boundingBox();
+    expect(notesBox, 'the notes field is laid out').toBeTruthy();
+    expect(
+      notesBox!.x,
+      'notes sit in the LEFT column, beside the tabs rather than under them',
+    ).toBeLessThan(editorBox!.x);
+
+    // --- REGENERATE (SPEC v2.20) -------------------------------------------
+    /**
+     * The affordance Block E's "hidden after first version" had removed. Three
+     * things are asserted, and the third is the one that matters most on an
+     * append-only table: it appends.
+     */
+    const versionsBefore = await page.getByText(/^(AI draft|AI revision|Your edit)$/).count();
+
+    await page.getByRole('button', { name: RESULT.regenerate }).click();
+    const dialog = page.getByRole('dialog');
+    // IT STATES THE COST BEFORE IT RUNS. A metered action a stray click can
+    // spend money on is the thing the modal exists to prevent.
+    await expect(dialog.getByText(RESULT.regenerateDialogCost)).toBeVisible();
+    await expect(dialog.getByText(RESULT.regenerateDialogBody)).toBeVisible();
+
+    const regenerated = page.waitForResponse(
+      (res) => res.url().includes('/generate') && res.request().method() === 'POST',
+      { timeout: 300_000 },
+    );
+    await dialog.getByRole('button', { name: RESULT.regenerateConfirm }).click();
+    const second = await regenerated;
+    expect(second.status(), 'a regenerate is the same endpoint, run again').toBe(200);
+    const secondRun = await second.json();
+    expect(secondRun.versions.length).toBeGreaterThanOrEqual(1);
+    expect(secondRun.versions.length).toBeLessThanOrEqual(2);
+
+    /**
+     * IT APPENDS, NEVER REPLACES. The list has to still hold what it held —
+     * this is the assertion `mergeVersionsNewestFirst` exists for, and the one
+     * that would have failed while the client took the response as the whole
+     * list.
+     */
+    const versionsAfter = await page.getByText(/^(AI draft|AI revision|Your edit)$/).count();
+    expect(versionsAfter, 'every earlier version is still listed').toBeGreaterThan(
+      versionsBefore,
+    );
+
+    // And it survives a reload, i.e. the rows are real and not just on screen.
+    await page.reload();
+    await page.getByRole('tab', { name: RESULT.tabResume }).click();
+    expect(
+      await page.getByText(/^(AI draft|AI revision|Your edit)$/).count(),
+    ).toBeGreaterThanOrEqual(versionsAfter);
+
+    // --- /quality shows the run (SPEC Block H item 7) ----------------------
+    /**
+     * DoD item 7, witnessed rather than asserted in prose: "/quality shows real
+     * rows for one full pipeline run: parse_vacancy + embed + generate + judge,
+     * with a nonzero integer cost_usd_micro and correct fallback flags."
+     *
+     * This test has just run all four steps against the real models, so the
+     * screen either shows them or the claim is false. The COST is checked as
+     * "not $0.0000" rather than against a number, because a model's token
+     * count is not something a test can pin — what matters is that a real spend
+     * is not reported as nothing.
+     */
+    await page.goto('/quality');
+    await expect(page.getByRole('heading', { name: QUALITY.title })).toBeVisible();
+    await expect(page.getByText(QUALITY.empty)).toHaveCount(0);
+
+    for (const step of ['Parse vacancy', 'Embed', 'Generate', 'Quality check']) {
+      await expect(
+        page.getByRole('rowheader', { name: step }).first(),
+        `${step} must appear in the per-step table`,
+      ).toBeVisible();
+    }
+
+    const totalCost = page
+      .locator('div')
+      .filter({ hasText: QUALITY.tileTotalCost })
+      .last();
+    const shown = await totalCost.innerText();
+    expect(shown, 'a real run must not report a total cost of nothing').not.toContain('$0.0000');
+
+    /**
+     * THE RUBRIC SHARES ARE PRESENT AND FRACTIONED. Not asserted as numbers — a
+     * real judge decides them — but the screen must show the buckets and must
+     * say when it has too few runs to read them as a rate, which after two runs
+     * it does.
+     */
+    await expect(page.getByText(QUALITY.outcomeApprovedFirst)).toBeVisible();
+    await expect(page.getByText(QUALITY.outcomeNotChecked)).toBeVisible();
+    await expect(page.getByText(QUALITY.thinSample).first()).toBeVisible();
   });
 
   test('one click, one spend: a double-clicked [Generate] sends ONE request', async ({ page }) => {
@@ -605,6 +754,63 @@ test.describe('generate', () => {
     await page.reload();
     await expect(page.getByLabel(SETTINGS.displayNameLabel)).toHaveValue(DISPLAY_NAME);
 
+    /**
+     * THE CONTACT DETAILS (SPEC v2.20), and this half says out loud when it
+     * cannot run — the same arrangement the display-name save above uses, for
+     * the same reason: `005_profile_contacts.sql` is applied by the owner in the
+     * Supabase dashboard, and a red test for an unapplied migration says nothing
+     * about the code.
+     *
+     * The skip is keyed on the app's OWN copy for that state
+     * (`contactsNotMigrated`), not on "the success copy did not appear" — which
+     * was the mistake the phase-4 review found in the display-name probe. Any
+     * other outcome, including a genuine regression, fails here.
+     */
+    const contactsSaved = page.getByText(SETTINGS.contactsSaved);
+    const notMigrated = page.getByText(SETTINGS.contactsNotMigrated);
+    const contactsFailed = page.getByText(SETTINGS.contactsFailed);
+
+    await page.getByLabel(SETTINGS.contactEmailLabel).fill(CONTACTS.email);
+    await page.getByLabel(SETTINGS.phoneLabel).fill(CONTACTS.phone);
+    await page.getByLabel(SETTINGS.locationLabel).fill(CONTACTS.location);
+    await page.getByLabel(SETTINGS.linkedinLabel).fill(CONTACTS.linkedin);
+    await page.getByLabel(SETTINGS.githubLabel).fill(CONTACTS.github);
+    await page.getByLabel(SETTINGS.openToRemoteLabel).check();
+    await page.getByRole('button', { name: SETTINGS.contactsSave }).click();
+    await expect(
+      contactsSaved.or(notMigrated).or(contactsFailed),
+      'the contacts save neither succeeded nor reported an outcome it is allowed to report',
+    ).toBeVisible({ timeout: 15_000 });
+
+    const contactsAvailable = await contactsSaved.isVisible();
+    if (!contactsAvailable) {
+      // Stated rather than silent: the migration is the only reason this half is
+      // allowed not to run.
+      await expect(
+        notMigrated,
+        'the only permitted failure here is the unapplied migration',
+      ).toBeVisible();
+      console.log('[phase-5] contacts: skipped — 005_profile_contacts.sql is not applied');
+    } else {
+      /**
+       * THE URLS ARE REFUSED UNLESS THEY ARE https, at the boundary the owner
+       * named. Asserted through the form, because the Zod parse in the Server
+       * Action is the real gate and a unit test cannot witness the copy landing
+       * under the right field.
+       */
+      await page.getByLabel(SETTINGS.linkedinLabel).fill('javascript:alert(1)');
+      await page.getByRole('button', { name: SETTINGS.contactsSave }).click();
+      await expect(page.getByText(SETTINGS.linkNotHttps).first()).toBeVisible({
+        timeout: 15_000,
+      });
+
+      // And the refusal did not overwrite the stored row.
+      await page.reload();
+      await expect(page.getByLabel(SETTINGS.linkedinLabel)).toHaveValue(CONTACTS.linkedin);
+      await expect(page.getByLabel(SETTINGS.contactEmailLabel)).toHaveValue(CONTACTS.email);
+      await expect(page.getByLabel(SETTINGS.openToRemoteLabel)).toBeChecked();
+    }
+
     await buildCareerBase(page);
     await runScan(page);
 
@@ -617,8 +823,54 @@ test.describe('generate', () => {
     expect((await generateResponse).status()).toBe(200);
 
     const draft = await page.getByRole('textbox', { name: RESULT.editorLabel }).inputValue();
+
+    /**
+     * A7 — THE FIRST FIVE LINES OF A REAL GENERATED RESUME, printed so the run
+     * itself is the evidence for the name line rather than a claim about it.
+     *
+     * SYNTHETIC DATA ONLY: the persona, the contact values and the career base
+     * are all this repo's own fixtures, so nothing here is a real person's
+     * details. That is the one thing that makes printing a resume header into a
+     * test log acceptable — the rest of the suite logs metadata only, and must
+     * keep doing so.
+     */
+    console.log(
+      '[phase-5] first five lines of the generated resume:\n' +
+        draft
+          .split('\n')
+          .slice(0, 5)
+          .map((line, i) => `  ${i + 1}| ${line}`)
+          .join('\n'),
+    );
+
     expect(draft, 'the saved display name is the name line').toContain(DISPLAY_NAME);
     expect(draft, 'a saved name leaves no placeholder').not.toContain(NAME_PLACEHOLDER);
+    /**
+     * THE NAME IS THE FIRST LINE, and not merely present somewhere. That is the
+     * line a recruiter and an ATS parser read as the candidate's name, and the
+     * v2.17 defect put the vacancy's job title there.
+     */
+    expect(draft.trim().split('\n')[0]?.trim(), 'the name line is line one').toContain(
+      DISPLAY_NAME,
+    );
+
+    if (contactsAvailable) {
+      /**
+       * THE CONTACT HEADER IS IN THE DOCUMENT (SPEC v2.20) — on screen, which is
+       * the same text the .docx is built from, because the block is inserted
+       * into the stored version rather than drawn around it.
+       */
+      const header = draft.split('\n').slice(0, 6).join('\n');
+      for (const field of [CONTACTS.email, CONTACTS.phone, CONTACTS.location, CONTACTS.github]) {
+        expect(header, `the header block carries ${field}`).toContain(field);
+      }
+      expect(header, 'the open-to-remote flag reads as a phrase').toContain('Open to remote');
+      // ABSENT FIELDS COLLAPSE: no blank line and no dangling separator ever
+      // reaches the document, which is what `lib/resumeHeader.ts` is tested for
+      // in isolation and this is the end-to-end half of it.
+      expect(header).not.toContain(' ·  · ');
+      expect(header).not.toMatch(/\n\n\n/);
+    }
     /**
      * P3 was told the name comes from the user's profile, so it must not be
      * reported as an unsupported claim. A grounding failure there is

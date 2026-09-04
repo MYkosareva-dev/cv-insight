@@ -20,6 +20,43 @@ export async function listResumeVersions(applicationId: string): Promise<ResumeV
   return (data ?? []) as ResumeVersion[];
 }
 
+/**
+ * The window /quality computes the rubric shares over (SPEC v2.20).
+ *
+ * Bounded for the same reason `QUALITY_CALL_WINDOW` is: the shares are counted
+ * in process, so the rows have to stop somewhere and the screen says where. One
+ * generate run writes one or two rows, so 1,000 rows is several hundred runs —
+ * far past the point where a share stops moving.
+ */
+export const QUALITY_VERSION_WINDOW = 1_000;
+
+/**
+ * Every recent version the caller owns, across ALL their applications, newest
+ * first — the rubric verdicts /quality reports on.
+ *
+ * NOT SCOPED TO AN APPLICATION, which is the whole difference from
+ * `listResumeVersions` above: this screen is about whether the quality gate
+ * works at all, and one application is a sample of one. RLS is what scopes it to
+ * the caller, exactly as it does for every other read here; no user id is passed
+ * in, so this function cannot be asked for someone else's versions.
+ *
+ * It reads the `judge` column, which is where the verdicts already live —
+ * nothing new is stored to draw this screen, and every figure on it is a count
+ * over these rows.
+ */
+export async function listResumeVersionsForQuality(
+  limit = QUALITY_VERSION_WINDOW,
+): Promise<ResumeVersion[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('resume_versions')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as ResumeVersion[];
+}
+
 export async function getLatestResumeVersion(
   applicationId: string,
 ): Promise<ResumeVersion | null> {

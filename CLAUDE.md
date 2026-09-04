@@ -25,11 +25,16 @@ SPEC.md, then anything else.
 - OPENROUTER_API_KEY lives in .env.local and must never be exposed to the
   browser (no NEXT_PUBLIC_ prefix, no passing it to client components).
 - Models:
-  - Generation (tailored resume): anthropic/claude-sonnet-4.6
+  - Generation (tailored resume): openai/gpt-5.4
   - Vacancy parsing & rubric judge: anthropic/claude-haiku-4.5 (deliberately a
     different model than the generator, to reduce self-preference bias)
-  - Fallback for every step: google/gemini-2.5-flash via OpenRouter `models`
+  - Fallback for every chat step: google/gemini-2.5-flash via OpenRouter `models`
     array routing
+  - Embeddings: openai/text-embedding-3-small; a model named here must be one
+    verified to serve on the configured key, and the verification belongs in
+    docs/openrouter-processing.md — a rule book that names a model the key cannot
+    reach sends every call to the fallback in silence, which is how this project
+    shipped four phases of resumes written by a model it had not chosen
   - `llm_calls` must log the model that ACTUALLY served each request, and
     whether the fallback was used.
 - **Every OpenRouter call goes through a GATE module** (each marked
@@ -165,6 +170,12 @@ SPEC.md, then anything else.
   owned rows (verified by test).
 - Never log resume or vacancy CONTENT anywhere outside the database rows the
   user owns; log metadata (tokens, model, latency) only.
+- The only profile field that reaches a model provider is the display name, wrapped in
+  a tagged block in P2 and P3 because a resume needs a name line. Contact email, phone,
+  location and profile links are stored, rendered and exported, and reach no model call
+  on any path — enforced by the type of the text those calls accept, so a call site
+  that skips the strip does not compile. A convention someone has to remember would not
+  have held.
 
 ## Owner's private files
 - **WORKLOG.md is the owner's private file — never read it.** It is gitignored

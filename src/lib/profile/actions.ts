@@ -3,9 +3,42 @@
 import { revalidatePath } from 'next/cache';
 
 import { SETTINGS } from '@/lib/copy';
-import { upsertDisplayName } from '@/lib/db/profiles';
+import { upsertContacts, upsertDisplayName } from '@/lib/db/profiles';
 import { getUser } from '@/lib/supabase/server';
-import { type DisplayNameState, displayNameSchema } from '@/lib/validation';
+import {
+  type ContactsState,
+  type DisplayNameState,
+  contactsFieldErrors,
+  contactsSchema,
+  displayNameSchema,
+} from '@/lib/validation';
+
+/**
+ * THE TWO CODES THAT MEAN "005 HAS NOT BEEN APPLIED", and it took the Playwright
+ * run to find the second one.
+ *
+ * `42703` is Postgres' own `undefined_column`, which is what a direct SQL path
+ * answers. It is NOT what this app sees: supabase-js goes through PostgREST,
+ * which validates the payload against its cached schema BEFORE any SQL runs and
+ * answers **`PGRST204`** — "Could not find the 'contact_email' column of
+ * 'profiles' in the schema cache". So the first version of this branch handled
+ * only the code that cannot occur here, and the form rendered `contactsFailed`
+ * ("try again") for the one state where retrying can never work — which is
+ * exactly the defect `contactsNotMigrated` was written to prevent.
+ *
+ * Both are kept. `PGRST204` is what happens today; `42703` is what happens if a
+ * future write reaches Postgres without PostgREST's schema check in front of it,
+ * and dropping it would make this branch depend on which client is in use.
+ *
+ * READ OFF THE CODE AND NEVER OFF THE MESSAGE: the message names the missing
+ * column and moves with the schema; the code is the contract. This was ALSO
+ * unobservable until a test asserted the copy, which is the second lesson —
+ * the branch existed, was wrong, and nothing in the repo disagreed with it.
+ *
+ * `'use server'` permits only async exports, so these cannot be module constants
+ * here; they are inlined at their one use site below and named in this comment
+ * instead.
+ */
 
 /**
  * Save the user's display name (SPEC v2.17, Block E Settings).
@@ -69,5 +102,96 @@ export async function saveDisplayNameAction(
   return {
     error: null,
     notice: parsed.data.displayName ? SETTINGS.displayNameSaved : SETTINGS.displayNameCleared,
+  };
+}
+
+/**
+ * Save the user's contact details (SPEC v2.20, Block E Settings).
+ *
+ * A SERVER ACTION, for the reason `saveDisplayNameAction` above is one: Block D
+ * numbers the app's endpoints and this is not one of them — a form on a Server
+ * Component with no client state to keep. The Zod parse here is the real gate,
+ * because an action IS a public endpoint, and `getUser()` runs first exactly as
+ * it does in a route handler. The verified id is the only source of `user_id`.
+ *
+ * THE UNAPPLIED MIGRATION GETS ITS OWN SENTENCE. Postgres answers 42703
+ * (`undefined_column`) until `005_profile_contacts.sql` has been run in the
+ * dashboard, and "try again" is advice that cannot work in that state — every
+ * save will refuse identically. The app tells the two apart the way it tells
+ * three retrieval outcomes and four sign-in outcomes apart: a state with its own
+ * cause gets its own copy.
+ */
+export async function saveContactsAction(
+  _previous: ContactsState,
+  formData: FormData,
+): Promise<ContactsState> {
+  const user = await getUser();
+  if (!user) {
+    return { fieldErrors: {}, formError: SETTINGS.contactsSignedOut, notice: null };
+  }
+
+  const parsed = contactsSchema.safeParse({
+    contactEmail: String(formData.get('contactEmail') ?? ''),
+    phone: String(formData.get('phone') ?? ''),
+    location: String(formData.get('location') ?? ''),
+    linkedinUrl: String(formData.get('linkedinUrl') ?? ''),
+    githubUrl: String(formData.get('githubUrl') ?? ''),
+    // Absent when the box is unticked — an HTML checkbox sends nothing at all.
+    openToRemote: formData.get('openToRemote') ?? undefined,
+  });
+  if (!parsed.success) {
+    return {
+      fieldErrors: contactsFieldErrors(parsed.error),
+      formError: null,
+      notice: null,
+    };
+  }
+
+  try {
+    await upsertContacts(user.id, parsed.data);
+  } catch (err) {
+    /**
+     * The columns are not there yet — `PGRST204` today, `42703` if a write ever
+     * reaches Postgres without PostgREST's schema check in front of it. Read off
+     * the CODE and never off the message: the message names the missing column
+     * and moves with the schema. See the note at the top of the file.
+     */
+    const code = (err as { code?: string } | null)?.code;
+    // Metadata only: the message could carry an email address or a phone number.
+    console.error('[profile] saving the contact details failed', {
+      name: err instanceof Error ? err.name : typeof err,
+      code,
+    });
+    return {
+      fieldErrors: {},
+      formError:
+        code === 'PGRST204' || code === '42703'
+          ? SETTINGS.contactsNotMigrated
+          : SETTINGS.contactsFailed,
+      notice: null,
+    };
+  }
+
+  // Settings reads the row on render; without this the saved values only
+  // reappear after a hard reload.
+  revalidatePath('/settings');
+
+  /**
+   * Two notices, because clearing every field is a real edit with a real
+   * consequence — the next resume loses its header block — and reporting it as
+   * "Contact details saved." would describe the opposite of what happened.
+   */
+  const anySaved = Boolean(
+    parsed.data.contactEmail ||
+      parsed.data.phone ||
+      parsed.data.location ||
+      parsed.data.linkedinUrl ||
+      parsed.data.githubUrl ||
+      parsed.data.openToRemote,
+  );
+  return {
+    fieldErrors: {},
+    formError: null,
+    notice: anySaved ? SETTINGS.contactsSaved : SETTINGS.contactsCleared,
   };
 }

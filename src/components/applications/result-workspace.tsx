@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation';
 import { Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { NotesForm } from '@/components/applications/notes-form';
 import { ResultTabs } from '@/components/applications/result-tabs';
 import { BusyDots } from '@/components/ui/busy-dots';
 import { ResumeEditor } from '@/components/applications/resume-editor';
 import { ScoreRing } from '@/components/applications/score';
 import { Button } from '@/components/ui/button';
-import { RESULT } from '@/lib/copy';
+import { NO_SCORE, RESULT } from '@/lib/copy';
 import type {
   CoverageEntry,
   JudgeReport,
@@ -18,7 +19,13 @@ import type {
   ParsedVacancy,
   ResumeVersion,
 } from '@/lib/db/types';
-import { judgeIssueCounts, openingVersion } from '@/lib/judge';
+import {
+  judgeIssueCounts,
+  mergeVersionsNewestFirst,
+  newestJudgedVersion,
+  openingVersion,
+} from '@/lib/judge';
+import type { GenerationProvenance } from '@/lib/quality';
 
 /**
  * `missingHonest`, split into what the career base literally contains and what
@@ -29,6 +36,16 @@ type JudgeTerms = { supported: string[]; notInBase: string[] };
 
 /** A review and the terms it may suggest. Never held apart — see the state below. */
 type Review = { report: JudgeReport | null; terms: JudgeTerms };
+
+/**
+ * The actions that spend money, and the one that does not.
+ *
+ * `generate` and `regenerate` are the SAME endpoint and are told apart only so
+ * the busy label can say which one the user pressed — a "Generating" label on a
+ * button reading [Regenerate] is a small lie about what is happening. Both draw
+ * on the one shared in-flight lock, because both are a Sonnet call.
+ */
+type MeteredAction = 'generate' | 'regenerate' | 'rescore' | 'judge' | 'export';
 
 /**
  * Read the partition off an endpoint's response.
@@ -95,6 +112,8 @@ export function ResultWorkspace({
   sourceIsBase,
   versions: initialVersions,
   judgeTerms: initialJudgeTerms,
+  notes,
+  provenance,
 }: {
   applicationId: string;
   entries: CoverageEntry[];
@@ -112,6 +131,32 @@ export function ResultWorkspace({
    * needs one yes-or-no per term rather than the corpus.
    */
   judgeTerms: JudgeTerms;
+  /**
+   * The application's saved notes (SPEC v2.20, owner feedback: the field had
+   * drifted to the bottom of the page, far below the fold).
+   *
+   * THE STRING AND NOT THE ELEMENT. The first version of this took the rendered
+   * `<NotesForm />` as a `ReactNode` prop, on the reasoning that `page.tsx` owns
+   * the row — and the Playwright run answered that with a React warning on every
+   * render of this screen ("Each child in a list should have a unique key prop
+   * … it was passed a child from ApplicationDetailPage"): an element created in
+   * a Server Component and handed across the boundary as a prop is not the same
+   * thing as a child rendered in place. `NotesForm` is already a client
+   * component, so rendering it here costs nothing and keeps no state — it holds
+   * its own — and `page.tsx` still renders it directly in the not-analysed
+   * branch from the same row.
+   */
+  notes: string | null;
+  /**
+   * Which model served this application's `generate` calls (v2.22), read from
+   * `llm_calls` on the server.
+   *
+   * It is here rather than in a response body because it has to survive a
+   * reload: a user coming back to a resume should still be able to see what wrote
+   * it. The generate action refreshes the server render, so the line updates
+   * without this component holding a second copy of the fact.
+   */
+  provenance: GenerationProvenance;
 }) {
   const router = useRouter();
 
@@ -165,12 +210,12 @@ export function ResultWorkspace({
     keywords: KeywordRow[];
   } | null>(null);
 
-  const [pending, setPending] = useState<'generate' | 'rescore' | 'judge' | 'export' | null>(null);
+  const [pending, setPending] = useState<MeteredAction | null>(null);
   /** Set synchronously — the `disabled` prop cannot guard a double click. */
   const inFlight = useRef(false);
 
   async function run<T>(
-    action: 'generate' | 'rescore' | 'judge' | 'export',
+    action: MeteredAction,
     request: () => Promise<Response>,
     onOk: (res: Response) => Promise<T>,
     fallbackMessage: string,
@@ -201,15 +246,31 @@ export function ResultWorkspace({
       body: JSON.stringify(body),
     });
 
-  function generate() {
+  /**
+   * ONE FUNCTION FOR BOTH GENERATE AND REGENERATE, because they are one endpoint
+   * (SPEC v2.20).
+   *
+   * `POST …/generate` already appended rather than replaced — `resume_versions`
+   * is append-only by design and the route has never had a "there is already a
+   * version" refusal — so regenerating needed no server change at all. What it
+   * needed was a way to ASK for it, which Block E's "hidden after first version"
+   * had taken away.
+   *
+   * THE ROWS ARE MERGED AND NOT SUBSTITUTED. The 200 body carries only the rows
+   * this run wrote; taking it as the whole list was correct while a generate
+   * could only ever happen on an empty history, and wrong the moment one can
+   * happen on top of five earlier versions — the history would visibly lose
+   * every older row until the next server render landed.
+   */
+  function generate(action: 'generate' | 'regenerate' = 'generate') {
     void run(
-      'generate',
+      action,
       // Body is `{}`: every input lives server-side, so nothing a client sends
       // can change what is generated or from what.
       () => post('generate', {}),
       async (res) => {
         const data = await res.json();
-        setVersions(data.versions ?? []);
+        setVersions((current) => mergeVersionsNewestFirst(current, data.versions ?? []));
         setContent(data.content ?? '');
         setReview({ report: data.judge ?? null, terms: termsOf(data) });
         setRevisionNotBetter(Boolean(data.revisionNotBetter));
@@ -225,17 +286,53 @@ export function ResultWorkspace({
   }
 
   function rescore() {
+    /**
+     * THE PREVIOUS LIVE READING, AND NEVER THE STORED SCAN'S NUMBER.
+     *
+     * `shownScore` was the first version of this and it is the wrong baseline:
+     * on a FIRST re-score it holds the scan's stored score, which SPEC v2.16
+     * note 13 states plainly is not comparable — the stored number was measured
+     * against the CAREER BASE through `match_documents`, the live one against an
+     * ephemeral corpus of the editor's own text, and the thresholds were
+     * calibrated for the first of those. A toast reading "68% → 74%" across that
+     * boundary attributes to the user's edit a difference that is partly the
+     * corpus, and "Nothing in your edit moved it" is a causal claim the app has
+     * no measurement for at all.
+     *
+     * So the delta is only ever between two readings of the SAME corpus, and a
+     * first re-score gets a wording with no delta in it.
+     */
+    const previous = rescored?.matchScore ?? null;
+    const isFirstRescore = rescored === null;
     void run(
       'rescore',
       () => post('rescore', { content }),
       async (res) => {
         const data = await res.json();
+        const after: number | null = data.matchScore ?? null;
         setRescored({
-          matchScore: data.matchScore ?? null,
+          matchScore: after,
           entries: data.coverage ?? [],
           keywords: data.keywords ?? [],
         });
         setTab('analysis');
+        /**
+         * A RUN THAT MOVED NOTHING STILL REPORTS ITSELF (SPEC v2.20, owner
+         * feedback). Re-scoring text nobody edited returns the number it
+         * returned before and the ring does not move, which is indistinguishable
+         * from a button that did nothing — after a paid call. An unchanged
+         * measurement is a result, so it is said, with the number named.
+         *
+         * `null` compares equal to `null` here, which is right: rule B1b's "—"
+         * staying "—" is also a measurement that did not move.
+         */
+        if (isFirstRescore) {
+          toast.success(RESULT.rescoredFirst(scoreText(after)));
+        } else if (after === previous) {
+          toast.success(RESULT.rescoredUnchanged(scoreText(after)));
+        } else {
+          toast.success(RESULT.rescoredChanged(scoreText(previous), scoreText(after)));
+        }
       },
       RESULT.rescoreFailed,
     );
@@ -248,10 +345,40 @@ export function ResultWorkspace({
       async (res) => {
         const data = await res.json();
         setReview({ report: data.judge ?? null, terms: termsOf(data) });
+        /**
+         * THE NEW ROW GOES INTO `versions` TOO (v2.22). The rail's bars derive
+         * from the newest judged version, so without this the check the user just
+         * paid for would not move them until the server refresh landed — and on
+         * the one action whose entire purpose is to produce a verdict, a rail
+         * still reading the previous one is the same contradiction this round
+         * fixed. `createdAt` comes from the response because only the database
+         * knows it; a timestamp made up here would sort wrongly against the rows
+         * beside it.
+         */
+        if (data.resumeVersionId && data.createdAt) {
+          setVersions((current) =>
+            mergeVersionsNewestFirst(current, [
+              {
+                id: data.resumeVersionId,
+                created_at: data.createdAt,
+                source: data.source ?? 'user',
+                content: data.content ?? '',
+                judge: data.judge ?? null,
+              } as ResumeVersion,
+            ]),
+          );
+        }
         // The reviewed text is its own version now, so the badges from the AI
         // pass no longer describe what is on screen.
         setRevisionNotBetter(false);
         setRevisionWithheld(false);
+        /**
+         * SAID OUT LOUD, for the same reason the re-score reports an unchanged
+         * number: the card below can come back with the same four scores it had,
+         * and a screen that looks identical after a paid call reads as a click
+         * that missed.
+         */
+        toast.success(RESULT.qualityChecked);
         // The reviewed text is now a row of its own; the refresh brings it back
         // with the timestamp the database gave it, rather than one this browser
         // made up.
@@ -286,6 +413,15 @@ export function ResultWorkspace({
         if (res.headers.get('X-Name-Placeholder') === '1') {
           toast.warning(RESULT.exportedWithPlaceholderName);
         }
+        /**
+         * The document has no contact header while the profile has contacts
+         * (v2.20) — a resume written before they were saved. Said beside the
+         * success, not instead of it: the download worked and the version was
+         * saved, and what is also true is that the file has no way to reply to.
+         */
+        if (res.headers.get('X-Missing-Contacts') === '1') {
+          toast.warning(RESULT.exportedWithoutContacts);
+        }
         router.refresh();
       },
       RESULT.exportFailed,
@@ -295,7 +431,29 @@ export function ResultWorkspace({
   const shownScore = rescored ? rescored.matchScore : score;
   const shownEntries = rescored ? rescored.entries : entries;
   const shownKeywords = rescored ? rescored.keywords : keywords;
-  const issues = judgeIssueCounts(judge);
+  /**
+   * THE RAIL'S BARS READ THE NEWEST JUDGED VERSION, not the one the editor
+   * opened with (v2.22).
+   *
+   * The editor's version can legitimately carry no report — the export path
+   * appends a `judge: null` row, and so does a run whose judge step was refused —
+   * and the bars were then asserting "Not checked yet" directly above a version
+   * list showing the verdicts of the runs that HAD been checked. Two parts of one
+   * screen disagreeing about the same fact, which [Regenerate] made easy to reach
+   * by multiplying the rows.
+   *
+   * `versions` is the single source, so an action that appends a row moves the
+   * bars in the same render as the list. "Not checked yet" now means what it
+   * says: nothing here has ever been judged.
+   */
+  const judgedVersion = newestJudgedVersion(versions);
+  const issues = judgeIssueCounts(judgedVersion?.judge ?? null);
+  /**
+   * True when the measurement is not of the newest text. The bars must not be
+   * read as a measurement of a document nobody measured, so when this holds the
+   * rail names the version the check belongs to.
+   */
+  const judgedIsStale = judgedVersion !== null && judgedVersion.id !== versions[0]?.id;
 
   return (
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_1fr]">
@@ -323,22 +481,41 @@ export function ResultWorkspace({
           atsIssues={issues.atsFormat}
           qualityIssues={issues.quality}
         />
+        {judgedIsStale ? (
+          <p className="text-muted-foreground text-xs">
+            {RESULT.judgedVersionLabel(RESULT.versionLabel[judgedVersion.source])}
+          </p>
+        ) : null}
 
         {/* Block E: the violet hero, hidden once a version exists — the editor
-            tab owns the action from then on. */}
+            tab owns the action from then on, and [Regenerate] is the way back to
+            a second attempt (v2.20). */}
         {versions.length === 0 ? (
-          <Button variant="hero" onClick={generate} disabled={pending !== null}>
-            <Sparkles aria-hidden />
-            {pending === 'generate' ? (
-              <>
-                {RESULT.generating}
-                <BusyDots />
-              </>
-            ) : (
-              RESULT.generate
-            )}
-          </Button>
+          <div className="flex flex-col gap-1.5">
+            <Button variant="hero" onClick={() => generate()} disabled={pending !== null}>
+              <Sparkles aria-hidden />
+              {pending === 'generate' ? (
+                <>
+                  {RESULT.generating}
+                  <BusyDots />
+                </>
+              ) : (
+                RESULT.generate
+              )}
+            </Button>
+            <p className="text-muted-foreground text-xs">{RESULT.generateHelp}</p>
+          </div>
         ) : null}
+
+        {/*
+          NOTES, BACK IN THE LEFT COLUMN (SPEC v2.20, owner feedback). They had
+          drifted to the bottom of the page, below the tabs and far below the
+          fold, which is not where a note taken while reading a posting is
+          usable. They sit under the measurement — the ring and the bars are what
+          the screen is FOR and stay first — and above the fold at both test
+          widths.
+        */}
+        <NotesForm applicationId={applicationId} notes={notes} />
       </div>
 
       <ResultTabs
@@ -363,11 +540,13 @@ export function ResultWorkspace({
             versions={versions}
             judge={judge}
             judgeTerms={review.terms}
+            provenance={provenance}
             autoRevised={autoRevised}
             revisionNotBetter={revisionNotBetter}
             revisionWithheld={revisionWithheld}
             pending={pending}
-            onGenerate={generate}
+            onGenerate={() => generate()}
+            onRegenerate={() => generate('regenerate')}
             onRescore={rescore}
             onCheckQuality={checkQuality}
             onDownload={download}
@@ -377,6 +556,15 @@ export function ResultWorkspace({
     </div>
   );
 }
+
+/**
+ * A score as the ring shows it, for copy that names the number.
+ *
+ * `NO_SCORE` and not "0" for null: rule B1b's insufficient-signal case renders
+ * "—" everywhere else in the app, and a sentence quoting a 0 there would state a
+ * measurement the app refuses to display two inches above.
+ */
+const scoreText = (score: number | null): string => (score === null ? NO_SCORE : `${score}%`);
 
 /** The server's own filename, so the browser saves what the export named. */
 function filenameFrom(res: Response): string | null {

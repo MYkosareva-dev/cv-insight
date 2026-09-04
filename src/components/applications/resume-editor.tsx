@@ -1,14 +1,24 @@
 'use client';
 
+import { useState } from 'react';
 import { Download, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
 
 import { JudgeCard } from '@/components/applications/judge-card';
 import { Badge } from '@/components/ui/badge';
 import { BusyDots } from '@/components/ui/busy-dots';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { NAME_PLACEHOLDER, RESULT } from '@/lib/copy';
 import type { JudgeReport, ResumeVersion } from '@/lib/db/types';
+import type { GenerationProvenance } from '@/lib/quality';
 
 /**
  * The Tailored-resume tab (SPEC Block E, US-4 step 3 and US-5).
@@ -32,8 +42,10 @@ export function ResumeEditor({
   autoRevised,
   revisionNotBetter,
   revisionWithheld,
+  provenance,
   pending,
   onGenerate,
+  onRegenerate,
   onRescore,
   onCheckQuality,
   onDownload,
@@ -47,14 +59,23 @@ export function ResumeEditor({
   autoRevised: boolean;
   revisionNotBetter: boolean;
   revisionWithheld: boolean;
+  /** Which model served this application's generations (v2.22). */
+  provenance: GenerationProvenance;
   /** Which metered action is in flight, or null. One at a time, by design. */
-  pending: 'generate' | 'rescore' | 'judge' | 'export' | null;
+  pending: 'generate' | 'regenerate' | 'rescore' | 'judge' | 'export' | null;
   onGenerate: () => void;
+  /**
+   * The SAME endpoint as `onGenerate`, asked for again once a version exists
+   * (SPEC v2.20). Two props rather than one, so the busy label can name the
+   * action the user actually pressed.
+   */
+  onRegenerate: () => void;
   onRescore: () => void;
   onCheckQuality: () => void;
   onDownload: () => void;
 }) {
   const hasVersion = versions.length > 0;
+  const [confirmRegenerate, setConfirmRegenerate] = useState(false);
 
   if (!hasVersion) {
     return (
@@ -73,6 +94,7 @@ export function ResumeEditor({
             RESULT.generate
           )}
         </Button>
+        <p className="text-muted-foreground text-xs">{RESULT.generateHelp}</p>
       </div>
     );
   }
@@ -103,22 +125,117 @@ export function ResumeEditor({
         ) : null}
       </div>
 
-      {/* Block E: [Re-score] outline green, [Check quality] outline violet,
-          [Download .docx] green. Wraps rather than overflows at 375 px. */}
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" onClick={onRescore} disabled={pending !== null}>
-          <RefreshCw aria-hidden />
-          {pending === 'rescore' ? RESULT.rescoring : RESULT.rescore}
-        </Button>
-        <Button variant="outline-accent" onClick={onCheckQuality} disabled={pending !== null}>
-          <ShieldCheck aria-hidden />
-          {pending === 'judge' ? RESULT.checkingQuality : RESULT.checkQuality}
-        </Button>
-        <Button onClick={onDownload} disabled={pending !== null}>
-          <Download aria-hidden />
-          {pending === 'export' ? RESULT.exporting : RESULT.download}
-        </Button>
+      {/*
+        Block E: [Re-score] outline green, [Check quality] outline violet,
+        [Download .docx] green — plus [Regenerate] (v2.20), the way back to a
+        second attempt that Block E's "hidden after first version" had removed.
+
+        ONE COLUMN PER ACTION, so each carries its own line of helper copy under
+        it. A grid and not a wrapping row: a row that wraps puts a caption under
+        the wrong button. Single column at 375 px.
+
+        EVERY ACTION SAYS WHAT IT DOES AND WHAT IT SPENDS (v2.20, owner feedback:
+        the buttons gave no clue about either). The costs are in the units the app
+        actually spends -- see `RESULT.rescoreHelp`, which does not price an
+        embeddings-only call as if it were a generate.
+
+        THE THREE METERED ACTIONS ALL SHOW A SIGN OF LIFE. `<BusyDots />` was on
+        [Generate] alone, on the argument that a re-score and a quality check
+        "take seconds"; live use disagreed -- both are a network round trip to a
+        model, and a dimmed button with a changed label is a STATE, not motion.
+        One indicator, one reduced-motion fallback, one definition of it.
+        [Download .docx] keeps a plain label because it makes no model call.
+      */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Action
+          help={RESULT.rescoreHelp}
+          button={
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={onRescore}
+              disabled={pending !== null}
+            >
+              <RefreshCw aria-hidden />
+              {pending === 'rescore' ? (
+                <>
+                  {RESULT.rescoring}
+                  <BusyDots />
+                </>
+              ) : (
+                RESULT.rescore
+              )}
+            </Button>
+          }
+        />
+        <Action
+          help={RESULT.checkQualityHelp}
+          button={
+            <Button
+              variant="outline-accent"
+              className="w-full"
+              onClick={onCheckQuality}
+              disabled={pending !== null}
+            >
+              <ShieldCheck aria-hidden />
+              {pending === 'judge' ? (
+                <>
+                  {RESULT.checkingQuality}
+                  <BusyDots />
+                </>
+              ) : (
+                RESULT.checkQuality
+              )}
+            </Button>
+          }
+        />
+        <Action
+          help={RESULT.regenerateHelp}
+          button={
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setConfirmRegenerate(true)}
+              disabled={pending !== null}
+            >
+              <Sparkles aria-hidden />
+              {pending === 'regenerate' ? (
+                <>
+                  {RESULT.regenerating}
+                  <BusyDots />
+                </>
+              ) : (
+                RESULT.regenerate
+              )}
+            </Button>
+          }
+        />
+        <Action
+          help={RESULT.downloadHelp}
+          button={
+            <Button className="w-full" onClick={onDownload} disabled={pending !== null}>
+              <Download aria-hidden />
+              {pending === 'export' ? RESULT.exporting : RESULT.download}
+            </Button>
+          }
+        />
       </div>
+
+      {/*
+        DELIBERATE, NOT ACCIDENTAL (v2.20). A regenerate is the most expensive
+        button in the app, so it asks once, in a modal that states the cost and
+        says the current version is kept. The same mechanism the deletion dialog
+        uses and for the same reason: an action with a consequence takes the focus
+        rather than firing on a stray click.
+      */}
+      <RegenerateDialog
+        open={confirmRegenerate}
+        onOpenChange={setConfirmRegenerate}
+        onConfirm={() => {
+          setConfirmRegenerate(false);
+          onRegenerate();
+        }}
+      />
 
       <JudgeCard
         report={judge}
@@ -127,6 +244,8 @@ export function ResumeEditor({
         revisionNotBetter={revisionNotBetter}
         revisionWithheld={revisionWithheld}
       />
+
+      <WhichModel provenance={provenance} />
 
       <VersionList versions={versions} />
     </div>
@@ -177,6 +296,107 @@ function VersionList({ versions }: { versions: ResumeVersion[] }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * One action: the button, and the single line saying what it does and what it
+ * costs (SPEC v2.20).
+ *
+ * The caption is deliberately NOT `aria-describedby` on the button. It describes
+ * the action for a reader deciding whether to press it, and every button here
+ * already has a complete accessible name -- wiring the sentence into that name
+ * would make a screen reader announce the price of a model call before saying
+ * which button it is on.
+ */
+function Action({ button, help }: { button: React.ReactNode; help: string }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {button}
+      <p className="text-muted-foreground text-xs">{help}</p>
+    </div>
+  );
+}
+
+/**
+ * The regenerate confirmation (SPEC v2.20).
+ *
+ * IT STATES THE COST BEFORE IT RUNS, on its own line, because that is the fact a
+ * user needs in order to answer the question -- and it says the current version
+ * is KEPT, because someone who believes they are about to lose their text will
+ * not press the button that gives them a second attempt. Both sentences are true
+ * of the endpoint: `resume_versions` is append-only, and the declared cost of one
+ * run is 2 chat calls, or 4 with rule B3's single revision.
+ */
+function RegenerateDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{RESULT.regenerateDialogTitle}</DialogTitle>
+          <DialogDescription>{RESULT.regenerateDialogBody}</DialogDescription>
+        </DialogHeader>
+        <p className="text-accent text-sm">{RESULT.regenerateDialogCost}</p>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {RESULT.regenerateCancel}
+          </Button>
+          <Button variant="hero" onClick={onConfirm}>
+            <Sparkles aria-hidden />
+            {RESULT.regenerateConfirm}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Which model wrote the draft (v2.22, from the owner's first use of `/quality`).
+ *
+ * WHY IT IS IN THE PRODUCT AND NOT ONLY IN THE DASHBOARD. Every generate call in
+ * the log had been served by the fallback: the configured Sonnet slug is blocked
+ * by a guardrail on the provider account, and `models: [primary, fallback]`
+ * routing answers a blocked primary by quietly using the second entry. So for a
+ * whole phase the resume on screen was written by a different model than the one
+ * this app asks for, and the only witness was a table. The person holding the
+ * resume is the one that matters to.
+ *
+ * NEUTRAL WHEN IT IS THE INTENDED MODEL. The line is not a warning banner that
+ * appears only when something is wrong — it always names the model, which is what
+ * makes the warning legible the day it changes, and it answers a question a user
+ * of an AI tool is entitled to ask without opening a dashboard.
+ *
+ * NOTHING IS SHOWN BEFORE THERE IS A GENERATION. `calls === 0` is the empty
+ * state, not a claim about a model.
+ */
+function WhichModel({ provenance }: { provenance: GenerationProvenance }) {
+  if (provenance.newestModel === null) return null;
+  const fell = provenance.newestFallback;
+  return (
+    <div className="flex flex-col gap-1">
+      <p className={fell ? 'text-destructive text-xs' : 'text-muted-foreground text-xs'}>
+        {fell
+          ? RESULT.writtenByFallback(provenance.newestModel)
+          : RESULT.writtenBy(provenance.newestModel)}
+      </p>
+      {/*
+        Only when EVERY generation here fell back: that is a configuration rather
+        than a passing outage, and it will keep happening until someone changes
+        the provider account.
+      */}
+      {fell && provenance.allFallback && provenance.calls > 1 ? (
+        <p className="text-muted-foreground text-xs">{RESULT.writtenByFallbackAlways}</p>
+      ) : null}
     </div>
   );
 }

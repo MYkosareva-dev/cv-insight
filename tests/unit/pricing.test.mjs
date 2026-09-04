@@ -106,6 +106,10 @@ describe('costUsdMicro', () => {
     // The models named in SPEC Block F. If a step's model changes without a
     // price entry, /quality starts under-reporting and only this fails.
     for (const slug of [
+      // The generate primary since v2.23, after the guardrail probe: a missing
+      // entry here is a real spend reported as unknown on every generation.
+      'openai/gpt-5.4',
+      // Kept: `llm_calls` is append-only and rows written before v2.23 name it.
       'anthropic/claude-sonnet-4.6',
       'anthropic/claude-haiku-4.5',
       'google/gemini-2.5-flash',

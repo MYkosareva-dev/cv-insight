@@ -15,6 +15,18 @@
 
 /** USD per 1M tokens. */
 export const PRICE_USD_PER_MTOK: Record<string, { in: number; out: number }> = {
+  /**
+   * The generate primary since v2.23. Read off OpenRouter's own model listing
+   * ($0.0000025 and $0.000015 per token) rather than typed from memory, because
+   * `cost_known = false` is what a missing entry produces and `/quality` would
+   * then report a real spend as unknown on every generation.
+   */
+  'openai/gpt-5.4': { in: 2.5, out: 15 },
+  /**
+   * KEPT after it stopped being the generator (v2.23): rows written before the
+   * change still name it, and `llm_calls` is append-only, so deleting the entry
+   * would turn a month of priced history into "unknown pricing" on `/quality`.
+   */
   'anthropic/claude-sonnet-4.6': { in: 3, out: 15 },
   'anthropic/claude-haiku-4.5': { in: 1, out: 5 },
   'google/gemini-2.5-flash': { in: 0.3, out: 2.5 },

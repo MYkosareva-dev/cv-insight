@@ -25,7 +25,19 @@ import { AlignmentType, Document, Packer, Paragraph, TextRun } from 'docx';
  * import.
  */
 
+import { FIELD_SEPARATOR } from '@/lib/resumeHeader';
+
 export { exportFilename } from '@/lib/utils';
+
+/**
+ * THE CONTACT HEADER NEEDS NO CODE HERE (SPEC v2.20), and that is the point of
+ * putting it in the stored text rather than in the exporter. The block is already
+ * part of `resume_versions.content` — `withContactHeader` inserted it before the
+ * version was judged and saved — so the editor, the judge and this document all
+ * read the same lines, and there is no second composition step that could put a
+ * different header in the file from the one on screen. The user can also edit it,
+ * which is right: the header is part of their resume.
+ */
 
 /** Word's default body size, in half-points: 11 pt. */
 const BODY_HALF_POINTS = 22;
@@ -51,9 +63,34 @@ const BODY_HALF_POINTS = 22;
  */
 const MAX_HEADING_CHARS = 40;
 
+/**
+ * Shapes a section heading never has: the contact block's own field separator,
+ * an email address, and a URL (v2.20).
+ *
+ * A section heading is ONE phrase. A line that enumerates fields is not one,
+ * whatever its case — and without this a location typed in capitals came out as
+ * `HAMBURG, GERMANY · OPEN TO REMOTE`, bolded as a heading in the user's own
+ * document: the app's own generated line tripping the app's own shape test.
+ *
+ * `FIELD_SEPARATOR` is IMPORTED from `lib/resumeHeader.ts` rather than copied,
+ * because a second definition of it here would mean changing the separator over
+ * there silently disabled this guard.
+ *
+ * WHAT IT STILL GETS WRONG, and it is the same declared case as `ACME LOGISTICS`
+ * two comments up: a profile whose ONLY contact field is a capitalised location
+ * produces one short all-caps line with no separator, no `@` and no `://`, and
+ * that line is indistinguishable in shape from a section heading. It is bolded.
+ * A shape test is wrong about one line; the alternative — passing the header's
+ * identity down from the generator — cannot work here at all, because the text
+ * this function reads is the text the USER edited and the app no longer knows
+ * which lines it wrote.
+ */
+const NOT_A_HEADING = [FIELD_SEPARATOR.trim(), '@', '://'];
+
 function isHeading(line: string): boolean {
   const trimmed = line.trim();
   if (trimmed.length === 0 || trimmed.length > MAX_HEADING_CHARS) return false;
+  if (NOT_A_HEADING.some((shape) => trimmed.includes(shape))) return false;
   // At least one cased letter, and no lower-case one. `toUpperCase` rather than a
   // Latin-only class, so a heading in another script is not mis-detected by an
   // alphabet this app does not assume.

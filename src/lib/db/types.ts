@@ -16,6 +16,34 @@ import 'server-only';
 export type Profile = {
   user_id: string;
   display_name: string | null;
+  /**
+   * The contact columns (SPEC v2.20, migration 005) — the resume's header block.
+   *
+   * `?` AS WELL AS `| null`, and the difference is not pedantry: a profile read
+   * with `select('*')` before `005_profile_contacts.sql` has been applied comes
+   * back with these keys ABSENT, not null. Typing them as merely nullable would
+   * have the compiler agree with code that cannot tell "the column is not there
+   * yet" from "the user left it empty" — and both are states this branch is
+   * reachable in, because the migration is applied by hand in the dashboard.
+   * `contactsOf()` in `lib/resumeHeader.ts` is the one place that normalises the
+   * two into the single answer every consumer wants.
+   *
+   * A CONTACT EMAIL IS NOT THE ACCOUNT EMAIL. A user may apply from a different
+   * address, and the address they signed in with is not something to print on a
+   * document without being asked for it.
+   */
+  contact_email?: string | null;
+  phone?: string | null;
+  linkedin_url?: string | null;
+  github_url?: string | null;
+  location?: string | null;
+  /**
+   * Three states, and they are all meant: true prints "Open to remote", false
+   * prints nothing, null means the user has not said. A non-null default would
+   * make "has not said" indistinguishable from "no" on a document they send to
+   * an employer.
+   */
+  open_to_remote?: boolean | null;
   created_at: string;
   updated_at: string;
 };

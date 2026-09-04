@@ -28,6 +28,18 @@ export default function PrivacyPage() {
           fill the name in yourself. You can change or remove it in Settings at any time, and it is
           deleted along with everything else when you delete your account.
         </p>
+        <p className="text-muted-foreground text-sm">
+          The same applies to the contact details you may save in Settings — a contact email
+          address, a phone number, a location, a LinkedIn address, a GitHub address and whether you
+          are open to remote work. They are stored with your account and used for the header block
+          at the top of the resumes you generate and download, so an employer can reply to one.
+          They are <strong>not</strong> sent to the AI provider: the header is added to your resume
+          after it has been written and checked, and it is removed again before any text is sent
+          for a quality check or a re-score. Writing a resume and judging it do not need a phone
+          number, so it does not leave. Each of these fields is optional and the app works with all
+          of them empty; you can change or remove any of them in Settings at any time, and they are
+          deleted along with everything else when you delete your account.
+        </p>
       </section>
 
       <section className="flex flex-col gap-2">
@@ -35,7 +47,9 @@ export default function PrivacyPage() {
         <p className="text-muted-foreground text-sm">
           Resume and vacancy text are personal data. They are sent to OpenRouter for processing so
           the app can parse the posting, score the match, generate a tailored resume and evaluate
-          it.
+          it. The name you save in Settings travels with them, because a resume needs a name line
+          on it. The contact details you may save do not travel with them at all — the section
+          above says what happens to those instead.
         </p>
       </section>
 

@@ -9,6 +9,7 @@ import {
   embedTexts,
   matchDocumentsForTexts,
 } from '@/lib/retrieval';
+import type { ModelResumeText } from '@/lib/resumeHeader';
 import {
   cosineSimilarity,
   coverageStatusFor,
@@ -162,7 +163,16 @@ export function careerBaseCorpus(args: {
  * score differently from a short one for no reason at all.
  */
 export function editorTextCorpus(args: {
-  content: string;
+  /**
+   * BRANDED (owner decision, v2.21). This corpus is EMBEDDED, which is a request
+   * to OpenRouter carrying the text, and `ModelResumeText` can only be produced
+   * by `resumeTextForModel` — so a caller passing the raw contents of a stored
+   * resume version, contact header and all, is a build error rather than a silent
+   * transfer of the user's contact details. `careerBaseCorpus` above is
+   * deliberately not branded: its text is career items and a pasted source, which
+   * carry no app-composed header.
+   */
+  content: ModelResumeText;
   applicationId: string | null;
 }): CoverageCorpus {
   return {

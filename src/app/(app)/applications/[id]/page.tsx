@@ -7,12 +7,14 @@ import { ResultWorkspace } from '@/components/applications/result-workspace';
 import { ScoreRing } from '@/components/applications/score';
 import { APPLICATIONS, APPLICATION_STATUS_LABEL, RESULT } from '@/lib/copy';
 import { getApplication } from '@/lib/db/applications';
+import { listGenerateCallsForApplication } from '@/lib/db/llmCalls';
 import { listCareerItemCorpus } from '@/lib/db/careerItems';
 import { itemsCorpus } from '@/lib/generation';
 import { openingVersion, partitionMissingHonest } from '@/lib/judge';
 import { listResumeVersions } from '@/lib/db/resumeVersions';
 import { getVacancy } from '@/lib/db/vacancies';
 import type { CoverageEntry, KeywordRow } from '@/lib/db/types';
+import { generationProvenance } from '@/lib/quality';
 import { renderableScore } from '@/lib/scoring';
 
 export const metadata = { title: 'Scan result — CV Insight' };
@@ -34,6 +36,16 @@ export const metadata = { title: 'Scan result — CV Insight' };
  *   2. `coverage.entries.length === 0` — the parse RAN and the posting stated no
  *      requirements (edge case N4). A measured emptiness, with its own notice.
  *   3. entries present — the normal result.
+ *
+ * NOTES LIVE IN THE LEFT COLUMN (SPEC v2.20, from the owner's live use). They had
+ * drifted to the bottom of the page, under the tabs and far below the fold, which
+ * is not where a note taken while reading a posting is usable. This file still
+ * owns the row and renders the form in BOTH result states; in the analysed state
+ * it passes the notes STRING to `ResultWorkspace`, which renders the same client
+ * form in the rail. Handing over the rendered ELEMENT was the first attempt and
+ * the Playwright run rejected it: an element created in a Server Component and
+ * passed as a prop into a Client Component draws React's missing-key warning on
+ * every render, because it is not a child rendered in place.
  *
  * THE INTERACTIVE HALF IS ONE CLIENT COMPONENT (`ResultWorkspace`), and the
  * split is where it is for a reason rather than by taste: [Re-score] has to move
@@ -84,6 +96,23 @@ export default async function ApplicationDetailPage({
    * decide it. The REVISION prompt keeps the narrower corpus, because it asks a
    * different question: what the writer could honestly reach for.
    */
+  /**
+   * WHICH MODEL WROTE THIS APPLICATION'S DRAFTS (v2.22).
+   *
+   * Read here rather than carried in an action's response, so it survives a
+   * reload: a user coming back to a resume should still be able to see what
+   * produced it. Through the DAL under their own session, like every other read
+   * on this page — `llm_calls` already records the model that actually served and
+   * has carried the application id since v2.16, so this needs no new column.
+   *
+   * It is the reason a fallback is now visible in the PRODUCT and not only on
+   * `/quality`: owner testing found every generate call served by
+   * `google/gemini-2.5-flash` because the configured Sonnet slug is blocked by a
+   * guardrail on the provider account, and `models: [primary, fallback]` routing
+   * answers that by quietly using the second entry.
+   */
+  const provenance = generationProvenance(await listGenerateCallsForApplication(application.id));
+
   const opening = openingVersion(versions);
   const judgeTerms = partitionMissingHonest(
     opening?.judge?.keywordCoverage.missingHonest ?? [],
@@ -119,6 +148,8 @@ export default async function ApplicationDetailPage({
           sourceIsBase={application.resume_source === 'career_base'}
           versions={versions}
           judgeTerms={judgeTerms}
+          notes={application.notes}
+          provenance={provenance}
         />
       ) : (
         /* Rail 280 px beside the content at 1280; stacked at 375 (Block E). */
@@ -135,6 +166,14 @@ export default async function ApplicationDetailPage({
               </p>
               <RerunScan applicationId={application.id} />
             </div>
+            {/*
+              Notes belong to the APPLICATION and not to the analysis, so they
+              render in this state too — a draft whose AI step failed is still an
+              application the user takes notes on. Same place in the rail as in
+              the analysed state (v2.20), so the field does not move between two
+              screens the user reaches from the same list.
+            */}
+            <NotesForm applicationId={application.id} notes={application.notes} />
           </div>
 
           {/*
@@ -168,14 +207,6 @@ export default async function ApplicationDetailPage({
         </div>
       )}
 
-      {/*
-        Notes belong to the application, not to the analysis, so they render in
-        both states — a draft whose AI step failed is still an application the
-        user takes notes on.
-      */}
-      <div className="lg:max-w-[280px]">
-        <NotesForm applicationId={application.id} notes={application.notes} />
-      </div>
     </section>
   );
 }

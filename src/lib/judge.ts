@@ -252,3 +252,66 @@ export function judgeIssueCounts(report: Rubric | null): {
     quality: report.grounding.violations.length + weakCriteria(report).length,
   };
 }
+
+/**
+ * Two lists of version rows, merged into one NEWEST-FIRST list with no duplicates.
+ *
+ * Needed by the REGENERATE action (SPEC v2.20). A run's 200 body carries only the
+ * rows that run wrote, and the client used to take them as the whole list —
+ * correct while a generate could only happen on an empty history, and wrong the
+ * moment one can happen on top of five earlier versions: the list would lose
+ * every older row until the next server render landed.
+ *
+ * NEWEST FIRST, because that is the order `listResumeVersions` returns and the
+ * order the version list renders. The response's own array is oldest-first
+ * (`[original, revision]`), so taking it verbatim also displayed one run's pair
+ * upside down relative to every other render — a pre-existing inconsistency this
+ * closes as a consequence rather than as its purpose.
+ *
+ * INCOMING WINS a collision by id: it is the fresher read of the same row.
+ *
+ * The sort is stable and `incoming` is REVERSED into the input, so two rows
+ * sharing a `created_at` keep the response's pair in newest-first order —
+ * `ai_revision` ahead of `ai`. That is the order `openingVersion` needs to make
+ * its comparison at all, and it is a stated dependency there for the same
+ * reason: the two inserts are separate transactions with distinct `now()`
+ * values, so the tie is a defensive case rather than an expected one.
+ */
+export function mergeVersionsNewestFirst<T extends { id: string; created_at: string }>(
+  existing: readonly T[],
+  incoming: readonly T[],
+): T[] {
+  const incomingIds = new Set(incoming.map((version) => version.id));
+  const merged = [
+    ...[...incoming].reverse(),
+    ...existing.filter((version) => !incomingIds.has(version.id)),
+  ];
+  return merged.sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+/**
+ * The newest version that actually carries a reviewer's report.
+ *
+ * WHY THE RAIL NEEDS ITS OWN ANSWER, and why it is not `openingVersion`. The
+ * category bars read "ATS format — Not checked yet" and "Quality — Not checked
+ * yet" from a null report, and they were reading the report of the version the
+ * EDITOR opens with. That version can legitimately have none: the export path
+ * appends a `source='user'` row with `judge: null`, and a run whose judge step
+ * was refused by rule B7 stores one too. So the screen ended up asserting that
+ * the check had not run, three inches above a version list showing the verdicts
+ * of the runs that had — two parts of one screen disagreeing about the same
+ * fact, which [Regenerate] made easy to reach by multiplying the rows.
+ *
+ * "Not checked yet" now means what it says: NO version of this application has
+ * ever been judged. When one has, the bars show that measurement, and the rail
+ * says which version it came from whenever that is not the newest text — the
+ * bars must never be read as a measurement of a document nobody measured.
+ *
+ * Newest-first input, which is what both the DAL and `mergeVersionsNewestFirst`
+ * produce, so this is the first match rather than a sort.
+ */
+export function newestJudgedVersion<T extends { judge: Rubric | null }>(
+  versionsNewestFirst: readonly T[],
+): T | null {
+  return versionsNewestFirst.find((version) => version.judge !== null) ?? null;
+}

@@ -649,6 +649,38 @@ export const RESULT = {
    * explaining which of the two the reader is looking at.
    */
   revisionNotBetter: 'The rewrite did not improve on the first draft, so this is the first draft.',
+  /**
+   * WHICH MODEL WROTE THIS (v2.22, from the owner's first use of /quality).
+   *
+   * Every generate call in the log had been served by `google/gemini-2.5-flash`
+   * with `fallback_used = true`: the configured Sonnet slug is blocked by a
+   * guardrail on the provider account, and `models: [primary, fallback]` routing
+   * answers a blocked primary by quietly using the second entry. So the resume on
+   * screen had been written by a different model than the one this app asks for,
+   * for a whole phase, and nothing said so anywhere a user would look.
+   *
+   * A NEUTRAL LINE IN THE NORMAL CASE AND A WARNING IN THE OTHER, because the
+   * fact is worth stating either way: a user who wants to know what produced
+   * their resume should not have to open a dashboard, and "written by the model
+   * we intended" is the sentence that makes the warning legible when it appears.
+   *
+   * IT SPEAKS ABOUT THE APPLICATION'S GENERATIONS, not about one version.
+   * `resume_versions` carries no model column and adding one would be a
+   * migration; `llm_calls` carries the model that served plus the application id.
+   * The wording is therefore "the most recent draft" rather than "this text",
+   * which is exactly what the data supports.
+   */
+  writtenBy: (model: string) => `Most recent draft written by ${model}.`,
+  writtenByFallback: (model: string) =>
+    `Most recent draft written by ${model} — the FALLBACK model, not the one this app asks for. The requested model is not being served, so this draft was written by a different one than intended.`,
+  /**
+   * Said only when EVERY generation on this application fell back, which is not
+   * a passing outage but a configuration that will keep happening. It names
+   * where the counts are without making the user go there to learn the fact.
+   */
+  writtenByFallbackAlways:
+    'This has happened on every generation for this scan. Quality has the per-step counts.',
+
   versionsHeading: 'Versions',
   versionLabel: { ai: 'AI draft', ai_revision: 'AI revision', user: 'Your edit' },
   /**
@@ -670,6 +702,118 @@ export const RESULT = {
   rescoredLabel: 'Live score for the text in the editor — not saved.',
   rescoredRevert: 'Show the original scan',
   rescoreFailed: 'Could not re-score — try again.',
+
+  /**
+   * The category bars show the newest JUDGED version, and this names which one
+   * when that is not the newest text (v2.22).
+   *
+   * The bars used to read the report of the version the editor opens with, which
+   * can legitimately have none — the export path appends a `judge: null` row, and
+   * so does a run whose judge step was refused. The screen then said "Not checked
+   * yet" directly above a version list showing the verdicts of the runs that HAD
+   * been checked. Showing the newest real measurement fixes the contradiction and
+   * creates a second duty: the bars must not be read as a measurement of a
+   * document nobody measured, so they say whose they are.
+   */
+  judgedVersionLabel: (label: string) =>
+    `Checked on your ${label} — newer text has not been checked.`,
+
+  /**
+   * A RUN THAT CHANGED NOTHING STILL HAS TO REPORT ITSELF (SPEC v2.20, owner
+   * feedback). Re-scoring text nobody edited returns the score it returned
+   * before, the ring does not move, and the screen was indistinguishable from a
+   * button that did nothing — which is the same defect the busy indicator fixes
+   * at the other end of the request. An unchanged measurement is a RESULT, and
+   * the number is named so the user can see which one it is.
+   */
+  /**
+   * A FIRST re-score names its reading and draws no arrow. The stored scan score
+   * measured the career base and this one measures the editor's text, and SPEC
+   * v2.16 note 13 is explicit that the two are not comparable — so a delta
+   * against it would attribute to the user's edit a difference that is partly
+   * the corpus.
+   */
+  rescoredFirst: (score: string) =>
+    `Re-scored — the text in the editor reads ${score}. Re-score again after an edit to see what moved.`,
+  /** Two readings of the same corpus, so "unchanged" is a measurement. */
+  rescoredUnchanged: (score: string) =>
+    `Re-scored — still ${score}, unchanged since your last re-score.`,
+  rescoredChanged: (from: string, to: string) =>
+    `Re-scored — ${from} → ${to} since your last re-score.`,
+  /**
+   * The quality check finished. Said out loud for the same reason: the card
+   * below may come back with the same four scores it had, and a screen that
+   * looks identical after a paid call reads as a click that missed.
+   */
+  qualityChecked: 'Quality check complete — the card below is the new verdict.',
+
+  /**
+   * REGENERATE (SPEC v2.20, from the owner's live use).
+   *
+   * Block E hides [Generate tailored resume] once a version exists, which left a
+   * user who changes their name, fills in their profile, or simply wants a second
+   * attempt locked to the first text forever. This is the way back — and it is
+   * METERED, so it says what it costs BEFORE it runs and asks once, rather than
+   * being a button a stray click can spend money on.
+   *
+   * IT APPENDS. `resume_versions` is append-only by design, so a regenerate adds
+   * to the history and replaces nothing; the dialog says so, because a user who
+   * thinks they are about to lose their current text will not press it.
+   */
+  regenerate: 'Regenerate',
+  regenerating: 'Regenerating',
+  regenerateDialogTitle: 'Write another resume?',
+  regenerateDialogBody:
+    'This writes a new resume from your career base and has the reviewer check it. Your current version is kept — every version stays in the history below.',
+  regenerateDialogCost:
+    'It costs two AI calls, or four if the reviewer asks for a rewrite.',
+  regenerateConfirm: 'Write another',
+  regenerateCancel: 'Cancel',
+
+  /**
+   * ONE LINE PER ACTION, saying what it does and that it costs a model call
+   * (SPEC v2.20, from the owner's live use: the three buttons gave no clue what
+   * they would do or what they would spend).
+   *
+   * THE COSTS ARE STATED IN THE UNITS THE APP ACTUALLY SPENDS, which is why
+   * [Re-score] does not say "one AI call" and stop there. It makes no chat call
+   * at all — rule B7 excludes embeddings by definition and rule B7a exists
+   * precisely because that made it the one metered path with no ceiling — so
+   * copy that priced it like a generate would be wrong in the user's favour on
+   * the daily limit and wrong in the app's favour on what it does.
+   *
+   * [Download .docx] gets a line too even though it spends nothing, because the
+   * absence of one in a row of three annotated buttons reads as an omission
+   * rather than as "this one is free". Its line says what it saves, which is the
+   * part of it a user does not expect.
+   */
+  generateHelp:
+    'Writes a resume from your career base and has the reviewer check it. Costs two AI calls, or four with a rewrite.',
+  /**
+   * ITS OWN LINE, not `generateHelp` reused. The two actions cost the same and do
+   * the same thing to the same corpus, but only one of them is happening to a
+   * screen that already HAS a resume on it — and the fact a reader needs there is
+   * what happens to the text in front of them, which "Writes a resume…" does not
+   * answer.
+   */
+  regenerateHelp:
+    'Writes another resume from your career base and has it checked. Your current version is kept. Costs two AI calls, or four with a rewrite.',
+  /**
+   * IT IS NOT "ONE AI CALL", and the first version of this line said so — which
+   * is the exact sentence the paragraph above forbids, shipped by the copy it
+   * was written to constrain. A re-score makes NO chat call: it re-embeds the
+   * requirements and the editor's text, which is two paid embedding requests on
+   * a measured run, and it is counted against rule B7a's separate ceiling rather
+   * than against rule B7's 50. A user told "one AI call" would read forty
+   * re-scores as forty of their fifty daily calls, and be wrong in both
+   * directions at once.
+   */
+  rescoreHelp:
+    'Re-measures the match against the text in the editor. Costs a paid AI call — no writing, just re-reading your text — with its own daily limit, and saves nothing.',
+  checkQualityHelp:
+    'Asks the reviewer for a fresh verdict on the text in the editor. Costs one AI call and saves the text as a version.',
+  downloadHelp:
+    'Builds the .docx from the text in the editor and saves it as a version. No AI call.',
   /**
    * A re-score matches the requirements against the resume in the EDITOR, not
    * against the career base, so the "Best match" column names the user's own
@@ -695,6 +839,28 @@ export const RESULT = {
    * silent would let a resume reach an employer with "[YOUR NAME]" at the top
    * because nobody mentioned it.
    */
+  /**
+   * THE EXPORTED FILE HAS NO CONTACT HEADER (v2.20), which is reachable and was
+   * silent. `withContactHeader` runs during GENERATION, so a resume written
+   * before the contact details were saved has no header block — and the export
+   * writes the editor's text verbatim. The one thing migration 005 exists to fix
+   * would then stay broken for every application the user already had, with the
+   * download looking finished.
+   *
+   * A WARNING AND NOT A REFUSAL, exactly like the name placeholder beside it: the
+   * file is the user's and the app does not decide what they may send. It names
+   * the way out, because [Regenerate] is not an obvious answer to "my phone
+   * number is missing".
+   */
+  /**
+   * IT SAYS WHAT IT DETECTED, not what it guesses caused it. The first version
+   * said the resume "was written before your contact details were saved", which
+   * the export cannot know — a user who deleted the header, or who edited it
+   * beyond recognition, would be told a story about their own document. What the
+   * check actually establishes is that none of the saved values is in the text.
+   */
+  exportedWithoutContacts:
+    'Downloaded — but none of your saved contact details is in this resume, so an employer has no way to reply to it. Add them in the editor, or regenerate.',
   exportedWithPlaceholderName:
     'Downloaded — but the name line still reads [YOUR NAME]. Replace it, or save your name in Settings.',
   /** In the editor, where the placeholder is still on screen and still editable. */
@@ -755,8 +921,188 @@ export const APPLICATION_STATUS_ORDER = [
 ] as const;
 
 export const QUALITY = {
+  /**
+   * The observability dashboard (SPEC Block E, Block H item 7; built in v2.20).
+   *
+   * EVERY LABEL NAMES ITS ROWS, and that is a copy rule on this screen rather
+   * than a style preference. It is the product's own evidence that quality is
+   * MEASURED rather than asserted, so a figure a reader cannot trace back to a
+   * row is worse than no figure: it asks to be believed. Each caption therefore
+   * says which table the number was counted in and what its denominator was.
+   *
+   * A SHARE ALWAYS SHOWS ITS FRACTION. "33%" and "1 of 3 runs" are the same fact
+   * and only one of them is honest about how much is known, so the fraction is
+   * always rendered and the percentage is dropped below `SMALL_SAMPLE`
+   * observations, where it would imply precision nobody measured.
+   */
+  title: 'Quality',
+  lead: 'Every number here is counted from rows this app already stores: the AI-call log and the reviewer verdicts saved with each resume version. Nothing on this screen is estimated.',
   empty: 'No AI calls yet.',
+  emptyHint: 'Run a scan and generate a resume — this screen fills in from the rows that run writes.',
   loadFailed: "Couldn't load metrics.",
+
+  /** The window the totals are computed over, said out loud. */
+  windowNote: (rows: number) => `Counted over the ${formatCount(rows)} most recent AI calls.`,
+  windowFull: (rows: number) =>
+    `Counted over the ${formatCount(rows)} most recent AI calls — the ceiling this screen reads, so calls older than those are not included in the totals above.`,
+  versionWindowNote: (rows: number) =>
+    `Counted over the ${formatCount(rows)} most recent resume versions.`,
+  /**
+   * The version window has to say it is full for the same reason the call window
+   * does. It was missing, and the asymmetry mattered more here: this read is
+   * newest-first, so truncation cuts the OLDEST rows, and a run whose draft fell
+   * outside the window while its rewrite stayed inside would have gone missing
+   * from every bucket with nothing on screen to say a row had been dropped.
+   */
+  versionWindowFull: (rows: number) =>
+    `Counted over the ${formatCount(rows)} most recent resume versions — the ceiling this screen reads, so older runs are not included.`,
+
+  /** Said wherever a share rests on too few observations to be read as a rate. */
+  thinSample: 'Too few runs to read as a rate — the fraction is the whole of it.',
+  nothingMeasured: 'Nothing measured yet',
+
+  tileTotalCost: 'Total AI cost',
+  tileTotalCostSource: (calls: number) =>
+    `Sum of cost_usd_micro over ${formatCount(calls)} logged call${calls === 1 ? '' : 's'}.`,
+  /**
+   * "COST PER APPLICATION", and not "per run" — which is what this tile said
+   * first, over a denominator that could not mean that.
+   *
+   * The figure divides by DISTINCT APPLICATION IDS, and since [Regenerate] one
+   * application can hold several AI runs: the tile would have read "1 run" with
+   * three generations' cost in it, eight inches above a section correctly saying
+   * "3 AI runs". Two quantities under one word, on the screen whose one rule is
+   * traceability. The denominator is what it is — an application is what an
+   * `llm_calls` row can be attributed to, and a `resume_versions` run is not
+   * something a call row names — so the LABEL moved to match the arithmetic
+   * rather than the arithmetic being bent to match the label.
+   */
+  tileCostPerApplication: 'Cost per application',
+  tileCostPerApplicationSource: (cost: string, applications: number) =>
+    `${cost} of call cost carries an application id, divided by the ${formatCount(applications)} application${applications === 1 ? '' : 's'} that made calls. An application may hold several AI runs, so this is not the cost of one generation.`,
+  tileApplications: 'Applications with AI calls',
+  tileApplicationsSource:
+    'Distinct application ids in the AI-call log — one per posting you scanned, whatever it cost. Not the same as the AI runs counted below.',
+  tileUnattributed: 'Not attributable to a run',
+  tileUnattributedSource:
+    'Calls with no application id: resume imports and career-base indexing. Real spend, and not part of any one run — so it is stated rather than averaged into the figure above.',
+  /**
+   * THE TWO DAILY CAPS, SHOWN AS THE COUNTERS THEMSELVES.
+   *
+   * Both figures come from the queries rules B7 and B7a actually use, not from a
+   * second count of the same rolling window — so the tile shows the number the
+   * cap compares against. Two implementations of one window is how a dashboard
+   * comes to disagree with the rule it illustrates.
+   */
+  tileChatCalls: 'Chat calls in the last 24 hours',
+  tileChatCallsSource: (limit: number) =>
+    `Rule B7's own counter: import, parse, generate and quality-check rows in the rolling 24 hours, against its cap of ${limit}.`,
+  tileRescoreCalls: 'Re-score calls in the last 24 hours',
+  tileRescoreCallsSource: (limit: number) =>
+    `Rule B7a's own counter: rescore embedding requests in the rolling 24 hours, against its cap of ${limit}. Embeddings are excluded from rule B7 by definition, which is why they have a ceiling of their own.`,
+  tileFallback: 'Served by the fallback model',
+  tileFallbackSource: 'Rows with fallback_used = true.',
+  tileFailed: 'Calls that failed',
+  /**
+   * NOT "billed like any other request", which the first version said. A request
+   * that never reached the service is logged with `cost_usd_micro = 0` and
+   * `cost_known = true`, because nothing was spent and that is known — so
+   * claiming every failure was billed would be this screen making the inverse of
+   * the mistake `cost_known` exists to prevent.
+   */
+  tileFailedSource:
+    'Rows with ok = false. Each one is logged; whether it cost anything depends on how far it got, and its own cost column says which.',
+  tileUnknownPricing: 'Calls with unknown pricing',
+  tileUnknownPricingSource:
+    'Rows with cost_known = false: the serving model had no price entry, so their cost is 0 in the total above and is genuinely unknown rather than free.',
+  tileTokens: 'Tokens in / out',
+  tileTokensSource: 'Sums of tokens_in and tokens_out over the same rows.',
+
+  /** The rubric outcome of each AI run. */
+  rubricHeading: 'What the reviewer said about each AI run',
+  rubricLead:
+    'One run is one generated draft plus the single rewrite rule B3 allows. Counted from the resume versions themselves: an ai row, and the ai_revision row that follows it.',
+  rubricRuns: (runs: number) => `${formatCount(runs)} AI run${runs === 1 ? '' : 's'}`,
+  outcomeApprovedFirst: 'Passed the rubric on the first attempt',
+  outcomeRevisedApproved: 'Needed the one rewrite, and passed after it',
+  outcomeRevisedStillRevise: 'Needed the rewrite and still failed after it',
+  outcomeReviseNoRewrite: 'Refused, with no rewrite attempted',
+  outcomeReviseNoRewriteHint:
+    'The reviewer refused the draft and either listed nothing specific to act on, or the daily cap or the service refused the rewrite step.',
+  outcomeNotChecked: 'The quality check did not run',
+  outcomeNotCheckedHint:
+    'No reviewer verdict is stored for the version that was kept. Never counted as a pass or a failure — an unmeasured resume is not a measured one.',
+
+  /** The score distribution, per criterion. */
+  distributionHeading: 'Score distribution, per rubric criterion',
+  distributionLead:
+    'Every stored reviewer verdict, including the ones you asked for with [Check quality]. Each row counts how many versions scored 1 to 5 on that criterion.',
+  distributionJudged: (judged: number) =>
+    `${formatCount(judged)} judged version${judged === 1 ? '' : 's'}`,
+  colCriterion: 'Criterion',
+  colMean: 'Mean',
+  colScore: (score: number) => `${score}`,
+  groundingRow: 'Grounding (a gate, not a score)',
+  groundingTally: (passed: number, failed: number) =>
+    `${formatCount(passed)} passed · ${formatCount(failed)} failed`,
+  groundingHint:
+    'Rule B2 makes a grounding failure uncompensatable, so it is counted and never averaged in with the three scored criteria.',
+
+  /** Cost by step. */
+  stepsHeading: 'Cost by pipeline step',
+  stepsLead: 'The same rows, grouped by their step column.',
+  colStep: 'Step',
+  colCalls: 'Calls',
+  colCost: 'Cost',
+  colMeanLatency: 'Mean latency',
+  colFailedShort: 'Failed',
+  colUnknownPricing: 'Unpriced',
+  colFallback: 'Fallback',
+  colModels: 'Served by',
+  /**
+   * THE APP SAYS IT, rather than leaving it to be read off a column (v2.22).
+   *
+   * A step at 100% fallback is not a degraded service, it is a configured model
+   * that is never served — and the blended total across all steps reads as a mild
+   * fraction and invites no question. That is how the generate step spent a whole
+   * phase being written by the fallback. Stated as the count first, because the
+   * count is what makes it a condition rather than a coincidence.
+   */
+  stepAlwaysFallback: (step: string, calls: number) =>
+    `All ${formatCount(calls)} ${step} call${calls === 1 ? '' : 's'} were served by the fallback model. The model this app asks for is not being served — check the provider account's model guardrails.`,
+
+  /** Block E's table of the last 50 calls. */
+  callsHeading: 'Last 50 AI calls',
+  /**
+   * IT IS NOT "the rows every figure above is counted from", which is what this
+   * line said first. Three independent reads back this screen: the AI-call
+   * window for the tiles and the step table, a `resume_versions` window for the
+   * rubric sections, and this table's own newest-50 — and the DAL deliberately
+   * lets the first and the third differ. On the one screen whose stated rule is
+   * that every number is traceable to a row, a caption claiming the wrong rows
+   * was the untraceable claim.
+   */
+  callsLead:
+    'The newest 50 of the AI calls the figures at the top are counted from. The rubric sections above come from your saved resume versions instead. Metadata only — no resume or vacancy text is ever logged.',
+  colTime: 'Time',
+  colModel: 'Model',
+  colTokens: 'Tokens in / out',
+  colLatency: 'Latency',
+  colOk: 'Result',
+  okYes: 'ok',
+  okNo: 'failed',
+  fallbackBadge: 'fallback',
+  unpricedBadge: 'unpriced',
+} as const;
+
+/** The `llm_calls.step` values, in pipeline order, with the words a user reads. */
+export const LLM_STEP_LABEL = {
+  import_resume: 'Import resume',
+  parse_vacancy: 'Parse vacancy',
+  embed: 'Embed',
+  generate: 'Generate',
+  judge: 'Quality check',
+  rescore: 'Re-score',
 } as const;
 
 export const SETTINGS = {
@@ -800,6 +1146,68 @@ export const SETTINGS = {
    * verified the session — but a Server Action is a public endpoint.
    */
   displayNameSignedOut: 'Your session has expired — sign in again to save your name.',
+
+  /**
+   * CONTACT DETAILS (SPEC v2.20, migration 005).
+   *
+   * The words earn the asking the same way the name field's do: they say what the
+   * fields are FOR — a document a recruiter has to be able to reply to — and they
+   * say optional in prose as well as in the schema, because the app genuinely
+   * works with every one of them empty.
+   *
+   * ONE FIELD PER LINE OF THE HEADER, and no field the app cannot use. There is
+   * no second email, no address, no date of birth: a resume tool collecting
+   * personal data it does not print is collecting it for nothing.
+   */
+  contactsHeading: 'Contact details',
+  contactsHint:
+    'Optional. These become the header block of every resume you generate, so an employer can reply to it. Leave any of them empty and that line is left out.',
+  contactEmailLabel: 'Contact email',
+  contactEmailHint:
+    'The address you want to be contacted on. It does not have to be the one you sign in with.',
+  contactEmailPlaceholder: 'e.g. mira.steinberg@example.com',
+  phoneLabel: 'Phone',
+  phonePlaceholder: 'e.g. +49 40 123456',
+  locationLabel: 'Location',
+  locationPlaceholder: 'e.g. Hamburg, Germany',
+  linkedinLabel: 'LinkedIn URL',
+  githubLabel: 'GitHub URL',
+  linkPlaceholder: 'https://…',
+  /** Said once, above both link fields, because it is one rule for both. */
+  linkHint: 'Links must start with https://.',
+  openToRemoteLabel: 'Open to remote work',
+  openToRemoteHint: 'Adds “Open to remote” beside your location on the resume.',
+  contactsSave: 'Save contact details',
+  contactsSaving: 'Saving…',
+  contactsSaved: 'Contact details saved.',
+  contactsCleared: 'Contact details removed.',
+  contactsFailed: 'Could not save your contact details — try again.',
+  /**
+   * The MIGRATION is not applied. Its own outcome, because "try again" is advice
+   * that cannot work: the columns do not exist yet, so every save fails
+   * identically until the owner runs `005_profile_contacts.sql`. Telling a user
+   * to retry a thing guaranteed to refuse is the same defect rule B7a's refusal
+   * copy was fixed for.
+   */
+  contactsNotMigrated:
+    'Contact details cannot be saved yet — this part of the app is still being set up. Your name and everything else still work.',
+  /**
+   * "Saving will still work" was too strong: this line fires because a database
+   * READ failed, and if the cause is the database being unreachable the write
+   * will fail too. What is true is that the write is a separate round trip, so
+   * saving is worth trying — and the form will say what happened either way.
+   */
+  contactsLoadFailed:
+    'Could not load your saved contact details, so the fields below are blank — they may not be empty. Saving is a separate step and is still worth trying.',
+  contactsSignedOut: 'Your session has expired — sign in again to save your contact details.',
+  contactEmailInvalid: 'Enter a valid email address, or leave it empty.',
+  contactEmailTooLong: 'An email address is limited to 254 characters.',
+  phoneTooShort: 'That is too short to be a phone number — or leave it empty.',
+  phoneTooLong: 'A phone number is limited to 40 characters.',
+  linkTooShort: 'That is too short to be a link — or leave it empty.',
+  locationTooLong: 'A location is limited to 120 characters.',
+  linkNotHttps: 'A link must start with https:// — or leave it empty.',
+  linkTooLong: 'A link is limited to 200 characters.',
 
   dangerZone: 'Danger zone',
   deleteAccount: 'Delete account and data',

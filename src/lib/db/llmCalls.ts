@@ -14,30 +14,18 @@ import type { LlmCall } from '@/lib/db/types';
  * (rule B8). Metadata only: never log resume or vacancy CONTENT.
  */
 
-/** SPEC rule B7: 50 non-embedding calls per user per rolling 24 h. */
-export const DAILY_CALL_LIMIT = 50;
+/**
+ * THE CEILINGS LIVE IN `lib/budget.ts`, THE QUERIES LIVE HERE (backlog p4-30).
+ *
+ * Rule B7's 50 and rule B7a's 100 used to be declared in this file, which
+ * imports `server-only` — so check.mjs R6 kept every unit test away from them and
+ * the two numbers that decide how much money a day of clicking can spend were
+ * untestable by construction. They moved to `lib/budget.ts`, which is pure and
+ * already the home of the metered-request arithmetic; a query needs a database
+ * client and stays.
+ */
 const CHAT_STEPS = ['import_resume', 'parse_vacancy', 'generate', 'judge'] as const;
 
-/**
- * SPEC rule B7a (v2.18): the RE-SCORE ceiling, in `rescore` rows per rolling 24 h.
- *
- * Rule B7 excludes embeddings by definition, and for every embedding spend the
- * app had until Phase 4 that was right: indexing is a side effect of a write
- * already bounded by rule B9's item cap and skipped when nothing changed, and a
- * scan's embeddings are a limb of a request whose chat call B7 already capped.
- * `/rescore` is neither. It makes NO chat call — that is its whole selling point
- * — so it passed through the only ledger in the app, and its entire purpose is a
- * spend the user repeats one click at a time. The client-side one-click ref is
- * not a fence: a signed-in caller can POST it in a loop.
- *
- * COUNTED IN REQUESTS, NOT CLICKS, because the request is what costs money.
- * `embedFor` splits at EMBEDDING_BATCH_SIZE, so one re-score is 2 rows on a
- * measured run and up to 7 on the largest input rule B1 and the chunker permit
- * (200 requirements + 200 resume units). 100 rows is therefore ~50 typical
- * re-scores a day — deliberately the same order as B7's 50 chat calls, since a
- * re-score is one user action of the same kind.
- */
-export const DAILY_RESCORE_LIMIT = 100;
 const RESCORE_STEPS = ['rescore'] as const;
 
 export async function listRecentLlmCalls(limit = 50): Promise<LlmCall[]> {
@@ -45,6 +33,81 @@ export async function listRecentLlmCalls(limit = 50): Promise<LlmCall[]> {
   const { data, error } = await supabase
     .from('llm_calls')
     .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as LlmCall[];
+}
+
+/**
+ * The window /quality computes over (SPEC v2.20).
+ *
+ * A CEILING AND NOT A FILTER, and the screen states it rather than hiding it.
+ * `llm_calls` has no aggregate function and adding one would be a SQL function
+ * in a migration this phase does not make, so the totals are summed in process
+ * over the rows read — which means there has to be a bound, and a bound means
+ * the words "total cost" are only true of what was read. Rule B7 caps a user at
+ * 50 chat calls a day, so 1,000 rows is roughly three weeks of heavy use; when
+ * the ceiling is actually reached the page says the older calls are not counted,
+ * because a total that quietly stops at a limit is exactly the untraceable
+ * figure that screen exists not to print.
+ */
+export const QUALITY_CALL_WINDOW = 1_000;
+
+/**
+ * Every recent call, newest first, for the /quality dashboard.
+ *
+ * RLS scopes it to the caller, and there is no user id parameter here for the
+ * same reason there is none anywhere else in this DAL: the identity comes from
+ * the session the client carries, so this function has no vocabulary to ask for
+ * another account's rows.
+ *
+ * Separate from `listRecentLlmCalls`, which answers Block E's "last 50" table
+ * and is a different question with a different bound. One function taking a
+ * limit would make the table and the totals share a number that must be allowed
+ * to differ.
+ */
+export async function listLlmCallsForQuality(
+  limit = QUALITY_CALL_WINDOW,
+): Promise<LlmCall[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('llm_calls')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as LlmCall[];
+}
+
+/**
+ * The `generate` rows for ONE application, newest first (v2.22).
+ *
+ * So the result screen can say which model wrote the resume, and say it loudly
+ * when that model was the fallback. `llm_calls` already records the model that
+ * actually served and has carried an `application_id` on every pipeline row
+ * since v2.16, so this needs no new column and no migration — it is a read of
+ * evidence the app was already keeping and only showing on `/quality`.
+ *
+ * BOUNDED, because a regenerate adds rows and this is rendered on every visit to
+ * the screen. The bound is generous relative to what the copy uses (the newest
+ * row, and whether every row fell back), and small enough that the read stays a
+ * single indexed lookup.
+ *
+ * RLS scopes it to the caller, and there is no user id parameter for the same
+ * reason there is none anywhere else in this DAL: the identity comes from the
+ * session. The application id is not an identity — a wrong one yields no rows.
+ */
+export async function listGenerateCallsForApplication(
+  applicationId: string,
+  limit = 50,
+): Promise<LlmCall[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('llm_calls')
+    .select('*')
+    .eq('application_id', applicationId)
+    .eq('step', 'generate')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw error;

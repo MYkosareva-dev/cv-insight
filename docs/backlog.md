@@ -207,3 +207,64 @@ Not an open question. The decision is made and recorded here so Phase 5 starts w
 rather than re-litigating it.
 
 - **RULED p4-30** — **`DAILY_CALL_LIMIT` and `DAILY_RESCORE_LIMIT` both move to `lib/budget.ts`, as the first item of Phase 5.** Both ceilings currently live in `src/lib/db/llmCalls.ts`, which imports `server-only`, and check.mjs R6 keeps `tests/` away from it — so rule B7's 50 and rule B7a's 100 are untestable by construction, exactly as `MAX_CHAT_REQUESTS_PER_STEP` was until backlog `m-4` moved it. That precedent is the whole argument: the untestable file is where the arithmetic bug hides, `m-4` was raised because the retry budget's number could not be pinned, and `tests/unit/budget.test.mjs` now pins it in both orders of exception. B7a arrived in v2.18 with the same defect and it was raised in the same breath as shipping it (`docs/reviews/phase-4.md`, the hand-over after rule B7a). The two ceilings were deliberately kept TOGETHER in the DAL rather than split so one became testable and the other did not; moving both is what closes it. `lib/budget.ts` is already the home for metered-request arithmetic, is not `server-only`, and reads no environment — so the move is a re-export plus a test, not a redesign. What the tests should pin: the rolling-window comparison at the boundary (committed + ledger vs the ceiling, at limit-1, limit and limit+1) for B7, and the same for B7a's committed-rows-only check, since neither boundary has ever been asserted.
+
+## Phase 5 — from the ai-architect diff gate (2026-09-04)
+
+Its BLOCKER and every MAJOR is fixed on this branch, and SPEC v2.20 declares what
+each fix changed; the report is `docs/reviews/phase-5-architect-diff.md`. The
+`p5-` ids are this gate's. Two of the MINORs and two NITs are what is left.
+
+- **MINOR p5-1** — a stored contact URL is one more author of the text P3 reads inside its `<resume>` block, and the only bound on it is `MAX_LINK_CHARS`. Angle brackets are now refused at the Zod boundary (`src/lib/validation.ts`), so the block cannot be closed early, but a 200-character path of prose still reaches the prompt as data — the same pre-existing class backlog `n-6` records for a pasted CV, where the tagged block plus output validation is the declared containment. Decide whether a `hostname`/`pathname`-shaped restriction is worth it, or state in one place that the tagged block is the whole defence for every author of that region.
+- **MINOR p5-2** — `isHeading` in `src/lib/docx.ts` still bolds a one-field contact line: a profile whose only contact detail is a capitalised location produces one short all-caps line with no separator, no `@` and no `://`, which is indistinguishable in shape from a section heading. Same declared class as `ACME LOGISTICS` two comments up, and it cannot be closed by passing the header's identity down — the text this function reads is the text the USER edited, so the app no longer knows which lines it wrote. Needs either a heading word list (rejected, see the docblock) or a marker the editor would let a user delete.
+- **NIT p5-3** — `src/app/(app)/layout.tsx` justifies the footer privacy link with "Art. 12(1)", i.e. by an external requirement, which CLAUDE.md's Documentation voice rule forbids; SPEC Block E carries the same citation. Pre-existing and outside this branch's subject — worth one sweep of the repo for external attributions rather than a one-line edit here.
+- **NIT p5-4** — `RESULT.notesLabel` is both a heading and the textarea's `aria-label` in `src/components/applications/notes-form.tsx`, so the accessible name is duplicated in the tree the way `RESULT.editorLabel` was on the resume tab (which `tests/e2e/generate.spec.ts` already has a note about). Harmless for a reader, ambiguous for a locator; give the field a `htmlFor`/`id` pair and drop the `aria-label`.
+
+## Phase 5 — from the ai-code-reviewer PR round (2026-09-04)
+
+`docs/reviews/phase-5.md`, verdict REVISE with no blockers. M2–M5, m1, m4, m5 and
+n1 are fixed on this branch and SPEC v2.20 records what each fix changed.
+**M1 is CLOSED**: the owner applied `005_profile_contacts.sql`, the contact half of
+`tests/e2e/generate.spec.ts` stopped self-skipping, and the run is committed as
+`docs/eval/phase-5-e2e-run.txt` — which is also where A7's header block is now
+visible in a real generated resume. What is left:
+
+- **MINOR p5-5 (was m2)** — `localeCompare` is the comparator for ISO timestamps in `src/lib/quality.ts` and `src/lib/judge.ts`, and ICU ranks `…:00:00+00:00` AFTER `…:00:00.5+00:00`: PostgREST omits a zero fraction, so two rows in the same second can order backwards, misplacing a run's pair and `openingVersion`'s comparison. Plain `<` and `Date.parse` both order it correctly. ~1e-6 per row, and what makes it worth doing is that no test can currently see it — every fixture builds timestamps with `toISOString()` or a hand-written `Z` literal, i.e. a 3-digit fraction, which is a format the database never emits. Fix the comparator and seed a fixture in PostgREST's own shape.
+- **MINOR p5-6 (was m3)** — the cost half of the helper copy is exact on `rescoreHelp` and approximate on the other three: `checkQualityHelp` says "one AI call" for a path that is one embeddings request plus a judge step (up to 2 chat requests), `generateHelp` omits the run's one embeddings row, and `rescoreHelp` itself still says "a paid AI call" for what is 2–7 `rescore` rows. Every number is checkable against `/quality` now, which is exactly why the row of four should be priced by one rule rather than three.
+- **MINOR p5-7 (was m6)** — `withContactHeader`'s docblock says the first blank line is "the end of the name-and-title header", but P2 output shaped `NAME
+
+TITLE
+…` (a blank line after the name, which nothing forbids) makes the block land between the name and the target title — precisely the layout the comment says the design avoids. `tests/unit/resume-header.test.mjs` covers the two-line header and the no-blank-line case and not this one; decide whether to look past a single blank line or to narrow the claim, and assert whichever it is.
+- **NIT p5-8 (was n2)** — [Regenerate] has no request-count assertion, while SPEC v2.16 note 9's one-click-one-spend rule now covers five metered buttons and `tests/e2e/generate.spec.ts` witnesses it for [Generate] alone. The shared `inFlight` ref does cover it; nothing observes that for the most expensive button in the app.
+- **NIT p5-9 (was n3)** — `rescore()` in `src/components/applications/result-workspace.tsx` reads `shownScore`, a `const` declared below it. Correct today because the closure only runs after render, and a `ReferenceError` the moment anything calls it during one.
+- **NIT p5-10 (was n4)** — `QUALITY.rubricLead` describes a run as "an ai row, and the ai_revision row that follows it" and does not mention the orphan-rewrite rule `classifyRuns` now implements, so at a full window a reader reconciling the bucket total against `resume_versions` finds one run the caption cannot explain. The screen's own rule is that every figure names its rows.
+
+## Phase 5 — from the owner's contact-transfer decision (2026-09-04)
+
+The decision itself is done and declared in SPEC v2.21: the contact block reaches
+no model call, held by `ModelResumeText` and asserted in
+`tests/unit/resume-header.test.mjs`. What building it left open.
+
+- **MINOR p5-11** — `p5-6`'s cost-copy item is now wrong in a second way: `rescoreHelp` says "Costs a paid AI call", and a re-score's spend is embeddings only, which is exactly the distinction the same round drew for `/privacy` and `docs/openrouter-processing.md`. Price the row of four buttons by one rule that names the KIND of call as well as the count, since `/quality` now lets a user check every number.
+- **MINOR p5-12** — the strip is line-based, so a saved `location` of `Berlin` would remove a body line consisting only of the word `Berlin`. Reachable and harmless in practice (a resume line that is one city name and nothing else is a header line by any reading), and the alternative — redacting mid-sentence — is worse, which is why the scope is stated in `stripContactHeader`'s docblock and pinned by a test rather than fixed. Revisit only if a real resume loses a line to it.
+- **NIT p5-13** — `runGenerateWithJudge` still receives `contacts` and passes them on to `generateResume`, which no longer takes them; the spread makes it legal and it is dead weight. Thread the argument only to the two functions that use it (`judgeOrNull`'s defensive strip, and `withHeader`).
+
+## Phase 5 — from the first use of /quality (2026-09-04)
+
+Both findings are fixed on this branch and SPEC v2.22 declares them. One is not a
+code item at all, and it is the important one.
+
+- **OWNER ACTION, not a backlog item — the guardrail.** `anthropic/claude-sonnet-4.6` is blocked by a model guardrail on the `default` OpenRouter workspace, so every tailored resume is written by `google/gemini-2.5-flash`. Diagnosed, not guessed: requested alone the slug answers HTTP 404 with `failed_routing_step: "Filter by Guardrails"`, while `anthropic/claude-haiku-4.5` answers 200 on the same key. Lift it at https://openrouter.ai/workspaces/default/guardrails; the verbatim error and the consequence are recorded in `docs/openrouter-processing.md` as provider-account setting 4. Until then the rubric's grounding failures are a fact about Gemini Flash's output, not about P2 — **and no conclusion about prompt quality drawn since Phase 4 should be trusted**, which is the part worth re-reading the phase-4 and phase-5 reports with in mind.
+- **MINOR p5-14** — the "written by" line speaks about the APPLICATION's most recent generation, not about the version on screen, because `resume_versions` has no model column and `llm_calls` is per call. Accurate as worded, and one migration away from being per-version — which would also let `/quality` report the rubric outcome BY MODEL, i.e. answer "does the fallback actually fail grounding more often" with rows instead of an impression. Worth doing when the guardrail is lifted and both models have runs behind them.
+- **NIT p5-15** — `newestJudgedVersion` fixes the rail, and the JUDGE CARD still describes the version the editor opened with, which is correct (the card is about the text you are reading) but means the two can legitimately differ. The rail names whose measurement it shows; the card does not name that it is about the editor's text. One line there would close the last gap in the same class.
+
+## Phase 5 — from the guardrail being unliftable (2026-09-04)
+
+The generation model changed because the configured one is unreachable and the
+workspace is not the owner's. SPEC v2.23 declares it; the probe and the
+before/after are `docs/eval/generation-model-comparison.md`.
+
+> **CLOSED — CLAUDE.md's model list was amended by the owner (2026-09-04).** Its "AI model calls" section named `anthropic/claude-sonnet-4.6` as the generation model, and CLAUDE.md wins on conflict, so the rule book was naming a model the code does not use and this key cannot reach. The owner dictated the amendment: the generation slug is now `openai/gpt-5.4`, embeddings are named in that section for the first time, and the list carries a new rule — a model named there must be one verified to serve on the configured key, with the verification in `docs/openrouter-processing.md`. The replacement sentence this entry was holding is gone because it is no longer waiting: it is in the file.
+- **MAJOR p5-16 — grounding fails on the first draft in 3 of 3 runs, on BOTH models, so P2 is the remaining suspect.** The model change did not rescue it; it only made the single rewrite capable of converging (once in two). The next step is not another model: it is either a second fixture whose career base DOES cover the vacancy — which would separate "the writer over-claims" from "the corpus is thin", the same confound backlog `p3-14` records for the thresholds — or a P2 change measured against both. Nothing about prompt quality should be concluded from one deliberately under-covered case.
+- **MINOR p5-17** — the comparison ran on the same FIXTURE but a fresh account each time, so the application row differs. A true same-row comparison needs the generate model switchable per run rather than per deployment, which is a dev-only affordance nobody should ship as product surface. Worth building only if a second model comparison is ever run.
+- **NIT p5-18** — `MAX_TOKENS_BY_STEP.generate = 2500` was chosen for Sonnet. gpt-5.4 accepts `temperature` silently (it is not in its supported parameters) and billed 0 reasoning tokens at default effort, both verified — but a future OpenRouter default that turns reasoning on would spend that budget before any resume text, and the app would report a truncated draft rather than a refusal. If the generator stays a reasoning-capable model, send an explicit low reasoning effort rather than relying on a default.
+

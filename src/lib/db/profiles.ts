@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
 import type { Profile } from '@/lib/db/types';
+import { EMPTY_CONTACTS, type ResumeContacts, contactsOf } from '@/lib/resumeHeader';
 
 /**
  * DAL for `profiles` (SPEC v2.17, migration 004). Policies: select / insert /
@@ -119,4 +120,92 @@ export async function upsertDisplayName(
     .single();
   if (error) throw error;
   return data as Profile;
+}
+
+/**
+ * Save the caller's contact details (SPEC v2.20, migration 005).
+ *
+ * A SECOND WRITER RATHER THAN A WIDER ONE, and the reason is what each form can
+ * see. `upsertDisplayName` is given a name and nothing else; if it also wrote the
+ * contact columns it would have to write them as null, and saving a name from the
+ * Settings name field would silently erase a phone number the user typed into the
+ * field below it. Two forms, two writes, each touching only its own columns —
+ * which is what an upsert's UPDATE branch does when it is given a partial object.
+ *
+ * THE INSERT BRANCH IS WHY `display_name` IS ABSENT HERE RATHER THAN NULL. A user
+ * who saves contacts before ever saving a name has no row yet, so this upsert
+ * INSERTS one; a `display_name: null` in the payload would be indistinguishable
+ * from that, but on the UPDATE branch it would clear a stored name. Omitting the
+ * key leaves it to the column default on insert and untouched on update, which is
+ * the behaviour both branches need.
+ *
+ * `userId` comes from the caller's verified session, never from a form field. The
+ * policies would refuse a forged owner, but as a database error mapped to a 500
+ * rather than as something that cannot be expressed.
+ *
+ * IT THROWS WHEN THE MIGRATION IS NOT APPLIED, and the action above it turns that
+ * into its own sentence. Before `005_profile_contacts.sql` runs these columns do
+ * not exist, and the write is refused by PostgREST with `PGRST204` before any SQL
+ * runs — which is a true and useful failure, not something to swallow: the
+ * alternative is a form that accepts input and quietly keeps none of it. The
+ * action names both codes it acts on and why.
+ */
+export async function upsertContacts(
+  userId: string,
+  contacts: {
+    contactEmail: string | null;
+    phone: string | null;
+    location: string | null;
+    linkedinUrl: string | null;
+    githubUrl: string | null;
+    openToRemote: boolean;
+  },
+): Promise<Profile> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('profiles')
+    .upsert(
+      {
+        user_id: userId,
+        contact_email: contacts.contactEmail,
+        phone: contacts.phone,
+        location: contacts.location,
+        linkedin_url: contacts.linkedinUrl,
+        github_url: contacts.githubUrl,
+        open_to_remote: contacts.openToRemote,
+      },
+      { onConflict: 'user_id' },
+    )
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as Profile;
+}
+
+/**
+ * The caller's contact details, or none.
+ *
+ * THIS ONE NEVER THROWS, for the same reason `getDisplayName` does not: it is
+ * read by the GENERATION pipeline, and a run the user has already paid a Sonnet
+ * call and a Haiku call for must not be lost to a profile lookup. A failure
+ * degrades to "no contact details", which is a state the app handles honestly —
+ * the header block simply collapses, exactly as it does for a user who has filled
+ * nothing in.
+ *
+ * It is also what makes the un-applied-migration state legible rather than fatal:
+ * `select('*')` succeeds against a `profiles` table without the 005 columns and
+ * returns a row missing those keys, which `contactsOf` reads as empty. The
+ * Settings form — which does NOT swallow — is where the missing migration is
+ * reported, because that is where the feature lives.
+ */
+export async function getContacts(userId: string): Promise<ResumeContacts> {
+  try {
+    return contactsOf(await getProfile(userId));
+  } catch (err) {
+    // Metadata only: the message could carry an email address or a phone number.
+    console.error('[profiles] could not read the contact details; the header collapses', {
+      name: err instanceof Error ? err.name : typeof err,
+    });
+    return EMPTY_CONTACTS;
+  }
 }

@@ -74,6 +74,21 @@ async function signIn(page: Page, email: string, pw = password, settle = true) {
 }
 
 /**
+ * Sign out from wherever the browser currently is (SPEC v2.20).
+ *
+ * The control is an ICON in the top-right of the app shell now, not a labelled
+ * button on /settings — so this helper deliberately does NOT navigate first, and
+ * the three flows that used to `goto('/settings')` to reach it are the evidence
+ * that it is reachable from any member route. `aria-label` carries the same
+ * "Sign out" string the labelled button rendered, which is why the locator did
+ * not have to change.
+ */
+async function signOut(page: Page) {
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.waitForURL(/\/login$/);
+}
+
+/**
  * Every `set-cookie` for the Supabase session on a given response.
  * `headersArray()` is async — reading it synchronously silently yields a
  * Promise, not an array.
@@ -139,8 +154,18 @@ test.describe('auth', () => {
     await signUp(page, email);
     await expect(page).toHaveURL(/\/career$/);
 
-    await page.goto('/settings');
-    await page.getByRole('button', { name: 'Sign out' }).click();
+    /**
+     * IT IS IN THE SHELL, not on one screen (SPEC v2.20). Asserted on two member
+     * routes before it is used, because "moved to the app shell" is a claim about
+     * every screen and the previous version of this flow could only ever witness
+     * /settings.
+     */
+    for (const route of ['/scan', '/applications']) {
+      await page.goto(route);
+      await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+    }
+
+    await signOut(page);
     await expect(page).toHaveURL(/\/login$/);
 
     await signIn(page, email);
@@ -186,9 +211,7 @@ test.describe('auth', () => {
   test('wrong password shows the exact copy and no other outcome', async ({ page }) => {
     const email = uniqueEmail();
     await signUp(page, email);
-    await page.goto('/settings');
-    await page.getByRole('button', { name: 'Sign out' }).click();
-    await expect(page).toHaveURL(/\/login$/);
+    await signOut(page);
 
     await signIn(page, email, 'definitely-not-the-password', false);
     await expect(page.getByText(COPY.badCredentials)).toBeVisible();
@@ -249,9 +272,7 @@ test.describe('auth', () => {
   test('a duplicate email is reported as such', async ({ page }) => {
     const email = uniqueEmail();
     await signUp(page, email);
-    await page.goto('/settings');
-    await page.getByRole('button', { name: 'Sign out' }).click();
-    await page.waitForURL(/\/login$/);
+    await signOut(page);
 
     await signUp(page, email, false);
     await expect(page.getByText(COPY.emailTaken)).toBeVisible();
