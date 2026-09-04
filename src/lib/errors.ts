@@ -74,7 +74,7 @@ export class AlreadyRunningError extends ApiError {
   }
 }
 
-/** 413 FILE_TOO_LARGE — upload over 5 MB, refused before any parsing (edge case L5). */
+/** 413 FILE_TOO_LARGE — upload over 4 MB, refused before any parsing (edge case L5). */
 export class FileTooLargeError extends ApiError {
   constructor(message: string) {
     super(ERROR_CODES.FILE_TOO_LARGE, 413, message);

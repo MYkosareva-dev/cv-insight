@@ -29,9 +29,9 @@ import {
  *   1. requireApiUser() — verified user or 401. Middleware excludes /api by
  *      design (a handler must answer 401 JSON, not redirect to HTML), so this
  *      line is the ONLY fence in front of this endpoint (auth rule 3, edge case
- *      S4). It comes before body parsing: reading a 5 MB upload for an
+ *      S4). It comes before body parsing: reading a 4 MB upload for an
  *      anonymous caller is work done for someone with no right to ask.
- *   2. Format and size — `.pdf` only, ≤5 MB, checked off `file.size` BEFORE
+ *   2. Format and size — `.pdf` only, ≤4 MB, checked off `file.size` BEFORE
  *      `arrayBuffer()`, so an oversized upload is refused without being read
  *      into memory (edge case L5).
  *   3. Extraction — a scan or a corrupt file is 422 with the exact US-1 copy,
@@ -81,10 +81,38 @@ export async function POST(request: Request) {
  * multipart → a PDF upload; JSON → pasted text. Anything else is a 400 rather
  * than a crash on a missing field.
  */
+/**
+ * Ceiling on a multipart import body, checked off `Content-Length` before the
+ * body is buffered — the same shape and the same 64 KB of slack as
+ * `MAX_SCAN_BODY_BYTES` in the scan route, for the same reason. Import carries
+ * only the file and the two short metadata fields, so the slack is generous
+ * here; it is kept identical rather than tuned, because two endpoints that
+ * refuse uploads at subtly different sizes is a bug report waiting to happen.
+ */
+const MAX_IMPORT_BODY_BYTES = MAX_PDF_BYTES + 64 * 1024;
+
 async function readResumeText(request: Request): Promise<{ text: string; truncated: boolean }> {
   const contentType = request.headers.get('content-type') ?? '';
 
   if (contentType.includes('multipart/form-data')) {
+    /**
+     * THE DECLARED BODY SIZE, BEFORE THE BODY IS BUFFERED (v2.25, gate finding
+     * `ns-5`, closing backlog `m-3`).
+     *
+     * `formData()` reads the whole upload into memory; `file.size` below then
+     * refuses it. That ordering means an oversized import was fully buffered
+     * before being rejected — the exact cost /api/scan added this pre-check to
+     * avoid, and the two endpoints should not disagree about it.
+     *
+     * `Content-Length` is a claim by the client and is treated as one: it can
+     * be absent or a lie, so this only turns away a request that ADMITS being
+     * too large, and `file.size` remains the real check.
+     */
+    const declared = Number(request.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > MAX_IMPORT_BODY_BYTES) {
+      throw new FileTooLargeError(CAREER.fileTooLarge);
+    }
+
     const form = await request.formData();
     const file = form.get('file');
     if (!(file instanceof File)) throw new ValidationError(CAREER.notPdf);
@@ -93,7 +121,7 @@ async function readResumeText(request: Request): Promise<{ text: string; truncat
     // told their non-PDF "may be scanned" — and DOCX import is prohibited.
     if (!isPdfUpload(file)) throw new ValidationError(CAREER.notPdf);
 
-    // `file.size` is metadata: this refuses a 6 MB upload without ever
+    // `file.size` is metadata: this refuses an oversized upload without ever
     // materialising it as bytes (L5).
     if (file.size > MAX_PDF_BYTES) throw new FileTooLargeError(CAREER.fileTooLarge);
 

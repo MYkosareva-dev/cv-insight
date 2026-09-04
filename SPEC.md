@@ -59,7 +59,7 @@
 | Styling | Tailwind CSS v4 + shadcn/ui | Palette tokens in Block E only — no other colors |
 | Auth + DB | Supabase (Auth email/password, Postgres 15, pgvector) | RLS enabled on every table; anon key is the ONLY client-side key |
 | AI | OpenRouter API (chat completions + embeddings) | Server-side only; models per Block F |
-| Files | PDF text extraction via `unpdf` (server-side) | PDF only in MVP, ≤5 MB |
+| Files | PDF text extraction via `unpdf` (server-side) | PDF only in MVP, ≤4 MB (v2.25 — the platform refuses a body over 4.5 MB itself) |
 | Resume export | `docx` npm package, server-side | .docx download only in MVP |
 | Validation | Zod | Every API input and every LLM JSON output |
 | Unit tests | node:test (zero-dep, built-in) | `npm test` — pure functions (keywordPresent, matchScore) AND shipped artifacts testable without a browser (middleware matcher, check.mjs rules); files in `tests/unit/`, TS resolved via `tests/alias-hook.mjs` |
@@ -263,7 +263,7 @@ Persona: **Mira** (fictional), 33, AI Quality Analyst in Hamburg, Germany, activ
 4. She edits one item title, deletes a duplicate, clicks [Save to base].
 5. Items are saved; embeddings are indexed in the background of the same request.
 6. Error path: she uploads a scanned (image-only) PDF → inline error "We couldn't read text from this PDF. It may be scanned — paste the text instead." with the paste tab pre-opened.
-- [ ] PDF ≤5 MB with a text layer imports into ≥1 editable items
+- [ ] PDF ≤4 MB with a text layer imports into ≥1 editable items
 - [ ] Each item shows type, title, content and can be edited/deleted before saving
 - [ ] Saved items appear in the career base list without page reload
 - [ ] Scanned/corrupt PDF shows the exact error copy above and no items are saved
@@ -629,7 +629,7 @@ Conventions for ALL endpoints: Next.js App Router route handlers under `src/app/
 | 401 | UNAUTHORIZED | No session |
 | 404 | NOT_FOUND | Row absent OR owned by another user (never reveal which) |
 | 409 | ALREADY_RUNNING | Duplicate in-flight generate for the same application |
-| 413 | FILE_TOO_LARGE | Upload >5 MB |
+| 413 | FILE_TOO_LARGE | Upload >4 MB |
 | 422 | UNREADABLE_PDF | No text layer extracted |
 | 429 | DAILY_LIMIT | >50 LLM calls per user per day (rule B7) |
 | 500 | SERVER_ERROR | Unexpected failure after validation and auth (e.g. admin.deleteUser error); message is generic — never the underlying error text |
@@ -848,7 +848,7 @@ Responsive test widths: **1280 / 375**. Nothing may overflow horizontally at eit
 Loading: button spinner + disabled. Empty: n/a (form). Error: inline under field. Sign-in has THREE outcomes, never collapsed (same principle as the three retrieval outcomes): invalid credentials (`invalid_credentials`) → "Email or password is incorrect."; rate-limited (`over_request_rate_limit` / 429) → "Too many attempts — try again in a minute."; Supabase unreachable / any other error → "Sign-in is temporarily unavailable. Try again." Sign-up: branch on GoTrue `error.code`, NEVER on HTTP status — `user_already_exists` → "An account with this email already exists."; `weak_password` → the Block F password copy (both return 422, so a status check would show the wrong message and leak a false enumeration signal).
 
 **`/scan` — New scan.** Stepper on top: `1 Resume → 2 Vacancy → 3 Results`. Two panels (grid-cols-2):
-Left: resume source Tabs (shadcn `Tabs`): **Career base** (default; shows "Using all N items of your base") / **Saved version** (Select of previous tailored resumes) / **Paste text** (Textarea) / **Upload PDF** (dropzone: "Drag & drop or choose a .pdf file, max 5 MB").
+Left: resume source Tabs (shadcn `Tabs`): **Career base** (default; shows "Using all N items of your base") / **Saved version** (Select of previous tailored resumes) / **Paste text** (Textarea) / **Upload PDF** (dropzone: "Drag & drop or choose a .pdf file, max 4 MB").
 Right: Textarea "Paste the job posting here. Tip: skip benefits and legal boilerplate." Char counter `4,180 / 20,000`.
 Footer: violet hero button [Analyze] (the screen's single accent).
 Loading: [Analyze] → spinner "Analyzing…" ~10–20 s, panels dimmed. Empty: career base has 0 items and tab=Career base → panel notice "Your career base is empty — import a resume first." + [Go to Career base]. Error: toast "AI service is unavailable. Your vacancy was saved — retry from Applications."
@@ -873,7 +873,7 @@ Loading: [Analyze] → spinner "Analyzing…" ~10–20 s, panels dimmed. Empty: 
 > **v2.11 — one click, one spend** (closing M-2 from the phase-2 review). Every metered button — the review-step Save and the Edit dialog's save, which re-embeds — is locked by a ref that is set synchronously, not by a `disabled` prop alone: two clicks can fire before React re-renders, so state-based disabling is not a guard. `tests/e2e/career.spec.ts` asserts the REQUEST COUNT rather than the UI, because a second POST is a second embedding spend whatever the screen shows.
 
 **`/career` — Career base.** Header: item count + [Import resume] (green). List of cards grouped by type: title, type Badge, period, content preview 2 lines, Edit/Delete icon buttons. Import opens a Dialog: tabs Upload PDF / Paste text → after extraction, review list of proposed items (each editable inline, checkbox to include) → [Save 14 items to base].
-Loading: 6 skeleton cards. Empty: illustration + "Your career base is empty. Import your resume — CV Insight will split it into reusable career items." + [Import resume]. Error (import failed): inline in dialog — unreadable PDF copy per US-1; oversized → "This file is over 5 MB."
+Loading: 6 skeleton cards. Empty: illustration + "Your career base is empty. Import your resume — CV Insight will split it into reusable career items." + [Import resume]. Error (import failed): inline in dialog — unreadable PDF copy per US-1; oversized → "This file is over 4 MB."
 
 **`/applications/[id]` — Scan result.** Left rail (280 px): Match Rate ring (score %, ring color by rule), category bars with "N issues": Keywords · Requirements coverage · ATS format · Quality (judge); [Generate tailored resume] (violet, hidden after first version) ; [Download .docx] (green, visible when a version exists). Main area Tabs:
 - *Analysis*: coverage table (Requirement | Must/Nice badge | Status ✓/base/gap | Best match + similarity %); keywords table (Keyword | In resume | In vacancy) sortable by gap. **v2.15:** where rule B1's lexical gate turned a row into a gap, the BEST MATCH cell reads `no mention of “<term>”` instead of a career-item title — one short phrase, naming the term the base never mentions, in the cell that answers "matched against what?".
@@ -1022,7 +1022,7 @@ Form: Scan
 |---|---|---|---|---|
 | vacancyText | string | 1. required 2. 100–20,000 chars | "Paste the job posting text (at least 100 characters)." | inline, block submit |
 | sourceResumeText | string | required if tab=Paste; 100–15,000 | "Paste your resume text (at least 100 characters)." | inline, block submit |
-| PDF upload | file | 1. `.pdf` (extension OR `application/pdf`) 2. ≤5 MB, checked off `file.size` BEFORE `arrayBuffer()` 3. has a text layer (≥200 extracted chars) | copies per US-1 / Block E | inline in dialog |
+| PDF upload | file | 1. `.pdf` (extension OR `application/pdf`) 2. ≤4 MB, checked off `file.size` BEFORE `arrayBuffer()` 3. has a text layer (≥200 extracted chars) | copies per US-1 / Block E | inline in dialog |
 | Import text (paste) | string | 100–20,000 chars (`MAX_IMPORT_TEXT_CHARS`) | "Paste your resume text (at least 100 characters)." | inline in dialog |
 | Import text (extracted from PDF) | string | upper bound only, TRUNCATED at 20,000 rather than refused | — (the lower bound is 422 UNREADABLE_PDF, not 400) | — |
 
@@ -1308,7 +1308,7 @@ Return ONLY JSON: { "items": [{ "type": string, "title": string,
 | L2 | 51st LLM call in 24 h → 429 + copy (B7); embeddings still allowed so re-score keeps working |
 | L3 | Generated resume >15,000 chars → truncated at generation via max_tokens 2500; version save constraint never violated |
 | L4 | Career base has 1 tiny item → generation proceeds; judge relevance will be low; no artificial block |
-| L5 | 6 MB PDF → 413 before parsing, copy "This file is over 5 MB." |
+| L5 | 5 MB PDF → 413 before parsing, copy "This file is over 4 MB." (v2.25: the ceiling is 4 MB because the platform refuses a request body over 4.5 MB before this app runs) |
 
 ### Time
 | # | Situation → Trigger → Expected behavior |
