@@ -28,7 +28,7 @@ SPEC.md, then anything else.
   - Generation (tailored resume): openai/gpt-5.4
   - Vacancy parsing & rubric judge: anthropic/claude-haiku-4.5 (deliberately a
     different model than the generator, to reduce self-preference bias)
-  - Fallback for every step: google/gemini-2.5-flash via OpenRouter `models`
+  - Fallback for every chat step: google/gemini-2.5-flash via OpenRouter `models`
     array routing
   - Embeddings: openai/text-embedding-3-small; a model named here must be one
     verified to serve on the configured key, and the verification belongs in
