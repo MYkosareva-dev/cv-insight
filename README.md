@@ -76,9 +76,11 @@ keyword table uses. Absent, the row is a Gap whatever the similarity was, and th
 coverage entry names the missing term so the result screen can say *why* rather
 than printing an unexplained "Gap".
 
-The corpus searched is always the **career base**, never a pasted source resume:
-someone who pastes a one-page CV that omits Python still has Python in their base,
-and searching the paste would manufacture a gap.
+On a scan the corpus searched is always the **career base**, never a pasted
+source resume: someone who pastes a one-page CV that omits Python still has
+Python in their base, and searching the paste would manufacture a gap. (The
+re-score endpoint searches a different corpus on purpose — see the limitations
+below.)
 
 ### 5. Scoring
 
@@ -117,8 +119,10 @@ The verdict is **arithmetic in `src/lib/judge.ts`, not the model's own `verdict`
 field**. Grounding failure forces `revise` and cannot be compensated by high
 scores elsewhere; so does any criterion at or below 2. A `revise` triggers **at
 most one** regeneration, with the reviewer's specific findings appended to the
-prompt. If the second draft is also refused, the app returns it anyway with an
-honest card saying so — it does not loop, and it does not hide the verdict.
+prompt. If the second draft is also refused, the app returns the **better of the
+two** anyway with an honest card saying so, and the response says outright when
+the rewrite was not an improvement — it does not loop, and it does not hide the
+verdict.
 
 The reviewer is held to the same standard as the writer: a term it reports as
 `missingHonest` only reaches a screen or a rewrite if the career base literally
@@ -130,8 +134,11 @@ Model calls are metered, so they are bounded by arithmetic rather than by
 convention: at most 2 HTTP requests per pipeline step
 (`MAX_CHAT_REQUESTS_PER_STEP`, one shared budget for the repair retry and the
 network retry — they cap, they never nest), at most 4 chat steps per generate, 50
-`llm_calls` rows per user per rolling 24 hours, 100 re-score rows. Ceilings live
-in `src/lib/budget.ts` and are unit-tested at their boundaries. There is no
+**chat** calls per user per rolling 24 hours, and separately 100 re-score rows.
+The daily chat cap counts chat steps only, by definition: embedding spend is
+outside it, and the re-score endpoint — which is embeddings and no chat at all —
+has the second ceiling for exactly that reason. Ceilings live in
+`src/lib/budget.ts` and are unit-tested at their boundaries. There is no
 debounce-driven call, no background refresh and no retry ladder anywhere: a retry
 is a button someone presses.
 
@@ -159,8 +166,8 @@ hand-labeled by reading the matched item; the thresholds were derived from those
 labels, and the cost of the split is written down rather than smoothed over.
 
 Then the harder finding. Re-chunking from one ~2,000-character blob per item to
-one chunk per claim improved attribution measurably — the number of requirements
-won by a single chunk went 5-of-8 to 3-of-8 — and it made the two known false
+one chunk per claim improved attribution measurably — the most requirements won
+by any ONE chunk went from 5 of 8 to 3 of 8 — and it made the two known false
 positives *stronger*, not weaker: *"Experience with annotation tools such as
 Labelbox or Supervisely"* went 0.4280 → 0.4587 against a base containing none of
 those names, and became one of the top two similarities of eight. Finer chunks
@@ -198,8 +205,9 @@ So 23 slugs were probed, each requested **alone** so the answer is its own rathe
 than the fallback's. Five serve; eighteen return an identical
 `model-ignored-by-guardrail` 404. The refused set includes `openai/gpt-5` and
 `openai/gpt-4.1` while the more expensive `openai/gpt-5.4` passes — so it is an
-allow-list of five, not a price ceiling, and no cheaper relative would have found
-a way through. A second probe sent **the app's own request body**, because
+allow-list of five, not a price ceiling: no amount of picking a cheaper or a
+closer relative would have found a way through, because those five are the whole
+of what is reachable and the choice had to be made inside them. A second probe sent **the app's own request body**, because
 `temperature` is not in gpt-5.4's supported parameters while `reasoning` is: 149
 completion tokens, **0** reasoning tokens, `finish_reason: stop`, real resume
 text. A ping is not a request, and this one needed proving.
@@ -228,14 +236,14 @@ vacancy — has been built.
 Thirteen rules, each one an invariant a type-checker cannot see. They are wired as
 `prebuild`, so `npm run build` runs `npm run check && npm test` first and a
 violation **fails the build instead of shipping**. `npm run check` prints
-`check passed (13 rules)`.
+`check passed (13 rules):` followed by a one-line summary of all thirteen.
 
 They are not style rules. Each one exists because the thing it forbids is
 invisible when it goes wrong:
 
 | | Rule | The failure it makes impossible |
 |---|---|---|
-| R1/R2 | `.from(` and `.rpc(` only inside `src/lib/db/` | one DAL per table; the database is not reachable from a page or a handler |
+| R1/R2 | `.from(` and `.rpc(` only inside the eight DAL files listed in `scripts/check.mjs` | one DAL per table; the database is not reachable from a page or a handler, and adding a table means adding a DAL and a line on that list |
 | R3 | no `security definer` under `supabase/` | keeps `match_documents` a filter *under* RLS, not a replacement for it |
 | R4 | no `NEXT_PUBLIC_` on a secret name, `.env.example` included | the one prefix that publishes a value to the browser |
 | R5/R6 | no `openrouter.ai` URL and no connection import outside the two gates | a hand-rolled model call that skips the verified-user check |
@@ -355,9 +363,22 @@ about data held at the model provider, and nothing about `auth.audit_log_entries
 which survives deletion by design and has its own 90-day purge with its own
 succeeded-run record.
 
-**No analytics, no trackers, no third-party cookies.** Auth cookies are strictly
-necessary, so no consent banner is shown — and that is exactly why adding any
-tracker re-opens the decision rather than being a settings toggle.
+**No analytics, no trackers, no third-party cookies.** This app ships no analytics
+package, no telemetry and no web-vitals reporter — verified against a clean build
+— and sets no third-party cookie. Auth cookies are strictly necessary, so no
+consent banner is shown, and that is exactly why adding any tracker re-opens the
+decision rather than being a settings toggle.
+
+The limit of that sentence, because it is a promise the page makes in prose:
+**one of the two settings that could inject a third-party script is a dashboard
+control this repository cannot see.** A console error of exactly that shape was
+observed on the deployment and traced to something the app does not ship; the two
+candidates are the platform's own toolbar and its Speed Insights product, and
+which one it is has not been confirmed. Speed Insights must stay off — the CSP's
+`connect-src 'self'` would stop its beacon leaving, which is a reason to turn the
+setting off rather than a reason to let a header keep a promise the page makes in
+words. `docs/deploy.md` step 20 is the check; it is not in the deployment record
+because it has not been run to a conclusion.
 
 **The model provider caveat, stated plainly.** The OpenRouter key this deployment
 uses belongs to another party. Its logging, retention and training settings
@@ -456,8 +477,9 @@ Beyond the core pipeline, and each one built rather than sketched:
   on untested maths.
 - **Cross-user isolation, verified** — a Playwright case in which user B is
   refused user A's *real* application id on both a read and a metered write.
-- **GDPR posture** — a complete `/privacy`, an `/impressum` route, an EU
-  processing region, and the erasure evidence above.
+- **GDPR posture** — a complete `/privacy`, an `/impressum` route (whose operator
+  details are not filled in yet — see the limitations below), an EU processing
+  region, and the erasure evidence above.
 
 ---
 
@@ -506,6 +528,20 @@ caveat under *Running it locally* and `p4-27` in `docs/backlog.md`. The schema
 this app runs on and the schema in `supabase/migrations/` agree on everything the
 app reads; what is unverified is whether the files apply cleanly from empty.
 
+**The operator is not yet named on the deployment.** `IMPRESSUM_FILLED` is
+`false`, so `/impressum` states that the operator's details are not published —
+which is accurate, and is not a substitute for filling them in. `docs/deploy.md`
+step 21 makes that a precondition of sharing the link.
+
+**Two open defects the sections above read past, named here so they are not a
+surprise.** The career-item `[id]` route does not parse its segment, so a
+malformed id answers 500 where the error table mandates 404 — the 404-never-403
+rule above is true of absent rows and not yet of malformed ones. And
+`POST /api/career/import` spends its model call before the career-base cap can
+refuse the save, so hitting the cap through an import costs money. Both are
+`M-3` and `M-4` in `docs/backlog.md`, both open since Phase 2, and both are at
+the top of that file for the same reason they are here.
+
 **Password reset is not implemented.** It needs email delivery, which is out of
 scope; accounts are created by hand.
 
@@ -520,9 +556,13 @@ outcomes *by model*, which is the measurement that would answer whether the
 fallback really fails grounding more often.
 
 **Not built, deliberately:** payments, i18n, realtime, notifications, analytics,
-cron, an admin panel, agentic tool-calling retrieval. `SPEC.md`'s module checklist
-gives the reason for each. `docs/backlog.md` is the maintained list of everything
-else known and open, grouped by what would reopen it.
+an admin panel. `SPEC.md`'s module checklist gives the reason for each. Agentic
+tool-calling retrieval is the eighth and is not on that list — it is a Phase-2
+guardrail in `CLAUDE.md`, binding if it is ever built. There is no application
+cron either, but that is not the same as none: the 90-day purge of the
+authentication audit log is a scheduled job, and it is the one scheduled thing
+this repository has. `docs/backlog.md` is the maintained list of everything else
+known and open, grouped by what would reopen it.
 
 ---
 
