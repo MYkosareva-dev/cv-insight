@@ -455,7 +455,8 @@ begin
 end $$;
 
 -- > Decision: Supabase-linter hardening (extensions schema, SET search_path, `to authenticated`,
--- `(select auth.uid())` wrapping) is DEFERRED to a future 004 migration (002 is audit retention, 003 is imports). None is security-relevant
+-- `(select auth.uid())` wrapping) is DEFERRED to a future 006 migration (002 is audit retention, 003 is imports,
+-- 004 is profiles, 005 is the profile's contact details). None is security-relevant
 -- under this RLS design (anon has no policies → denied; auth.uid() is null for anon); search_path
 -- has a real HNSW-inlining tradeoff; scale is tiny. Revisit only if the linter matters pre-deploy.
 
@@ -523,6 +524,7 @@ create index career_items_import_idx on career_items(user_id, import_id);
 > Decision (`ON DELETE SET NULL`, not CASCADE, on `career_items.import_id`): if an import row ever does go, the ITEMS must not go with it. A career item is the user's real experience; the import is only how it arrived, and deleting the paperwork must never delete the history. The column stays nullable for the same reason — a hand-created item has no import, and every item predating this migration has none either.
 > Decision (`source_kind` NOT NULL): the app always sets it, so a null could only mean a row that bypassed the import flow. The database forbids that outright rather than leaving it to a convention every future writer has to remember. (Specified without NOT NULL in the first draft and tightened by the owner before 003 was applied — there is no migrated data to reconcile.)
 > Consequence: the Supabase-linter hardening deferred in v2.2 moves from a future `003` to a future `004`.
+> **Renumbered again in v2.20**: `004` became `004_profiles.sql` (v2.17) and `005` became `005_profile_contacts.sql` (v2.20), so the deferred hardening now lands in a future **`006`**. It has been renumbered twice by migrations that overtook it, which is what a deferral costs when it is named by slot rather than by subject; the slot is stated here and in the 001 comment above, and both move together.
 
 ### Seed example (core table `career_items`)
 ```sql
