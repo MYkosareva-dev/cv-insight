@@ -49,9 +49,33 @@ import type { NextConfig } from 'next';
  * select primitives) sets inline style attributes for positioning and animation.
  * Style injection is a markedly weaker vector than script injection.
  */
+/**
+ * `'unsafe-eval'`, IN DEVELOPMENT ONLY — and never in a deployed build.
+ *
+ * React's development build calls `eval()` for debugging features (reconstructing
+ * call stacks across environments). Under a policy without `'unsafe-eval'` it
+ * logs `eval() is not supported in this environment`, and Next's dev overlay then
+ * POSTs to `/__nextjs_original-stack-frames` to symbolicate it — which is how
+ * this was found: two `auth.spec.ts` cases assert that a client-side validation
+ * failure costs NO round trip, and that dev-tools POST made them fail while the
+ * validation itself was working perfectly.
+ *
+ * The production build needs none of it, which is the whole reason this can be
+ * conditional rather than a permanent relaxation: `docs/eval/csp-verification.md`
+ * records five pages loading clean under the production policy, with hydration
+ * proved positively. `next dev` sets NODE_ENV=development and `next build` sets
+ * production, so the deployed policy never carries this.
+ *
+ * A CSP that only exists in production is a CSP nobody tests until it breaks in
+ * production — the failure this whole change set out to avoid. Keeping the
+ * policy on in development, with exactly the one directive development needs,
+ * is what lets the e2e suite run against it every time.
+ */
+const DEV_ONLY_SCRIPT_SRC = process.env.NODE_ENV === 'production' ? '' : " 'unsafe-eval'";
+
 const CSP_DIRECTIVES = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  `script-src 'self' 'unsafe-inline'${DEV_ONLY_SCRIPT_SRC}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
