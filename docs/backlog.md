@@ -219,3 +219,20 @@ each fix changed; the report is `docs/reviews/phase-5-architect-diff.md`. The
 - **NIT p5-3** — `src/app/(app)/layout.tsx` justifies the footer privacy link with "Art. 12(1)", i.e. by an external requirement, which CLAUDE.md's Documentation voice rule forbids; SPEC Block E carries the same citation. Pre-existing and outside this branch's subject — worth one sweep of the repo for external attributions rather than a one-line edit here.
 - **NIT p5-4** — `RESULT.notesLabel` is both a heading and the textarea's `aria-label` in `src/components/applications/notes-form.tsx`, so the accessible name is duplicated in the tree the way `RESULT.editorLabel` was on the resume tab (which `tests/e2e/generate.spec.ts` already has a note about). Harmless for a reader, ambiguous for a locator; give the field a `htmlFor`/`id` pair and drop the `aria-label`.
 
+## Phase 5 — from the ai-code-reviewer PR round (2026-09-04)
+
+`docs/reviews/phase-5.md`, verdict REVISE with no blockers. M2–M5, m1, m4, m5 and
+n1 are fixed on this branch and SPEC v2.20 records what each fix changed. **M1 is
+not a code item and is the one thing standing between this branch and merge** — it
+is the owner's, and it is stated in the hand-over rather than here. What is left:
+
+- **MINOR p5-5 (was m2)** — `localeCompare` is the comparator for ISO timestamps in `src/lib/quality.ts` and `src/lib/judge.ts`, and ICU ranks `…:00:00+00:00` AFTER `…:00:00.5+00:00`: PostgREST omits a zero fraction, so two rows in the same second can order backwards, misplacing a run's pair and `openingVersion`'s comparison. Plain `<` and `Date.parse` both order it correctly. ~1e-6 per row, and what makes it worth doing is that no test can currently see it — every fixture builds timestamps with `toISOString()` or a hand-written `Z` literal, i.e. a 3-digit fraction, which is a format the database never emits. Fix the comparator and seed a fixture in PostgREST's own shape.
+- **MINOR p5-6 (was m3)** — the cost half of the helper copy is exact on `rescoreHelp` and approximate on the other three: `checkQualityHelp` says "one AI call" for a path that is one embeddings request plus a judge step (up to 2 chat requests), `generateHelp` omits the run's one embeddings row, and `rescoreHelp` itself still says "a paid AI call" for what is 2–7 `rescore` rows. Every number is checkable against `/quality` now, which is exactly why the row of four should be priced by one rule rather than three.
+- **MINOR p5-7 (was m6)** — `withContactHeader`'s docblock says the first blank line is "the end of the name-and-title header", but P2 output shaped `NAME
+
+TITLE
+…` (a blank line after the name, which nothing forbids) makes the block land between the name and the target title — precisely the layout the comment says the design avoids. `tests/unit/resume-header.test.mjs` covers the two-line header and the no-blank-line case and not this one; decide whether to look past a single blank line or to narrow the claim, and assert whichever it is.
+- **NIT p5-8 (was n2)** — [Regenerate] has no request-count assertion, while SPEC v2.16 note 9's one-click-one-spend rule now covers five metered buttons and `tests/e2e/generate.spec.ts` witnesses it for [Generate] alone. The shared `inFlight` ref does cover it; nothing observes that for the most expensive button in the app.
+- **NIT p5-9 (was n3)** — `rescore()` in `src/components/applications/result-workspace.tsx` reads `shownScore`, a `const` declared below it. Correct today because the closure only runs after render, and a `ReferenceError` the moment anything calls it during one.
+- **NIT p5-10 (was n4)** — `QUALITY.rubricLead` describes a run as "an ai row, and the ai_revision row that follows it" and does not mention the orphan-rewrite rule `classifyRuns` now implements, so at a full window a reader reconciling the bucket total against `resume_versions` finds one run the caption cannot explain. The screen's own rule is that every figure names its rows.
+

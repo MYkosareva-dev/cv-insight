@@ -596,11 +596,43 @@ export const MAX_LOCATION_CHARS = 120;
 export const MIN_LINK_CHARS = 12;
 export const MAX_LINK_CHARS = 200;
 
-/** Trim, and treat a blank as absent. Shared by every contact field. */
+/** Trim, and treat a blank as absent. The URL fields' first step. */
 const blankToNull = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+};
+
+/**
+ * Neutralise, collapse, trim, and treat a blank as absent — the three TEXT
+ * contact fields.
+ *
+ * `cleanDisplayName` is reused rather than re-implemented, and the reason is
+ * that all five of these values end up in the same two places the display name
+ * does: a document, and P2/P3's tagged data block. The header block is composed
+ * by the app and inserted into the generated text before the judge reads it, so
+ * a `location` carrying `</resume>` closes P3's data region early on a run whose
+ * text was otherwise entirely model output — the hazard the URL fields were
+ * already guarded against, arriving through the three fields that were not.
+ *
+ * A NEWLINE IS THE PRODUCT DEFECT, and it is the more likely of the two: a
+ * pasted phone number with a line break makes `contactLines` return a "line"
+ * containing `\n`, so the header silently gains a row in the editor and in the
+ * .docx — and that row, being short, can then be bolded as a section heading.
+ * `cleanDisplayName` turns a control character into a SPACE rather than deleting
+ * it, which is what keeps "+49 30\n901820" from becoming "+493090182".
+ *
+ * THE URL FIELDS DO NOT USE THIS, and the difference is the point. A name, a
+ * phone number and a city are PROSE: neutralising a stray character leaves the
+ * value the user meant, which is why `cleanDisplayName` was written that way. A
+ * URL is machine-readable — strip a character out of one and it silently
+ * addresses somewhere else — so those two REFUSE the same characters instead,
+ * with copy the user can act on. Same hazard, opposite right answer.
+ */
+const cleanToNull = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const cleaned = cleanDisplayName(value);
+  return cleaned.length > 0 ? cleaned : null;
 };
 
 /**
@@ -619,12 +651,24 @@ const blankToNull = (value: unknown): string | null => {
  * it; the real bounds are applied after trimming, because trimming can only ever
  * shorten the value.
  */
-const optionalText = (min: number, max: number, badLength: string) =>
+const optionalText = (min: number, max: number, tooShort: string, tooLong: string) =>
   z
     .string()
-    .max(max * 10, badLength)
-    .transform(blankToNull)
-    .refine((v) => v === null || (v.length >= min && v.length <= max), badLength);
+    .max(max * 10, tooLong)
+    .transform(cleanToNull)
+    /**
+     * TWO MESSAGES, NOT ONE, and in this order. One shared message answered a
+     * two-character phone number with "A phone number is limited to 40
+     * characters." — the app being wrong about the user's own input, and
+     * field-for-field the defect `RESULT.resumeTooShort` was added in v2.19 to
+     * fix ("the 100-character floor answered with `emptyEditor`, which told a
+     * user with a 50-character paste that their text was empty when it was
+     * merely short"). Zod reports issues in declaration order and every consumer
+     * reads the first, so the floor has to be checked before the ceiling for a
+     * short value to keep its own words.
+     */
+    .refine((v) => v === null || v.length >= min, tooShort)
+    .refine((v) => v === null || v.length <= max, tooLong);
 
 /**
  * `https://` ONLY — matched literally, then confirmed by the URL parser, then
@@ -650,20 +694,29 @@ const optionalText = (min: number, max: number, badLength: string) =>
  *     `url.href` would not: it appends a trailing slash and re-encodes the path,
  *     and a link the user did not type is not the link they gave us.
  *
- * ANGLE BRACKETS ARE REFUSED, on the same reasoning as `cleanDisplayName`. A
- * stored URL is interpolated into the resume text P3 reads inside its `<resume>`
- * block, so a value carrying `</resume>` would close that block early and put the
- * rest of itself outside the region the prompt marks as data. No URL needs a
- * literal `<` or `>` — they are percent-encoded in a well-formed one — so this
- * costs nothing and removes the new column as a second author of that block.
+ * ANGLE BRACKETS AND CONTROL CHARACTERS ARE REFUSED RATHER THAN STRIPPED, which
+ * is the opposite of what the three text fields do and is deliberate: a URL is
+ * machine-readable, so removing a character from one leaves a link that silently
+ * addresses somewhere else, while the user believes they saved what they typed.
+ * Refusing says so.
+ *
+ * Both matter for the same reason. A stored URL is interpolated into the resume
+ * text P3 reads inside its `<resume>` block, so a value carrying `</resume>`
+ * would close that block early and put the rest of itself outside the region the
+ * prompt marks as data — and a NEWLINE is the sharper of the two, because
+ * WHATWG STRIPS tabs and newlines in order to parse: `new URL()` accepts a value
+ * this app would then store with the newline still in it, and `contactLines`
+ * joins fields into lines, so that value would silently add a row to the header
+ * block in the editor and in the .docx.
  */
 const HTTPS_PREFIX = /^https:\/\//i;
-const URL_ANGLE_BRACKETS = /[<>]/u;
+/** Angle brackets and every control or format codepoint. */
+const URL_FORBIDDEN = /[<>]|\p{C}/u;
 const HTTPS_PREFIX_LENGTH = 'https://'.length;
 
 function isHttpsUrl(value: string): boolean {
   if (!HTTPS_PREFIX.test(value)) return false;
-  if (URL_ANGLE_BRACKETS.test(value)) return false;
+  if (URL_FORBIDDEN.test(value)) return false;
   try {
     const url = new URL(value);
     return url.protocol === 'https:' && url.hostname.length > 0;
@@ -683,11 +736,11 @@ const optionalHttpsUrl = () =>
     .max(MAX_LINK_CHARS * 10, SETTINGS.linkTooLong)
     .transform(blankToNull)
     // MIN_LINK_CHARS is the column's own floor. Without it `https://a` — which
-    // parses and names a host — reaches a CHECK that refuses it.
-    .refine(
-      (v) => v === null || (v.length >= MIN_LINK_CHARS && v.length <= MAX_LINK_CHARS),
-      SETTINGS.linkTooLong,
-    )
+    // parses and names a host — reaches a CHECK that refuses it. Refused for
+    // being too SHORT, not with the ceiling's copy: `https://a` is not a link
+    // "limited to 200 characters".
+    .refine((v) => v === null || v.length >= MIN_LINK_CHARS, SETTINGS.linkTooShort)
+    .refine((v) => v === null || v.length <= MAX_LINK_CHARS, SETTINGS.linkTooLong)
     .refine((v) => v === null || isHttpsUrl(v), SETTINGS.linkNotHttps)
     .transform((v) => (v === null ? null : normalizeHttpsUrl(v)));
 
@@ -695,6 +748,9 @@ export const contactsSchema = z.object({
   contactEmail: optionalText(
     MIN_CONTACT_EMAIL_CHARS,
     MAX_CONTACT_EMAIL_CHARS,
+    // Too short to be an address at all — which the format check below would
+    // also catch, and this keeps the two floors independent of each other.
+    SETTINGS.contactEmailInvalid,
     SETTINGS.contactEmailTooLong,
   ).refine(
     // Checked AFTER the blank-to-null transform, so an empty field is not an
@@ -702,10 +758,23 @@ export const contactsSchema = z.object({
     (v) => v === null || z.email().safeParse(v).success,
     SETTINGS.contactEmailInvalid,
   ),
-  phone: optionalText(MIN_PHONE_CHARS, MAX_PHONE_CHARS, SETTINGS.phoneTooLong),
+  phone: optionalText(
+    MIN_PHONE_CHARS,
+    MAX_PHONE_CHARS,
+    SETTINGS.phoneTooShort,
+    SETTINGS.phoneTooLong,
+  ),
   // The column's floor is 1 and a blank is already null, so the trimmed value
   // cannot be shorter than that.
-  location: optionalText(1, MAX_LOCATION_CHARS, SETTINGS.locationTooLong),
+  location: optionalText(
+    1,
+    MAX_LOCATION_CHARS,
+    // Unreachable: a blank is already null, so a trimmed value is at least one
+    // character. Passed rather than omitted, because a floor with no message is
+    // a floor waiting to answer with the wrong one.
+    SETTINGS.locationTooLong,
+    SETTINGS.locationTooLong,
+  ),
   linkedinUrl: optionalHttpsUrl(),
   githubUrl: optionalHttpsUrl(),
   /**

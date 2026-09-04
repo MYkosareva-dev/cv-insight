@@ -7,7 +7,9 @@ import { Skeleton } from '@/components/ui/skeleton';
  * reads, and an awaited Server Component renders nothing until they resolve, so a
  * `loading === true` branch inside it could never run.
  *
- * TEN TILES AND THREE TABLE BLOCKS, matching what the page actually draws. A
+ * TEN TILES AND FOUR BLOCKS BELOW THEM — the rubric outcomes, the score
+ * distribution, the per-step costs and the last-50 table — matching what the
+ * page actually draws. A
  * skeleton that shows a different shape from the screen it stands in for is a
  * layout shift dressed as a loading state.
  */
@@ -23,7 +25,7 @@ export default function QualityLoading() {
           <Skeleton key={i} className="h-28 w-full" />
         ))}
       </div>
-      {Array.from({ length: 3 }, (_, i) => (
+      {Array.from({ length: 4 }, (_, i) => (
         <div key={i} className="flex flex-col gap-3">
           <Skeleton className="h-6 w-64" />
           <Skeleton className="h-32 w-full" />

@@ -1,0 +1,198 @@
+Phase 5 - Playwright suite, verbatim run output (auth + career + generate + scan).
+
+This file exists because SPEC Block F states that manual live verification is
+not accepted as evidence - the spec run is. A spec FILE is cron.job; this is
+cron.job_run_details.
+
+Command:      npx playwright test
+Date:         2026-09-04 UTC
+Branch:       phase-5-quality
+Commit:       (this run) fix(phase-5): the architect gate's blocker and every
+              major, plus two the run found
+Working tree: CLEAN for src/ and tests/ - the commit above is exactly the code
+              that was tested. Only this file, docs/reviews/phase-5.md and the
+              backlog are committed after it, and none of them is loaded at
+              runtime.
+Against:      npm run dev on http://localhost:3000, started and torn down by
+              Playwright itself (real Supabase project, EU-Frankfurt) and real
+              OpenRouter calls.
+
+WHAT THIS RUN IS AND IS NOT EVIDENCE FOR.
+
+IT IS evidence for: [Regenerate] appending rather than replacing, and surviving
+a reload; the cost being stated in the modal before the run; Notes sitting in
+the LEFT column (asserted as a position, not as presence); Block H item 7 on
+/quality - parse_vacancy, embed, generate and judge all appearing in the
+per-step table after a real run, with a total cost that is not $0.0000, the
+outcome buckets rendering, and the thin-sample line showing because two runs is
+two runs; and A7's name line, printed below.
+
+IT IS NOT evidence for the CONTACT DETAILS, and the run says so itself:
+
+    [phase-5] contacts: skipped - 005_profile_contacts.sql is not applied
+
+`005_profile_contacts.sql` is applied by the owner in the Supabase dashboard,
+like 001-004. Until then every contacts save answers `PGRST204` and the form
+renders SETTINGS.contactsNotMigrated, which is the one outcome the test is
+allowed to skip on - keyed on the app's OWN copy for that state, so a genuine
+regression fails here instead of disappearing. The half that needs the table -
+the https refusal through the form, the stored row surviving a refusal, and the
+header block appearing in the generated draft - starts running by itself the
+moment the migration exists, and `docs/reviews/phase-5.md` M1 records that this
+file has to be re-run and re-committed then. THE BRANCH IS INCOMPLETE UNTIL THAT
+HAPPENS, and SPEC v2.20 says so in the same words.
+
+A7 - THE NAME LINE, FROM A REAL GENERATED RESUME. The question was whether a
+freshly generated resume carries the DISPLAY NAME rather than the vacancy's job
+title, which is the defect v2.17 was raised for. The first five lines, printed
+by the spec itself (synthetic persona, synthetic base, reserved example.com
+address - nothing here is a real person's data):
+
+    [phase-5] first five lines of the generated resume:
+      1| Mira Steinberg
+      2| Data Annotator
+      3|
+      4| SUMMARY
+      5| Experienced in data annotation and quality assurance, with a focus on
+         evaluating and correcting labeled training data. Proficient in Python
+         for data clean-up tasks and skilled in using annotation guidelines to
+         maintain high inter-annotator agreement. Possesses excellent attention
+         to detail and good written English.
+
+Line 1 is the saved display name. Line 2 is "Data Annotator" and that is the
+TARGET TITLE, which is where P2 rule 4's layout puts it - NAME, TARGET TITLE,
+SUMMARY. The v2.17 defect was that same string appearing on line ONE, read by a
+recruiter and by an ATS parser as the candidate's name; the spec asserts line 1
+contains the display name rather than merely containing it somewhere, which is
+the assertion that would fail if the two lines ever swapped back.
+
+THE REACT MISSING-KEY WARNING IS GONE. The previous run of this suite printed
+"Each child in a list should have a unique key prop ... it was passed a child
+from ApplicationDetailPage" on every render of the result screen - a defect this
+branch introduced by handing the rendered <NotesForm /> across the
+server/client boundary as a ReactNode prop. `ResultWorkspace` now takes the
+notes STRING and renders the client form itself, and this run contains zero
+occurrences of that warning. The remaining "The destination stream closed early"
+lines are the Next dev-mode artefact backlog p3-7 already records for a client
+navigating away mid-stream.
+
+The one skipped scan case is scan.spec.ts's AI-unavailable draft, which needs a
+server started with a deliberately invalid model key - see its docblock.
+
+--------------------------------------------------------------------------------
+VERBATIM OUTPUT
+--------------------------------------------------------------------------------
+
+npm notice run cv-insight@0.1.0 npx
+npm notice run playwright test
+[WebServer] npm notice run cv-insight@0.1.0 dev
+[WebServer] npm notice run next dev
+[WebServer] ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.
+[WebServer] 
+[WebServer]   To migrate automatically, run:
+[WebServer]   npx @next/codemod@canary middleware-to-proxy .
+[WebServer] 
+[WebServer]   Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+[WebServer] ⚠ Slow filesystem detected. The benchmark took 328ms. If \\?\D:\Claude BAI\3_sprint\mkosar-AFA.BAI.3.8\.next\dev is a network drive, consider moving it to a local folder.
+[WebServer] See more: https://nextjs.org/docs/app/guides/local-development
+
+Running 33 tests using 1 worker
+
+  ok  1 [chromium] › tests\e2e\auth.spec.ts:145:3 › auth › sign-up lands on /career (2.7s)
+  ok  2 [chromium] › tests\e2e\auth.spec.ts:152:3 › auth › sign-in lands on /scan, sign-out returns to /login (3.3s)
+  ok  3 [chromium] › tests\e2e\auth.spec.ts:175:3 › auth › a signed-in user is bounced off /login and /signup (2.6s)
+  ok  4 [chromium] › tests\e2e\auth.spec.ts:183:3 › auth › a visitor is redirected off member routes with no data flash (1.0s)
+  ok  5 [chromium] › tests\e2e\auth.spec.ts:196:3 › auth › /privacy is public and reachable from both layouts (3.3s)
+  ok  6 [chromium] › tests\e2e\auth.spec.ts:211:3 › auth › wrong password shows the exact copy and no other outcome (3.1s)
+  ok  7 [chromium] › tests\e2e\auth.spec.ts:238:5 › auth › client-side validation blocks submit on a malformed email (517ms)
+  ok  8 [chromium] › tests\e2e\auth.spec.ts:238:5 › auth › client-side validation blocks submit on a too-short password (492ms)
+  ok  9 [chromium] › tests\e2e\auth.spec.ts:256:3 › auth › native validation never pre-empts our copy (464ms)
+  ok 10 [chromium] › tests\e2e\auth.spec.ts:272:3 › auth › a duplicate email is reported as such (3.2s)
+  ok 11 [chromium] › tests\e2e\auth.spec.ts:281:3 › auth › the session cookie is httpOnly, SameSite=Lax and capped at 30 days (1.7s)
+  ok 12 [chromium] › tests\e2e\auth.spec.ts:325:3 › auth › account deletion removes the user and returns to /login with the toast (13.7s)
+  ok 13 [chromium] › tests\e2e\career.spec.ts:228:3 › career base › every career endpoint refuses a signed-out caller with 401 (1.0s)
+  ok 14 [chromium] › tests\e2e\career.spec.ts:254:3 › career base › a new account sees the exact empty state (2.3s)
+  ok 15 [chromium] › tests\e2e\career.spec.ts:260:3 › career base › a scanned PDF shows the exact 422 copy, pre-opens the paste tab, and saves nothing (3.1s)
+  ok 16 [chromium] › tests\e2e\career.spec.ts:296:3 › career base › a text-layer PDF imports, reviews and saves, and a second import ADDS (10.4s)
+  ok 17 [chromium] › tests\e2e\career.spec.ts:329:3 › career base › re-importing the SAME text saves nothing and reports every skip (8.9s)
+  ok 18 [chromium] › tests\e2e\career.spec.ts:354:3 › career base › a metered Save spends once even when double-clicked (8.4s)
+  ok 19 [chromium] › tests\e2e\generate.spec.ts:174:3 › generate › all four Phase-4 endpoints refuse a signed-out caller with 401 (3.1s)
+  ok 20 [chromium] › tests\e2e\generate.spec.ts:196:3 › generate › another user's application is 404 on every Phase-4 endpoint, never 403 (2.2s)
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+[phase-4] run: {"versions":1,"autoRevised":false,"revisionNotBetter":false,"revisionWithheld":false,"verdicts":[{"source":"ai","verdict":"approve","grounding":"pass","violations":0}]}
+[phase-4] header: {"literalNamePlaceholder":false,"namePlaceholder":true}
+[phase-4] rescore: {"stored":"57%","live":"65%","entries":8}
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  ok 21 [chromium] › tests\e2e\generate.spec.ts:212:3 › generate › generate, judge, edit, re-score, export — the whole US-4/US-5 path (55.0s)
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  ok 22 [chromium] › tests\e2e\generate.spec.ts:640:3 › generate › one click, one spend: a double-clicked [Generate] sends ONE request (38.9s)
+[WebServer] [profile] saving the contact details failed { name: 'object', code: 'PGRST204' }
+[phase-5] contacts: skipped — 005_profile_contacts.sql is not applied
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+[phase-5] first five lines of the generated resume:
+  1| Mira Steinberg
+  2| Data Annotator
+  3| 
+  4| SUMMARY
+  5| Experienced in data annotation and quality assurance, with a focus on evaluating and correcting labeled training data. Proficient in Python for data clean-up tasks and skilled in using annotation guidelines to maintain high inter-annotator agreement. Possesses excellent attention to detail and good written English.
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  ok 23 [chromium] › tests\e2e\generate.spec.ts:686:3 › generate › a saved display name becomes the resume name line and the file name (28.5s)
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  ok 24 [chromium] › tests\e2e\generate.spec.ts:869:3 › generate › an empty editor blocks both metered buttons with the exact copy (13.2s)
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+[phase-4] grounding gate: {"verdict":"revise","grounding":"fail","violations":5,"scores":{"keywordCoverage":3,"relevance":1,"atsFormat":4}}
+  ok 25 [chromium] › tests\e2e\generate.spec.ts:893:3 › generate › the judge catches invention, and rule B2 forces revise however good the rest is (25.0s)
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  ok 26 [chromium] › tests\e2e\generate.spec.ts:978:3 › generate › [Add to resume] is refused with a reason while no resume exists (13.6s)
+  ok 27 [chromium] › tests\e2e\scan.spec.ts:214:3 › scan › both scan endpoints refuse a signed-out caller with 401 (802ms)
+  ok 28 [chromium] › tests\e2e\scan.spec.ts:244:3 › scan › an oversized vacancy is refused with the exact copy, before any spend (1.7s)
+  ok 29 [chromium] › tests\e2e\scan.spec.ts:275:3 › scan › an empty career base blocks the Career-base source with the exact notice (2.0s)
+  ok 30 [chromium] › tests\e2e\scan.spec.ts:288:3 › scan › the applications list starts empty with the exact copy (2.2s)
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  ok 31 [chromium] › tests\e2e\scan.spec.ts:294:3 › scan › a pasted resume scans, scores, and renders coverage, keywords and base matches (12.5s)
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  ok 32 [chromium] › tests\e2e\scan.spec.ts:461:3 › scan › a career-base scan says the base is the source, instead of an empty tab (12.3s)
+  -  33 [chromium] › tests\e2e\scan.spec.ts:503:3 › scan › an AI failure saves the vacancy as a draft and says so
+
+  1 skipped
+  32 passed (4.8m)
+
+[exited with code 0]

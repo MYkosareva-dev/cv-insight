@@ -272,6 +272,9 @@ export type RubricOutcomes = {
   notChecked: Share;
 };
 
+/** Within one timestamp, a draft precedes its rewrite. `user` rows never reach here. */
+const SOURCE_ORDER: Record<VersionRow['source'], number> = { ai: 0, ai_revision: 1, user: 2 };
+
 /** Group the version rows into runs and classify each one. */
 export function classifyRuns(versions: readonly VersionRow[]): RunOutcome[] {
   const byApplication = new Map<string, VersionRow[]>();
@@ -284,8 +287,23 @@ export function classifyRuns(versions: readonly VersionRow[]): RunOutcome[] {
 
   const outcomes: RunOutcome[] = [];
   for (const list of byApplication.values()) {
-    // Oldest first, so an `ai` row is followed by its own revision.
-    const ordered = [...list].sort((a, b) => a.created_at.localeCompare(b.created_at));
+    /**
+     * Oldest first, so an `ai` row is followed by its own revision — and a TIE
+     * puts the draft ahead of the rewrite.
+     *
+     * The tie-break is not decoration: the orphan branch below reads the row
+     * BEFORE a revision to decide whether it has a draft, and the sort is stable,
+     * so a tie would keep whatever order the caller passed. The DAL returns
+     * newest-first, so a tied pair arrived rewrite-first and was counted TWICE —
+     * once as an orphan run and once as the draft's own refusal-with-no-rewrite.
+     * `mergeVersionsNewestFirst` pins the same case on the same argument: the two
+     * inserts are separate transactions with distinct `now()` values, so this is
+     * defensive rather than expected.
+     */
+    const ordered = [...list].sort(
+      (a, b) =>
+        a.created_at.localeCompare(b.created_at) || SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source],
+    );
     for (let i = 0; i < ordered.length; i += 1) {
       const row = ordered[i]!;
       if (row.source === 'ai') {

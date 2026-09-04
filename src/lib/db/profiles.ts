@@ -144,10 +144,11 @@ export async function upsertDisplayName(
  * rather than as something that cannot be expressed.
  *
  * IT THROWS WHEN THE MIGRATION IS NOT APPLIED, and the action above it turns that
- * into its own sentence. Before `005_profile_contacts.sql` runs, these columns do
- * not exist and Postgres answers 42703 — which is a true and useful failure, not
- * something to swallow: the alternative is a form that accepts input and quietly
- * keeps none of it.
+ * into its own sentence. Before `005_profile_contacts.sql` runs these columns do
+ * not exist, and the write is refused by PostgREST with `PGRST204` before any SQL
+ * runs — which is a true and useful failure, not something to swallow: the
+ * alternative is a form that accepts input and quietly keeps none of it. The
+ * action names both codes it acts on and why.
  */
 export async function upsertContacts(
   userId: string,

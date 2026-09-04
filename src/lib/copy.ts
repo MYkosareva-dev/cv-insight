@@ -679,9 +679,20 @@ export const RESULT = {
    * at the other end of the request. An unchanged measurement is a RESULT, and
    * the number is named so the user can see which one it is.
    */
+  /**
+   * A FIRST re-score names its reading and draws no arrow. The stored scan score
+   * measured the career base and this one measures the editor's text, and SPEC
+   * v2.16 note 13 is explicit that the two are not comparable — so a delta
+   * against it would attribute to the user's edit a difference that is partly
+   * the corpus.
+   */
+  rescoredFirst: (score: string) =>
+    `Re-scored — the text in the editor reads ${score}. Re-score again after an edit to see what moved.`,
+  /** Two readings of the same corpus, so "unchanged" is a measurement. */
   rescoredUnchanged: (score: string) =>
-    `Re-scored — the score is unchanged at ${score}. Nothing in your edit moved it.`,
-  rescoredChanged: (from: string, to: string) => `Re-scored — ${from} → ${to} for the text in the editor.`,
+    `Re-scored — still ${score}, unchanged since your last re-score.`,
+  rescoredChanged: (from: string, to: string) =>
+    `Re-scored — ${from} → ${to} since your last re-score.`,
   /**
    * The quality check finished. Said out loud for the same reason: the card
    * below may come back with the same four scores it had, and a screen that
@@ -794,8 +805,15 @@ export const RESULT = {
    * the way out, because [Regenerate] is not an obvious answer to "my phone
    * number is missing".
    */
+  /**
+   * IT SAYS WHAT IT DETECTED, not what it guesses caused it. The first version
+   * said the resume "was written before your contact details were saved", which
+   * the export cannot know — a user who deleted the header, or who edited it
+   * beyond recognition, would be told a story about their own document. What the
+   * check actually establishes is that none of the saved values is in the text.
+   */
   exportedWithoutContacts:
-    'Downloaded — but this resume was written before your contact details were saved, so it has no contact header. Regenerate it, or paste the details into the editor.',
+    'Downloaded — but none of your saved contact details is in this resume, so an employer has no way to reply to it. Add them in the editor, or regenerate.',
   exportedWithPlaceholderName:
     'Downloaded — but the name line still reads [YOUR NAME]. Replace it, or save your name in Settings.',
   /** In the editor, where the placeholder is still on screen and still editable. */
@@ -1124,7 +1142,9 @@ export const SETTINGS = {
   contactsSignedOut: 'Your session has expired — sign in again to save your contact details.',
   contactEmailInvalid: 'Enter a valid email address, or leave it empty.',
   contactEmailTooLong: 'An email address is limited to 254 characters.',
+  phoneTooShort: 'That is too short to be a phone number — or leave it empty.',
   phoneTooLong: 'A phone number is limited to 40 characters.',
+  linkTooShort: 'That is too short to be a link — or leave it empty.',
   locationTooLong: 'A location is limited to 120 characters.',
   linkNotHttps: 'A link must start with https:// — or leave it empty.',
   linkTooLong: 'A link is limited to 200 characters.',

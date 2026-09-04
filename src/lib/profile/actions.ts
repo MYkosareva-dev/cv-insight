@@ -151,9 +151,10 @@ export async function saveContactsAction(
     await upsertContacts(user.id, parsed.data);
   } catch (err) {
     /**
-     * The columns are not there yet. Read off the PostgREST error code rather
-     * than off the message: the message names the missing column and is a
-     * moving target, the code is the contract.
+     * The columns are not there yet — `PGRST204` today, `42703` if a write ever
+     * reaches Postgres without PostgREST's schema check in front of it. Read off
+     * the CODE and never off the message: the message names the missing column
+     * and moves with the schema. See the note at the top of the file.
      */
     const code = (err as { code?: string } | null)?.code;
     // Metadata only: the message could carry an email address or a phone number.

@@ -11,7 +11,6 @@ import { getLatestResumeVersion, insertResumeVersion } from '@/lib/db/resumeVers
 import { getVacancy } from '@/lib/db/vacancies';
 import { NotFoundError, ValidationError, apiErrorResponse } from '@/lib/errors';
 import { exportFilename, resumeToDocx } from '@/lib/docx';
-import { contactLines } from '@/lib/resumeHeader';
 import { resumeContentSchema } from '@/lib/validation';
 
 /**
@@ -141,8 +140,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
      * cannot hold different opinions about what a header is.
      */
     const contacts = await getContacts(user.id);
-    const header = contactLines(contacts);
-    const headerMissing = header.length > 0 && !header.some((line) => content.includes(line));
+    /**
+     * THE FIELD VALUES AND NOT THE COMPOSED LINES. Comparing whole lines was the
+     * first version and it fires on an EDITED header: the block is deliberately
+     * editable, so a user who fixes a typo in the one line their profile
+     * produces changes that line and the export then tells them the resume has
+     * no contact details at all — while advising a two-to-four-call regenerate.
+     * A field the user kept is a field the document has.
+     */
+    const saved = [
+      contacts.email,
+      contacts.phone,
+      contacts.location,
+      contacts.linkedin,
+      contacts.github,
+    ].filter((field): field is string => field !== null);
+    const headerMissing = saved.length > 0 && !saved.some((field) => content.includes(field));
 
     const bytes = await resumeToDocx(content);
     const filename = exportFilename({

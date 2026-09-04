@@ -270,11 +270,23 @@ export function ResultWorkspace({
 
   function rescore() {
     /**
-     * READ BEFORE THE RUN, so the comparison afterwards is against what the user
-     * was actually looking at — the stored scan's number on a first re-score,
-     * the previous live reading on a second one.
+     * THE PREVIOUS LIVE READING, AND NEVER THE STORED SCAN'S NUMBER.
+     *
+     * `shownScore` was the first version of this and it is the wrong baseline:
+     * on a FIRST re-score it holds the scan's stored score, which SPEC v2.16
+     * note 13 states plainly is not comparable — the stored number was measured
+     * against the CAREER BASE through `match_documents`, the live one against an
+     * ephemeral corpus of the editor's own text, and the thresholds were
+     * calibrated for the first of those. A toast reading "68% → 74%" across that
+     * boundary attributes to the user's edit a difference that is partly the
+     * corpus, and "Nothing in your edit moved it" is a causal claim the app has
+     * no measurement for at all.
+     *
+     * So the delta is only ever between two readings of the SAME corpus, and a
+     * first re-score gets a wording with no delta in it.
      */
-    const before = shownScore;
+    const previous = rescored?.matchScore ?? null;
+    const isFirstRescore = rescored === null;
     void run(
       'rescore',
       () => post('rescore', { content }),
@@ -297,10 +309,12 @@ export function ResultWorkspace({
          * `null` compares equal to `null` here, which is right: rule B1b's "—"
          * staying "—" is also a measurement that did not move.
          */
-        if (after === before) {
+        if (isFirstRescore) {
+          toast.success(RESULT.rescoredFirst(scoreText(after)));
+        } else if (after === previous) {
           toast.success(RESULT.rescoredUnchanged(scoreText(after)));
         } else {
-          toast.success(RESULT.rescoredChanged(scoreText(before), scoreText(after)));
+          toast.success(RESULT.rescoredChanged(scoreText(previous), scoreText(after)));
         }
       },
       RESULT.rescoreFailed,

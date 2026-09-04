@@ -290,6 +290,26 @@ describe('classifyRuns — a run is one ai row plus its own rewrite', () => {
     assert.equal(classifyRuns([draft, revision]).length, 1);
   });
 
+  test('a created_at TIE does not split one run into two', () => {
+    /**
+     * PR review n1. The orphan branch reads the row BEFORE a revision to decide
+     * whether it has a draft, so it depends on the pair being ordered — and the
+     * sort is stable, which means a tie keeps whatever order the caller passed.
+     * The DAL returns newest-first, so an untied `ai_revision` arriving before
+     * its own `ai` row would have been counted as an orphan run AND the draft as
+     * a second, refusal-with-no-rewrite run: one generation reported twice.
+     *
+     * `mergeVersionsNewestFirst` pins the same case on the same argument — the
+     * two inserts are separate transactions with distinct `now()` values, so this
+     * is defensive rather than expected.
+     */
+    const same = '2026-09-04T10:00:00Z';
+    const draft = { id: 'ai', application_id: 'app-1', source: 'ai', judge: report({ verdict: 'revise' }), created_at: same };
+    const revision = { id: 'rev', application_id: 'app-1', source: 'ai_revision', judge: report(), created_at: same };
+    assert.deepEqual(classifyRuns([revision, draft]), ['revised_approved']);
+    assert.deepEqual(classifyRuns([draft, revision]), ['revised_approved']);
+  });
+
   test('two applications are two runs, and neither borrows the other rewrite', () => {
     const a = version({ application_id: 'app-a', judge: report({ verdict: 'revise' }) });
     const b = version({ application_id: 'app-b' });
