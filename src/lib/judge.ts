@@ -288,3 +288,30 @@ export function mergeVersionsNewestFirst<T extends { id: string; created_at: str
   ];
   return merged.sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
+
+/**
+ * The newest version that actually carries a reviewer's report.
+ *
+ * WHY THE RAIL NEEDS ITS OWN ANSWER, and why it is not `openingVersion`. The
+ * category bars read "ATS format — Not checked yet" and "Quality — Not checked
+ * yet" from a null report, and they were reading the report of the version the
+ * EDITOR opens with. That version can legitimately have none: the export path
+ * appends a `source='user'` row with `judge: null`, and a run whose judge step
+ * was refused by rule B7 stores one too. So the screen ended up asserting that
+ * the check had not run, three inches above a version list showing the verdicts
+ * of the runs that had — two parts of one screen disagreeing about the same
+ * fact, which [Regenerate] made easy to reach by multiplying the rows.
+ *
+ * "Not checked yet" now means what it says: NO version of this application has
+ * ever been judged. When one has, the bars show that measurement, and the rail
+ * says which version it came from whenever that is not the newest text — the
+ * bars must never be read as a measurement of a document nobody measured.
+ *
+ * Newest-first input, which is what both the DAL and `mergeVersionsNewestFirst`
+ * produce, so this is the first match rather than a sort.
+ */
+export function newestJudgedVersion<T extends { judge: Rubric | null }>(
+  versionsNewestFirst: readonly T[],
+): T | null {
+  return versionsNewestFirst.find((version) => version.judge !== null) ?? null;
+}

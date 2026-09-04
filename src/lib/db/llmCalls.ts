@@ -81,6 +81,40 @@ export async function listLlmCallsForQuality(
 }
 
 /**
+ * The `generate` rows for ONE application, newest first (v2.22).
+ *
+ * So the result screen can say which model wrote the resume, and say it loudly
+ * when that model was the fallback. `llm_calls` already records the model that
+ * actually served and has carried an `application_id` on every pipeline row
+ * since v2.16, so this needs no new column and no migration — it is a read of
+ * evidence the app was already keeping and only showing on `/quality`.
+ *
+ * BOUNDED, because a regenerate adds rows and this is rendered on every visit to
+ * the screen. The bound is generous relative to what the copy uses (the newest
+ * row, and whether every row fell back), and small enough that the read stays a
+ * single indexed lookup.
+ *
+ * RLS scopes it to the caller, and there is no user id parameter for the same
+ * reason there is none anywhere else in this DAL: the identity comes from the
+ * session. The application id is not an identity — a wrong one yields no rows.
+ */
+export async function listGenerateCallsForApplication(
+  applicationId: string,
+  limit = 50,
+): Promise<LlmCall[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('llm_calls')
+    .select('*')
+    .eq('application_id', applicationId)
+    .eq('step', 'generate')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as LlmCall[];
+}
+
+/**
  * Rows of the given steps in the rolling 24 h window — not calendar-midnight
  * (edge case T2). One query behind both ceilings: two copies of the window this
  * arithmetic depends on could drift, and a cap measuring a different window from

@@ -19,7 +19,13 @@ import type {
   ParsedVacancy,
   ResumeVersion,
 } from '@/lib/db/types';
-import { judgeIssueCounts, mergeVersionsNewestFirst, openingVersion } from '@/lib/judge';
+import {
+  judgeIssueCounts,
+  mergeVersionsNewestFirst,
+  newestJudgedVersion,
+  openingVersion,
+} from '@/lib/judge';
+import type { GenerationProvenance } from '@/lib/quality';
 
 /**
  * `missingHonest`, split into what the career base literally contains and what
@@ -107,6 +113,7 @@ export function ResultWorkspace({
   versions: initialVersions,
   judgeTerms: initialJudgeTerms,
   notes,
+  provenance,
 }: {
   applicationId: string;
   entries: CoverageEntry[];
@@ -140,6 +147,16 @@ export function ResultWorkspace({
    * branch from the same row.
    */
   notes: string | null;
+  /**
+   * Which model served this application's `generate` calls (v2.22), read from
+   * `llm_calls` on the server.
+   *
+   * It is here rather than in a response body because it has to survive a
+   * reload: a user coming back to a resume should still be able to see what wrote
+   * it. The generate action refreshes the server render, so the line updates
+   * without this component holding a second copy of the fact.
+   */
+  provenance: GenerationProvenance;
 }) {
   const router = useRouter();
 
@@ -328,6 +345,29 @@ export function ResultWorkspace({
       async (res) => {
         const data = await res.json();
         setReview({ report: data.judge ?? null, terms: termsOf(data) });
+        /**
+         * THE NEW ROW GOES INTO `versions` TOO (v2.22). The rail's bars derive
+         * from the newest judged version, so without this the check the user just
+         * paid for would not move them until the server refresh landed — and on
+         * the one action whose entire purpose is to produce a verdict, a rail
+         * still reading the previous one is the same contradiction this round
+         * fixed. `createdAt` comes from the response because only the database
+         * knows it; a timestamp made up here would sort wrongly against the rows
+         * beside it.
+         */
+        if (data.resumeVersionId && data.createdAt) {
+          setVersions((current) =>
+            mergeVersionsNewestFirst(current, [
+              {
+                id: data.resumeVersionId,
+                created_at: data.createdAt,
+                source: data.source ?? 'user',
+                content: data.content ?? '',
+                judge: data.judge ?? null,
+              } as ResumeVersion,
+            ]),
+          );
+        }
         // The reviewed text is its own version now, so the badges from the AI
         // pass no longer describe what is on screen.
         setRevisionNotBetter(false);
@@ -391,7 +431,29 @@ export function ResultWorkspace({
   const shownScore = rescored ? rescored.matchScore : score;
   const shownEntries = rescored ? rescored.entries : entries;
   const shownKeywords = rescored ? rescored.keywords : keywords;
-  const issues = judgeIssueCounts(judge);
+  /**
+   * THE RAIL'S BARS READ THE NEWEST JUDGED VERSION, not the one the editor
+   * opened with (v2.22).
+   *
+   * The editor's version can legitimately carry no report — the export path
+   * appends a `judge: null` row, and so does a run whose judge step was refused —
+   * and the bars were then asserting "Not checked yet" directly above a version
+   * list showing the verdicts of the runs that HAD been checked. Two parts of one
+   * screen disagreeing about the same fact, which [Regenerate] made easy to reach
+   * by multiplying the rows.
+   *
+   * `versions` is the single source, so an action that appends a row moves the
+   * bars in the same render as the list. "Not checked yet" now means what it
+   * says: nothing here has ever been judged.
+   */
+  const judgedVersion = newestJudgedVersion(versions);
+  const issues = judgeIssueCounts(judgedVersion?.judge ?? null);
+  /**
+   * True when the measurement is not of the newest text. The bars must not be
+   * read as a measurement of a document nobody measured, so when this holds the
+   * rail names the version the check belongs to.
+   */
+  const judgedIsStale = judgedVersion !== null && judgedVersion.id !== versions[0]?.id;
 
   return (
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_1fr]">
@@ -419,6 +481,11 @@ export function ResultWorkspace({
           atsIssues={issues.atsFormat}
           qualityIssues={issues.quality}
         />
+        {judgedIsStale ? (
+          <p className="text-muted-foreground text-xs">
+            {RESULT.judgedVersionLabel(RESULT.versionLabel[judgedVersion.source])}
+          </p>
+        ) : null}
 
         {/* Block E: the violet hero, hidden once a version exists — the editor
             tab owns the action from then on, and [Regenerate] is the way back to
@@ -473,6 +540,7 @@ export function ResultWorkspace({
             versions={versions}
             judge={judge}
             judgeTerms={review.terms}
+            provenance={provenance}
             autoRevised={autoRevised}
             revisionNotBetter={revisionNotBetter}
             revisionWithheld={revisionWithheld}

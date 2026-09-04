@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
 import {
+  NO_GENERATION,
   SMALL_SAMPLE,
   classifyRuns,
+  generationProvenance,
   formatUsdFromMicro,
   rubricDistribution,
   rubricOutcomes,
@@ -440,5 +442,114 @@ describe('formatUsdFromMicro', () => {
 
   test('a large total still reads correctly', () => {
     assert.equal(formatUsdFromMicro(12_500_000), '$12.5000');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Which model served (v2.22)
+// ---------------------------------------------------------------------------
+
+/**
+ * The finding this exists for: every `generate` row in the log had been served
+ * by `google/gemini-2.5-flash` with `fallback_used = true`, because the
+ * configured Sonnet slug is blocked by a guardrail on the provider account and
+ * `models: [primary, fallback]` routing answers a blocked primary by quietly
+ * using the second entry. The app reported that nowhere a user would look.
+ *
+ * These cases pin the two things the product now says: which model wrote the
+ * most recent draft, and whether EVERY generation here fell back — which is the
+ * difference between a passing outage and a configuration.
+ */
+describe('generationProvenance', () => {
+  const gen = (model, fallback_used, created_at) =>
+    call({ step: 'generate', model, fallback_used, created_at });
+
+  test('no generation is not a claim about a model', () => {
+    assert.deepEqual(generationProvenance([]), NO_GENERATION);
+    // Other steps are not generations: a judge row must not answer "what wrote
+    // my resume".
+    assert.deepEqual(
+      generationProvenance([call({ step: 'judge', model: 'anthropic/claude-haiku-4.5' })]),
+      NO_GENERATION,
+    );
+  });
+
+  test('names the model that served most recently', () => {
+    const p = generationProvenance([
+      gen('anthropic/claude-sonnet-4.6', false, '2026-09-04T12:00:00Z'),
+      gen('google/gemini-2.5-flash', true, '2026-09-04T10:00:00Z'),
+    ]);
+    assert.equal(p.newestModel, 'anthropic/claude-sonnet-4.6');
+    assert.equal(p.newestFallback, false);
+    assert.equal(p.calls, 2);
+  });
+
+  test('the fallback is reported as one', () => {
+    const p = generationProvenance([gen('google/gemini-2.5-flash', true, '2026-09-04T12:00:00Z')]);
+    assert.equal(p.newestFallback, true);
+    assert.equal(p.allFallback, true);
+  });
+
+  test('allFallback is EVERY row, not the newest one', () => {
+    // The distinction the copy rests on: one fallback is an outage, all of them
+    // is a configuration that will keep happening.
+    const mixed = generationProvenance([
+      gen('google/gemini-2.5-flash', true, '2026-09-04T12:00:00Z'),
+      gen('anthropic/claude-sonnet-4.6', false, '2026-09-04T10:00:00Z'),
+    ]);
+    assert.equal(mixed.newestFallback, true);
+    assert.equal(mixed.allFallback, false);
+  });
+
+  test('allFallback is never vacuously true', () => {
+    // `every` over an empty list is true, which would have claimed a fallback
+    // for an application that has never generated.
+    assert.equal(generationProvenance([]).allFallback, false);
+  });
+
+  test('distinct models, newest first', () => {
+    const p = generationProvenance([
+      gen('google/gemini-2.5-flash', true, '2026-09-04T13:00:00Z'),
+      gen('google/gemini-2.5-flash', true, '2026-09-04T12:00:00Z'),
+      gen('anthropic/claude-sonnet-4.6', false, '2026-09-04T10:00:00Z'),
+    ]);
+    assert.deepEqual(p.models, ['google/gemini-2.5-flash', 'anthropic/claude-sonnet-4.6']);
+    // Requests and not runs: a step that spent its repair retry wrote two rows,
+    // and each request had its own answer.
+    assert.equal(p.calls, 3);
+  });
+});
+
+describe('summariseCalls — fallback PER STEP', () => {
+  test('a step every call of which fell back is visible as such', () => {
+    /**
+     * The blended total is what hid this for a phase: one step at 100% beside
+     * three at 0% reads as a mild fraction overall and invites no question.
+     */
+    const summary = summariseCalls([
+      call({ step: 'generate', model: 'google/gemini-2.5-flash', fallback_used: true }),
+      call({ step: 'generate', model: 'google/gemini-2.5-flash', fallback_used: true }),
+      call({ step: 'judge', model: 'anthropic/claude-haiku-4.5', fallback_used: false }),
+    ]);
+    const generate = summary.byStep.find((s) => s.step === 'generate');
+    const judge = summary.byStep.find((s) => s.step === 'judge');
+    assert.deepEqual(generate.fallbackShare, { count: 2, of: 2, percent: 100, thin: true });
+    assert.equal(judge.fallbackShare.count, 0);
+    // And the blended figure it was hiding behind.
+    assert.equal(summary.fallbackShare.percent, 67);
+  });
+
+  test('each step names the models that actually served it', () => {
+    const summary = summariseCalls([
+      call({ step: 'generate', model: 'google/gemini-2.5-flash', fallback_used: true }),
+      call({ step: 'generate', model: 'anthropic/claude-sonnet-4.6', fallback_used: false }),
+      call({ step: 'generate', model: 'google/gemini-2.5-flash', fallback_used: true }),
+    ]);
+    const generate = summary.byStep.find((s) => s.step === 'generate');
+    // Most-used first, so the table reads as "what is actually serving this".
+    assert.deepEqual(generate.models, [
+      'google/gemini-2.5-flash',
+      'anthropic/claude-sonnet-4.6',
+    ]);
   });
 });

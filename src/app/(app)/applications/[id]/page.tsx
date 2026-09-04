@@ -7,12 +7,14 @@ import { ResultWorkspace } from '@/components/applications/result-workspace';
 import { ScoreRing } from '@/components/applications/score';
 import { APPLICATIONS, APPLICATION_STATUS_LABEL, RESULT } from '@/lib/copy';
 import { getApplication } from '@/lib/db/applications';
+import { listGenerateCallsForApplication } from '@/lib/db/llmCalls';
 import { listCareerItemCorpus } from '@/lib/db/careerItems';
 import { itemsCorpus } from '@/lib/generation';
 import { openingVersion, partitionMissingHonest } from '@/lib/judge';
 import { listResumeVersions } from '@/lib/db/resumeVersions';
 import { getVacancy } from '@/lib/db/vacancies';
 import type { CoverageEntry, KeywordRow } from '@/lib/db/types';
+import { generationProvenance } from '@/lib/quality';
 import { renderableScore } from '@/lib/scoring';
 
 export const metadata = { title: 'Scan result — CV Insight' };
@@ -94,6 +96,23 @@ export default async function ApplicationDetailPage({
    * decide it. The REVISION prompt keeps the narrower corpus, because it asks a
    * different question: what the writer could honestly reach for.
    */
+  /**
+   * WHICH MODEL WROTE THIS APPLICATION'S DRAFTS (v2.22).
+   *
+   * Read here rather than carried in an action's response, so it survives a
+   * reload: a user coming back to a resume should still be able to see what
+   * produced it. Through the DAL under their own session, like every other read
+   * on this page — `llm_calls` already records the model that actually served and
+   * has carried the application id since v2.16, so this needs no new column.
+   *
+   * It is the reason a fallback is now visible in the PRODUCT and not only on
+   * `/quality`: owner testing found every generate call served by
+   * `google/gemini-2.5-flash` because the configured Sonnet slug is blocked by a
+   * guardrail on the provider account, and `models: [primary, fallback]` routing
+   * answers that by quietly using the second entry.
+   */
+  const provenance = generationProvenance(await listGenerateCallsForApplication(application.id));
+
   const opening = openingVersion(versions);
   const judgeTerms = partitionMissingHonest(
     opening?.judge?.keywordCoverage.missingHonest ?? [],
@@ -130,6 +149,7 @@ export default async function ApplicationDetailPage({
           versions={versions}
           judgeTerms={judgeTerms}
           notes={application.notes}
+          provenance={provenance}
         />
       ) : (
         /* Rail 280 px beside the content at 1280; stacked at 375 (Block E). */

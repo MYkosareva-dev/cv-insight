@@ -57,14 +57,36 @@ re-checked whenever the key is rotated:
 2. Prompt and completion retention: zero-retention routing where the provider offers
    it; otherwise transient-processing endpoints only.
 3. No provider allowed that publishes prompts to a public dataset.
+4. **Model guardrails: none blocking a slug in the table above.** A guardrail on the
+   workspace removes a model's endpoints during routing, and because every chat call
+   is sent as `models: [primary, fallback]`, a blocked primary is answered by using
+   the second entry. The request succeeds, `fallback_used` is recorded, and nothing
+   else reports it — so a guardrail is indistinguishable from a working deployment
+   unless someone reads the per-step counts.
+
+   **Observed on 2026-09-04, and NOT YET FIXED at the provider:**
+   `anthropic/claude-sonnet-4.6` is blocked by a guardrail on the `default` workspace.
+   Requested alone with this deployment's key it answers HTTP 404,
+   `"0 endpoints out of 5 requested are available matching your guardrail restrictions
+   and data policy … Model blocked by guardrail: 5 endpoints excluded"`, with
+   `failed_routing_step: "Filter by Guardrails"`. The slug is not wrong — OpenRouter
+   lists it with nine live provider endpoints — and the key is funded and unrestricted
+   (`anthropic/claude-haiku-4.5` answers 200 on the same key, served by Amazon
+   Bedrock). **Consequence while it stands: every tailored resume is written by
+   `google/gemini-2.5-flash`, not by the model this deployment configures.** The
+   product now says so on the result screen and `/quality` announces the condition
+   per step, but the fix is an account change and belongs here:
+   https://openrouter.ai/workspaces/default/guardrails
 
 ## Verification
 
 Status: NOT VERIFIED
 
 Record the check below before any externally reachable deployment. Replace the marker
-with the date, the account label, and the observed value of each of the three settings
-above.
+with the date, the account label, and the observed value of each of the four settings
+above. Item 4 is known to FAIL as of 2026-09-04 and is recorded there rather than
+here, because a verification section that says "not verified" is silent about a setting
+already known to be wrong.
 
 <PASTE VERIFICATION HERE>
 

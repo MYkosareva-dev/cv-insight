@@ -649,6 +649,38 @@ export const RESULT = {
    * explaining which of the two the reader is looking at.
    */
   revisionNotBetter: 'The rewrite did not improve on the first draft, so this is the first draft.',
+  /**
+   * WHICH MODEL WROTE THIS (v2.22, from the owner's first use of /quality).
+   *
+   * Every generate call in the log had been served by `google/gemini-2.5-flash`
+   * with `fallback_used = true`: the configured Sonnet slug is blocked by a
+   * guardrail on the provider account, and `models: [primary, fallback]` routing
+   * answers a blocked primary by quietly using the second entry. So the resume on
+   * screen had been written by a different model than the one this app asks for,
+   * for a whole phase, and nothing said so anywhere a user would look.
+   *
+   * A NEUTRAL LINE IN THE NORMAL CASE AND A WARNING IN THE OTHER, because the
+   * fact is worth stating either way: a user who wants to know what produced
+   * their resume should not have to open a dashboard, and "written by the model
+   * we intended" is the sentence that makes the warning legible when it appears.
+   *
+   * IT SPEAKS ABOUT THE APPLICATION'S GENERATIONS, not about one version.
+   * `resume_versions` carries no model column and adding one would be a
+   * migration; `llm_calls` carries the model that served plus the application id.
+   * The wording is therefore "the most recent draft" rather than "this text",
+   * which is exactly what the data supports.
+   */
+  writtenBy: (model: string) => `Most recent draft written by ${model}.`,
+  writtenByFallback: (model: string) =>
+    `Most recent draft written by ${model} — the FALLBACK model, not the one this app asks for. The requested model is not being served, so this draft was written by a different one than intended.`,
+  /**
+   * Said only when EVERY generation on this application fell back, which is not
+   * a passing outage but a configuration that will keep happening. It names
+   * where the counts are without making the user go there to learn the fact.
+   */
+  writtenByFallbackAlways:
+    'This has happened on every generation for this scan. Quality has the per-step counts.',
+
   versionsHeading: 'Versions',
   versionLabel: { ai: 'AI draft', ai_revision: 'AI revision', user: 'Your edit' },
   /**
@@ -670,6 +702,21 @@ export const RESULT = {
   rescoredLabel: 'Live score for the text in the editor — not saved.',
   rescoredRevert: 'Show the original scan',
   rescoreFailed: 'Could not re-score — try again.',
+
+  /**
+   * The category bars show the newest JUDGED version, and this names which one
+   * when that is not the newest text (v2.22).
+   *
+   * The bars used to read the report of the version the editor opens with, which
+   * can legitimately have none — the export path appends a `judge: null` row, and
+   * so does a run whose judge step was refused. The screen then said "Not checked
+   * yet" directly above a version list showing the verdicts of the runs that HAD
+   * been checked. Showing the newest real measurement fixes the contradiction and
+   * creates a second duty: the bars must not be read as a measurement of a
+   * document nobody measured, so they say whose they are.
+   */
+  judgedVersionLabel: (label: string) =>
+    `Checked on your ${label} — newer text has not been checked.`,
 
   /**
    * A RUN THAT CHANGED NOTHING STILL HAS TO REPORT ITSELF (SPEC v2.20, owner
@@ -1010,6 +1057,19 @@ export const QUALITY = {
   colMeanLatency: 'Mean latency',
   colFailedShort: 'Failed',
   colUnknownPricing: 'Unpriced',
+  colFallback: 'Fallback',
+  colModels: 'Served by',
+  /**
+   * THE APP SAYS IT, rather than leaving it to be read off a column (v2.22).
+   *
+   * A step at 100% fallback is not a degraded service, it is a configured model
+   * that is never served — and the blended total across all steps reads as a mild
+   * fraction and invites no question. That is how the generate step spent a whole
+   * phase being written by the fallback. Stated as the count first, because the
+   * count is what makes it a condition rather than a coincidence.
+   */
+  stepAlwaysFallback: (step: string, calls: number) =>
+    `All ${formatCount(calls)} ${step} call${calls === 1 ? '' : 's'} were served by the fallback model. The model this app asks for is not being served — check the provider account's model guardrails.`,
 
   /** Block E's table of the last 50 calls. */
   callsHeading: 'Last 50 AI calls',

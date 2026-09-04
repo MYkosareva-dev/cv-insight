@@ -18,6 +18,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { NAME_PLACEHOLDER, RESULT } from '@/lib/copy';
 import type { JudgeReport, ResumeVersion } from '@/lib/db/types';
+import type { GenerationProvenance } from '@/lib/quality';
 
 /**
  * The Tailored-resume tab (SPEC Block E, US-4 step 3 and US-5).
@@ -41,6 +42,7 @@ export function ResumeEditor({
   autoRevised,
   revisionNotBetter,
   revisionWithheld,
+  provenance,
   pending,
   onGenerate,
   onRegenerate,
@@ -57,6 +59,8 @@ export function ResumeEditor({
   autoRevised: boolean;
   revisionNotBetter: boolean;
   revisionWithheld: boolean;
+  /** Which model served this application's generations (v2.22). */
+  provenance: GenerationProvenance;
   /** Which metered action is in flight, or null. One at a time, by design. */
   pending: 'generate' | 'regenerate' | 'rescore' | 'judge' | 'export' | null;
   onGenerate: () => void;
@@ -241,6 +245,8 @@ export function ResumeEditor({
         revisionWithheld={revisionWithheld}
       />
 
+      <WhichModel provenance={provenance} />
+
       <VersionList versions={versions} />
     </div>
   );
@@ -351,5 +357,46 @@ function RegenerateDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Which model wrote the draft (v2.22, from the owner's first use of `/quality`).
+ *
+ * WHY IT IS IN THE PRODUCT AND NOT ONLY IN THE DASHBOARD. Every generate call in
+ * the log had been served by the fallback: the configured Sonnet slug is blocked
+ * by a guardrail on the provider account, and `models: [primary, fallback]`
+ * routing answers a blocked primary by quietly using the second entry. So for a
+ * whole phase the resume on screen was written by a different model than the one
+ * this app asks for, and the only witness was a table. The person holding the
+ * resume is the one that matters to.
+ *
+ * NEUTRAL WHEN IT IS THE INTENDED MODEL. The line is not a warning banner that
+ * appears only when something is wrong — it always names the model, which is what
+ * makes the warning legible the day it changes, and it answers a question a user
+ * of an AI tool is entitled to ask without opening a dashboard.
+ *
+ * NOTHING IS SHOWN BEFORE THERE IS A GENERATION. `calls === 0` is the empty
+ * state, not a claim about a model.
+ */
+function WhichModel({ provenance }: { provenance: GenerationProvenance }) {
+  if (provenance.newestModel === null) return null;
+  const fell = provenance.newestFallback;
+  return (
+    <div className="flex flex-col gap-1">
+      <p className={fell ? 'text-destructive text-xs' : 'text-muted-foreground text-xs'}>
+        {fell
+          ? RESULT.writtenByFallback(provenance.newestModel)
+          : RESULT.writtenBy(provenance.newestModel)}
+      </p>
+      {/*
+        Only when EVERY generation here fell back: that is a configuration rather
+        than a passing outage, and it will keep happening until someone changes
+        the provider account.
+      */}
+      {fell && provenance.allFallback && provenance.calls > 1 ? (
+        <p className="text-muted-foreground text-xs">{RESULT.writtenByFallbackAlways}</p>
+      ) : null}
+    </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   judgeIssueCounts,
   mergeVersionsNewestFirst,
   needsRevision,
+  newestJudgedVersion,
   openingVersion,
   partitionMissingHonest,
   revisionFindings,
@@ -448,5 +449,62 @@ describe('mergeVersionsNewestFirst', () => {
 
   test('two empty lists are an empty list', () => {
     assert.deepEqual(mergeVersionsNewestFirst([], []), []);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// newestJudgedVersion — the rail's own answer (v2.22)
+// ---------------------------------------------------------------------------
+
+/**
+ * The screen contradicted itself: "ATS format — Not checked yet" in the left
+ * column, above a version list showing the verdicts of runs that HAD been
+ * checked. The bars were reading the report of the version the editor opens
+ * with, and that version can legitimately carry none — the export path appends a
+ * `judge: null` row, and so does a run whose judge step was refused.
+ *
+ * So "not checked yet" has to mean what it says: nothing here has ever been
+ * judged.
+ */
+describe('newestJudgedVersion', () => {
+  const v = (id, created_at, source, judge) => ({ id, created_at, source, judge });
+
+  test('nothing judged is null, which is what makes "not checked yet" true', () => {
+    assert.equal(newestJudgedVersion([]), null);
+    assert.equal(
+      newestJudgedVersion([v('a', '2026-09-04T10:00:00Z', 'user', null)]),
+      null,
+    );
+  });
+
+  test('skips a judge-less row on top and finds the newest report under it', () => {
+    // The reachable case: the user exported (a `user` row with judge null) after
+    // a run that WAS judged. The bars said "Not checked yet"; the list below said
+    // "Approved".
+    const list = [
+      v('export', '2026-09-04T12:00:00Z', 'user', null),
+      v('rev', '2026-09-04T11:00:00Z', 'ai_revision', approved()),
+      v('ai', '2026-09-04T10:00:00Z', 'ai', approved()),
+    ];
+    assert.equal(newestJudgedVersion(list).id, 'rev');
+  });
+
+  test('the newest report wins when several exist', () => {
+    const list = [
+      v('run2', '2026-09-04T12:00:00Z', 'ai', approved()),
+      v('run1', '2026-09-04T10:00:00Z', 'ai', approved()),
+    ];
+    assert.equal(newestJudgedVersion(list).id, 'run2');
+  });
+
+  test('it reads the order it is given, which is the DAL order', () => {
+    // Newest-first is what `listResumeVersions` and `mergeVersionsNewestFirst`
+    // both produce, so this is a find and not a sort — and passing a list the
+    // other way round is the caller's defect, not something to paper over here.
+    const list = [
+      v('newest', '2026-09-04T12:00:00Z', 'ai', approved()),
+      v('older', '2026-09-04T10:00:00Z', 'ai', approved()),
+    ];
+    assert.equal(newestJudgedVersion([...list].reverse()).id, 'older');
   });
 });

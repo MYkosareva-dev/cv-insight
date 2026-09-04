@@ -83,6 +83,16 @@ export default async function QualityPage() {
   const outcomes = rubricOutcomes(versions);
   const distribution = rubricDistribution(versions);
   const windowFull = calls.length >= QUALITY_CALL_WINDOW;
+  /**
+   * Steps whose every call was served by the fallback — the condition the app has
+   * to announce rather than leave in a column (v2.22).
+   *
+   * `fallbackShare.count === calls` and not `percent === 100`: the percentage is
+   * rounded, so 199 of 200 also prints 100% and this must mean what it says.
+   */
+  const alwaysFallback = summary.byStep.filter(
+    (step) => step.calls > 0 && step.fallbackShare.count === step.calls,
+  );
 
   if (calls.length === 0) {
     return (
@@ -293,6 +303,21 @@ export default async function QualityPage() {
           <h2 className="text-lg font-medium">{QUALITY.stepsHeading}</h2>
           <p className="text-muted-foreground text-sm">{QUALITY.stepsLead}</p>
         </div>
+        {/*
+          THE APP SAYS IT, rather than leaving it to be read off a column. A step
+          every one of whose calls was served by the fallback is a configuration
+          that will keep happening, and the owner found this one by reading a
+          table — which is the thing a dashboard should make unnecessary.
+        */}
+        {alwaysFallback.length > 0 ? (
+          <div className="border-destructive/40 flex flex-col gap-1 rounded-lg border p-3">
+            {alwaysFallback.map((step) => (
+              <p key={step.step} role="alert" className="text-destructive text-sm">
+                {QUALITY.stepAlwaysFallback(stepLabel(step.step), step.calls)}
+              </p>
+            ))}
+          </div>
+        ) : null}
         <div className="overflow-x-auto">
           <table className="w-full min-w-xl text-sm">
             <thead>
@@ -310,10 +335,16 @@ export default async function QualityPage() {
                   {QUALITY.colMeanLatency}
                 </th>
                 <th scope="col" className="py-2 pr-3 text-right font-medium">
+                  {QUALITY.colFallback}
+                </th>
+                <th scope="col" className="py-2 pr-3 text-right font-medium">
                   {QUALITY.colFailedShort}
                 </th>
-                <th scope="col" className="py-2 text-right font-medium">
+                <th scope="col" className="py-2 pr-3 text-right font-medium">
                   {QUALITY.colUnknownPricing}
+                </th>
+                <th scope="col" className="py-2 font-medium">
+                  {QUALITY.colModels}
                 </th>
               </tr>
             </thead>
@@ -330,8 +361,21 @@ export default async function QualityPage() {
                   <td className="py-2 pr-3 text-right tabular-nums">
                     {step.meanLatencyMs === null ? '—' : `${formatCount(step.meanLatencyMs)} ms`}
                   </td>
+                  {/*
+                    PER STEP, because the blended total hides the condition that
+                    matters: one step at 100% while the others are at 0% is not a
+                    degraded service, it is a configured model that is never
+                    served — and that is how the generate step spent a whole phase
+                    being written by the fallback.
+                  */}
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    <ShareValue share={step.fallbackShare} />
+                  </td>
                   <td className="py-2 pr-3 text-right tabular-nums">{step.failed}</td>
-                  <td className="py-2 text-right tabular-nums">{step.unknownPricing}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{step.unknownPricing}</td>
+                  <td className="text-muted-foreground py-2 text-xs">
+                    {step.models.join(', ')}
+                  </td>
                 </tr>
               ))}
             </tbody>

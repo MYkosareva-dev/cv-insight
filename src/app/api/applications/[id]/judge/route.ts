@@ -157,6 +157,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       resumeVersionId: version.id,
       source: version.source,
       content: version.content,
+      /**
+       * The DATABASE's timestamp (v2.22). The client merges this row into the
+       * version list it holds so the rail's category bars move on the action
+       * whose whole purpose is to produce a verdict — and the merge sorts by
+       * `created_at`, so a timestamp invented in the browser would sort wrongly
+       * against the rows beside it.
+       */
+      createdAt: version.created_at,
       judge,
       // Split against the WHOLE career base — the same corpus the detail page
       // and the generate route use, so one term gets one answer on every render.

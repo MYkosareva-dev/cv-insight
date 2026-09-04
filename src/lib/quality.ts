@@ -101,6 +101,20 @@ export type StepSummary = {
   failed: number;
   /** Mean latency in ms over the step's rows, or null when there are none. */
   meanLatencyMs: number | null;
+  /**
+   * How often THIS step was served by the fallback model, as a share of its own
+   * calls.
+   *
+   * PER STEP AND NOT ONLY IN TOTAL, because the total hides the condition that
+   * matters. A single step at 100% while every other step is at 0% is not a
+   * degraded service — it is one configured model that is never served, and the
+   * blended figure reads as a mild 20% and invites no question. That is exactly
+   * how the generate step went a whole phase being written by the fallback while
+   * the app reported nothing.
+   */
+  fallbackShare: Share;
+  /** The models that actually served this step, most-used first. */
+  models: string[];
 };
 
 export type CallSummary = {
@@ -167,7 +181,18 @@ export function summariseCalls(rows: readonly CallRow[]): CallSummary {
   let failedCalls = 0;
   let tokensIn = 0;
   let tokensOut = 0;
-  const steps = new Map<string, { calls: number; cost: number; unknown: number; failed: number; latency: number }>();
+  const steps = new Map<
+    string,
+    {
+      calls: number;
+      cost: number;
+      unknown: number;
+      failed: number;
+      latency: number;
+      fallback: number;
+      models: Map<string, number>;
+    }
+  >();
 
   for (const row of rows) {
     totalCostMicro += row.cost_usd_micro;
@@ -183,12 +208,24 @@ export function summariseCalls(rows: readonly CallRow[]): CallSummary {
     tokensIn += row.tokens_in;
     tokensOut += row.tokens_out;
 
-    const step = steps.get(row.step) ?? { calls: 0, cost: 0, unknown: 0, failed: 0, latency: 0 };
+    const step =
+      steps.get(row.step) ??
+      {
+        calls: 0,
+        cost: 0,
+        unknown: 0,
+        failed: 0,
+        latency: 0,
+        fallback: 0,
+        models: new Map<string, number>(),
+      };
     step.calls += 1;
     step.cost += row.cost_usd_micro;
     step.latency += row.latency_ms;
     if (!row.cost_known) step.unknown += 1;
     if (!row.ok) step.failed += 1;
+    if (row.fallback_used) step.fallback += 1;
+    step.models.set(row.model, (step.models.get(row.model) ?? 0) + 1);
     steps.set(row.step, step);
   }
 
@@ -219,6 +256,10 @@ export function summariseCalls(rows: readonly CallRow[]): CallSummary {
         unknownPricing: totals.unknown,
         failed: totals.failed,
         meanLatencyMs: totals.calls > 0 ? Math.round(totals.latency / totals.calls) : null,
+        fallbackShare: share(totals.fallback, totals.calls),
+        models: [...totals.models.entries()]
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([model]) => model),
       }))
       // Most-used step first; the name breaks a tie so the table does not
       // reorder itself between two renders of the same data.
@@ -454,4 +495,69 @@ export function rubricDistribution(versions: readonly VersionRow[]): RubricDistr
  */
 export function formatUsdFromMicro(micro: number): string {
   return `$${(micro / 1_000_000).toFixed(4)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Which model wrote this resume (v2.22)
+// ---------------------------------------------------------------------------
+
+/**
+ * What served the `generate` step for ONE application.
+ *
+ * THE PRODUCT HAS TO BE ABLE TO SAY WHICH MODEL WROTE A RESUME. Owner testing
+ * found every generate call being served by the fallback — the configured Sonnet
+ * slug is blocked by a guardrail on the provider account, so `models: [primary,
+ * fallback]` routing silently used the second entry on every run for a whole
+ * phase. The dashboard could show that; the person holding the resume could not,
+ * and they are the one it matters to.
+ *
+ * BUILT FROM `llm_calls` AND NOTHING NEW. `resume_versions` has no model column
+ * and adding one would be a migration; the log already records the model that
+ * actually served, with the application id threaded through since v2.16. So the
+ * claim this can make is about the APPLICATION's generations rather than about
+ * one version, and the copy says so in those terms rather than pretending to a
+ * precision the data does not carry.
+ *
+ * `calls` COUNTS REQUESTS, not runs: a step that spent its single repair retry
+ * wrote two rows. That is the honest unit here, because the question is which
+ * model answered, and each request has its own answer.
+ */
+export type GenerationProvenance = {
+  /** `generate` rows read for this application. Requests, not runs. */
+  calls: number;
+  /** The model that served most recently, or null when nothing has generated. */
+  newestModel: string | null;
+  /** Whether that most recent call fell through to the fallback. */
+  newestFallback: boolean;
+  /** True when EVERY generate call for this application fell back. */
+  allFallback: boolean;
+  /** Distinct serving models, newest first. */
+  models: string[];
+};
+
+export const NO_GENERATION: GenerationProvenance = {
+  calls: 0,
+  newestModel: null,
+  newestFallback: false,
+  allFallback: false,
+  models: [],
+};
+
+/** Newest-first `generate` rows for one application. */
+export function generationProvenance(rows: readonly CallRow[]): GenerationProvenance {
+  const generates = rows.filter((row) => row.step === 'generate');
+  if (generates.length === 0) return NO_GENERATION;
+
+  const newest = generates[0]!;
+  const models: string[] = [];
+  for (const row of generates) if (!models.includes(row.model)) models.push(row.model);
+
+  return {
+    calls: generates.length,
+    newestModel: newest.model,
+    newestFallback: newest.fallback_used,
+    // `every` over a non-empty list, so this cannot be vacuously true.
+    allFallback: generates.every((row) => row.fallback_used),
+    models,
+  };
 }
