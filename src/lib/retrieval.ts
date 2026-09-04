@@ -10,11 +10,8 @@ import {
   matchDocuments as matchDocumentsRpc,
   type NewDocument,
 } from '@/lib/db/documents';
-import {
-  DAILY_RESCORE_LIMIT,
-  countRescoreCallsInLast24h,
-  logLlmCall,
-} from '@/lib/db/llmCalls';
+import { underRescoreCap } from '@/lib/budget';
+import { countRescoreCallsInLast24h, logLlmCall } from '@/lib/db/llmCalls';
 import { ERROR_MESSAGES } from '@/lib/copy';
 import { AiUnavailableError, DailyLimitError, UnauthorizedError } from '@/lib/errors';
 import { getUser } from '@/lib/supabase/server';
@@ -185,7 +182,9 @@ function logEmbedCall(
  * to lose its index, which is the failure those two rules exist to prevent.
  */
 async function assertUnderRescoreCap(): Promise<void> {
-  if ((await countRescoreCallsInLast24h()) >= DAILY_RESCORE_LIMIT) {
+  // `underRescoreCap` is the comparison, in `lib/budget.ts` where a unit test can
+  // reach it (backlog p4-30). This is the query and the throw.
+  if (!underRescoreCap(await countRescoreCallsInLast24h())) {
     throw new DailyLimitError(ERROR_MESSAGES.RESCORE_LIMIT);
   }
 }

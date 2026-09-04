@@ -3,8 +3,8 @@ import 'server-only';
 import type { User } from '@supabase/supabase-js';
 import type { z } from 'zod';
 
-import { MAX_CHAT_REQUESTS_PER_STEP } from '@/lib/budget';
-import { DAILY_CALL_LIMIT, countCallsInLast24h, logLlmCall } from '@/lib/db/llmCalls';
+import { MAX_CHAT_REQUESTS_PER_STEP, underDailyCallCap } from '@/lib/budget';
+import { countCallsInLast24h, logLlmCall } from '@/lib/db/llmCalls';
 import { ERROR_MESSAGES } from '@/lib/copy';
 import { AiUnavailableError, DailyLimitError, UnauthorizedError } from '@/lib/errors';
 import { getUser } from '@/lib/supabase/server';
@@ -135,7 +135,10 @@ export const newCallLedger = (): CallLedger => ({ chat: 0 });
  */
 async function assertUnderDailyCap(ledger: CallLedger | undefined): Promise<void> {
   const committed = await countCallsInLast24h();
-  if (committed + (ledger?.chat ?? 0) >= DAILY_CALL_LIMIT) {
+  // The comparison is `underDailyCallCap` in `lib/budget.ts`, which is pure and
+  // therefore testable at the boundary; this function is the query plus the
+  // throw (backlog p4-30).
+  if (!underDailyCallCap(committed, ledger?.chat ?? 0)) {
     throw new DailyLimitError(ERROR_MESSAGES.DAILY_LIMIT);
   }
 }

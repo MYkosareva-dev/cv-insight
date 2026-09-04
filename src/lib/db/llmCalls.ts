@@ -14,30 +14,18 @@ import type { LlmCall } from '@/lib/db/types';
  * (rule B8). Metadata only: never log resume or vacancy CONTENT.
  */
 
-/** SPEC rule B7: 50 non-embedding calls per user per rolling 24 h. */
-export const DAILY_CALL_LIMIT = 50;
+/**
+ * THE CEILINGS LIVE IN `lib/budget.ts`, THE QUERIES LIVE HERE (backlog p4-30).
+ *
+ * Rule B7's 50 and rule B7a's 100 used to be declared in this file, which
+ * imports `server-only` — so check.mjs R6 kept every unit test away from them and
+ * the two numbers that decide how much money a day of clicking can spend were
+ * untestable by construction. They moved to `lib/budget.ts`, which is pure and
+ * already the home of the metered-request arithmetic; a query needs a database
+ * client and stays.
+ */
 const CHAT_STEPS = ['import_resume', 'parse_vacancy', 'generate', 'judge'] as const;
 
-/**
- * SPEC rule B7a (v2.18): the RE-SCORE ceiling, in `rescore` rows per rolling 24 h.
- *
- * Rule B7 excludes embeddings by definition, and for every embedding spend the
- * app had until Phase 4 that was right: indexing is a side effect of a write
- * already bounded by rule B9's item cap and skipped when nothing changed, and a
- * scan's embeddings are a limb of a request whose chat call B7 already capped.
- * `/rescore` is neither. It makes NO chat call — that is its whole selling point
- * — so it passed through the only ledger in the app, and its entire purpose is a
- * spend the user repeats one click at a time. The client-side one-click ref is
- * not a fence: a signed-in caller can POST it in a loop.
- *
- * COUNTED IN REQUESTS, NOT CLICKS, because the request is what costs money.
- * `embedFor` splits at EMBEDDING_BATCH_SIZE, so one re-score is 2 rows on a
- * measured run and up to 7 on the largest input rule B1 and the chunker permit
- * (200 requirements + 200 resume units). 100 rows is therefore ~50 typical
- * re-scores a day — deliberately the same order as B7's 50 chat calls, since a
- * re-score is one user action of the same kind.
- */
-export const DAILY_RESCORE_LIMIT = 100;
 const RESCORE_STEPS = ['rescore'] as const;
 
 export async function listRecentLlmCalls(limit = 50): Promise<LlmCall[]> {
