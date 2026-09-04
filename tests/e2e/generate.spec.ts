@@ -329,6 +329,23 @@ test.describe('generate', () => {
     await expect(page.getByRole('heading', { name: RESULT.versionsHeading })).toBeVisible();
 
     /**
+     * WHICH MODEL WROTE IT (SPEC v2.22), read off the screen and printed.
+     *
+     * The line exists because owner testing found every generate call served by
+     * the fallback — a guardrail on the provider account blocks the configured
+     * Sonnet slug, and `models: [primary, fallback]` routing answers that
+     * silently. Asserted as PRESENT and logged rather than asserted to name a
+     * particular model: which model serves is a fact about the provider account
+     * on the day of the run, not something a spec run may pin, and a test that
+     * demanded Sonnet would go red the moment the account was fixed OR stay red
+     * while it was broken. What must always hold is that the app SAYS which one
+     * it was.
+     */
+    const writtenBy = page.getByText(/^Most recent draft written by /);
+    await expect(writtenBy).toBeVisible();
+    console.log('[phase-5] generation provenance:', (await writtenBy.innerText()).trim());
+
+    /**
      * GROUNDING, OBSERVED RATHER THAN TRUSTED. The base names none of MS Office,
      * Google Suite, Labelbox or Supervisely — that is what makes this fixture a
      * false-positive test — so a resume grounded in it must not claim them. This
