@@ -9,6 +9,16 @@ and the number of runs is one — lower than the three the sibling file already
 warns about.** What it can do is separate two explanations that were previously
 entangled; what it cannot do is establish a frequency.
 
+> **READ THE CLASSIFICATION SECTION BEFORE QUOTING THE HEADLINE.** A later pass
+> over the stored verdicts (2026-09-04, same day, no model calls) found that
+> **every grounding violation this run recorded is a COVERAGE judgement, not a
+> faithfulness one** — the reviewer refusing sentences the career base does
+> contain, because they do not name a tool the posting names. On one of them the
+> reviewer says so in writing, inside the violation it is filing. Strike out the
+> reading that this run is evidence about P2's faithfulness: for this run it is
+> evidence about P3's criterion boundary. The measurements below are unchanged
+> and correct; what changed is what they can be used to conclude.
+
 ---
 
 ## The question
@@ -70,56 +80,155 @@ and the run classification:
 | `ai` (first draft) | **fail** | 2/5 | 4/5 | 5/5 | revise |
 | `ai_revision` | **fail** (1 violation) | 3/5 | 5/5 | 5/5 | revise |
 
-The revision's row is read directly off its card. **The draft's three scores are
-a deduction, and are labelled as one**: `/quality`'s score distribution over the
-two versions gives keyword {2, 3}, relevance {4, 5}, ATS {5, 5}, and the revision
-holds the 3, the 5 and one of the 5s. The draft's own *violation count* is not
-witnessed anywhere — the judge card describes the version the editor opened with,
-which after a rewrite is the revision (backlog `p5-15`), and there is no
-`GET /api/applications/[id]` to read the stored report from. Only its pass/fail
-is on record, and the pass/fail is what the question asked for.
+Both rows are read from the STORED verdicts, recovered in full — see the
+classification section. An earlier version of this file derived the draft's three
+scores by subtraction from `/quality`'s distribution and warned that they were a
+deduction; the recovered row confirms all three exactly (keyword 2, relevance 4,
+ATS 5), so the deduction was right and is no longer needed. The draft carried
+**2** grounding violations, which nothing had witnessed until that pass.
 
 One detail worth keeping: the draft's keyword coverage of **2** is at
 `WEAK_CRITERION_SCORE`, so `needsRevision()` in `src/lib/judge.ts` would have
 ordered the rewrite on that criterion alone. The rewrite was over-determined —
 grounding was sufficient but not necessary.
 
-## What the comparison supports, and what it does not
+## Every grounding violation this run produced, classified
 
-**Supported.** The first draft fails grounding whether or not the career base
-covers the vacancy. Four first drafts have now been judged across two fixtures,
-two corpora and two generators, and four have failed. The thin-corpus explanation
-that `docs/eval/generation-model-comparison.md` could not rule out is now ruled
-out as a *sufficient* explanation: this base covers three quarters of the
-posting, scores 82, and its draft failed anyway. **The remaining suspect is
-prompt P2.** That is the honest reading and it is the uncomfortable one.
+The stored verdicts for both versions, read back out of the application's own
+page (the server-rendered payload the app delivers to its owner's session — no
+model call, no DAL, no service-role key). Reproduced verbatim here because the
+demonstration account will not live forever and this is the only surviving copy.
 
-**Not supported.** Nothing here is a rate. One run on one fixture cannot say how
-often P2 over-claims, and it cannot say the two fixtures fail for the same
-reason — only that both fail. Nor does it exonerate the corpus in general: a base
-covering 9 of 12 requirements still leaves three it does not cover, and the one
-recorded violation is attached to one of exactly those three.
+**Classification scheme**, as put to this analysis:
 
-**And the failure is a different shape, which the binary outcome hides.** On the
-under-covering fixture the drafts carried 2 to 5 violations and the fallback's
-rewrite made grounding worse (3 → 5). Here the surviving version carries **one**,
-and it is this:
+- **(a) a true grounding failure** — the resume asserts something the career base
+  does not contain.
+- **(b) a coverage judgement wearing grounding's clothes** — the resume asserts
+  something the base DOES contain, refused because it does not match a term the
+  posting names.
+- **(c) neither** — described case by case.
 
-> Working knowledge of Terraform for infrastructure as code — Resume states
-> 'Provisioned the warehouse, its roles, and its access policies as
-> infrastructure-as-code modules' but career items do not specify Terraform as
-> the tool used. Infrastructure-as-code is mentioned generically; Terraform is
-> not named in any career item.
+### First draft (`source: "ai"`) — 2 violations
 
-The quoted sentence **is in the career base, close to verbatim**. So this is not
-an invented achievement of the kind the earlier runs produced; it is the reviewer
-refusing an adjacent line as evidence for a named tool. **That is the same
-judgement rule B1's lexical gate makes about the same word**, three sections up
-in this file, using `keywordPresent` in `src/lib/scoring.ts` — the gate called
-Terraform a gap at 0.4199 and the judge called it an unsupported claim. Two
-independent halves of the pipeline, one conclusion. Whether that is the judge
-being right or the judge being lexical is the question a second run would have to
-answer, and it is a better question than the one this file started with.
+**V1 — category (b).**
+
+> `claim`: "Working knowledge of Terraform for infrastructure as code"
+> `issue`: "Resume states 'infrastructure-as-code modules' and
+> 'infrastructure-as-code' in skills, but career items specify only generic
+> 'infrastructure-as-code modules reviewed in pull requests'—no mention of
+> Terraform by name. **The vacancy requires Terraform specifically; the resume
+> does not honestly support this.**"
+
+The quoted resume sentence is in the career base almost verbatim. Nothing was
+invented. The stated reason for the violation is what the VACANCY requires.
+
+**V2 — category (b), and the reviewer says so itself.**
+
+> `claim`: "Experience with streaming data using Apache Kafka"
+> `issue`: "Resume mentions 'streaming ingestion from checkout event topics into
+> a near-real-time inventory table' and lists 'near-real-time ingestion' in
+> skills. Career items confirm 'streaming ingestion from the checkout event
+> topics' but do not name Apache Kafka. The resume does not explicitly claim
+> Kafka, but the vacancy requires it; absence of grounding is a violation only if
+> claimed. **Resume does NOT claim Kafka, so this is not a grounding
+> violation—it is a coverage gap.**"
+
+The reviewer reasons its way to the correct answer, states the correct answer,
+and files the entry as a grounding violation anyway.
+
+### Revision (`source: "ai_revision"`) — 1 violation
+
+**V3 — category (b).** Same requirement as V1, same shape: the resume carries the
+base's own sentence about infrastructure-as-code modules, and the issue is that
+"career items do not specify Terraform as the tool used".
+
+### Counts
+
+| Category | First drafts | Both versions |
+|---|---|---|
+| (a) true grounding failure | **0** | **0** |
+| (b) coverage judgement in grounding's clothes | **2** | **3** |
+| (c) neither | 0 | 0 |
+
+**Category (b) does not merely dominate — it is the whole of the classifiable
+sample.** And the consequence is direct: remove the two (b) entries from the
+first draft and its `violations` array is empty, so `grounding.verdict` becomes a
+pass. **The one thing this run was built to measure — does the first draft pass
+grounding when the base covers the vacancy — is decided entirely by violations
+that are not about grounding.**
+
+### Three structural tells, none of which needs a second run
+
+1. **The `claim` field holds vacancy requirements, not resume sentences.** P3
+   defines `claim` as "every factual claim in the resume". All three claims here
+   are requirement strings copied from the posting. Whatever the reviewer was
+   enumerating, it was not the resume's assertions.
+2. **P3's framing sentence licenses it.** The prompt opens "Evaluate the RESUME
+   against the VACANCY REQUIREMENTS and the CAREER ITEMS", and criterion 1 —
+   correctly base-relative on its own terms — never re-scopes away from the
+   requirements the framing just introduced. The requirements are also in the
+   context window, as `VACANCY REQUIREMENTS`.
+3. **`groundingFailed()` makes a mislabelled entry uncompensatable.** It returns
+   true when the model says `fail` **or** when the violations array is non-empty
+   (`src/lib/judge.ts`). So V2 — an entry whose own text says it is not a
+   grounding violation — is converted into a hard rule-B2 failure by our
+   arithmetic. Both halves contribute: the reviewer files it, and the code
+   refuses to look inside it.
+
+### The feedback loop this creates, in the app's own words
+
+`feedbackForGenerator` is appended to P2 on the rewrite (rule B3). The first
+draft's list opens:
+
+> "GROUNDING FAILURE: Resume claims 'infrastructure-as-code' in the skills block
+> but does not name Terraform. Career items do not mention Terraform. Vacancy
+> requires 'Working knowledge of Terraform for infrastructure as code' as a
+> must-have. **Either add Terraform experience to a career item (if true) or
+> remove the claim from the resume.**"
+
+and contains four further entries labelled `COVERAGE GAP` or `CRITICAL COVERAGE
+GAP`. So a coverage finding is re-entering the generator as a grounding
+instruction, and the only two moves it offers are to acquire the tool or to
+delete an honest sentence. **The generator was penalised for not claiming
+Terraform, and then told to fix it.** That is the mechanism the hypothesis
+predicted, recorded in stored rows rather than argued.
+
+## What this supports, and what it cannot
+
+**Supported, for this run.** The 4-of-4 first-draft grounding-failure figure
+cannot be read as evidence about P2's faithfulness, because on the one run whose
+violation text survives, P2 invented nothing: both of its violations are the
+reviewer answering the coverage question. The earlier reading of this file — "the
+thin corpus is ruled out, so what remains is P2" — was wrong in its second half
+and is corrected here rather than left standing.
+
+**Not supported: any claim about the other three drafts.** Their violation text
+no longer exists. The three `docs/eval/calibration-case-hiredbuddy.json` runs each
+used a fresh throwaway account, all of which were deleted, and only violation
+COUNTS were recorded (3, 2 and 3 on the first drafts —
+`docs/eval/generation-model-comparison.md`). **So 8 of the 10 first-draft
+violations across both fixtures are permanently unclassifiable**, and nothing
+here says which category they fell into. What can be said is that the same
+collision was AVAILABLE to them: that fixture's posting also names tools the base
+does not contain — Labelbox, Supervisely, MS Office, Google Suite — which is the
+exact condition that produced all three violations here. Available is not
+occurred.
+
+**Not supported: that P2 is faithful.** This run gives no evidence either way. It
+removes an argument against P2; it puts nothing in its place. A draft that
+invents nothing on one fixture may invent freely on another.
+
+**Not supported: a rate, of anything.** One run, one fixture, three violations.
+The fixture was also *designed* with three named tools absent from the base,
+which is the setup most likely to provoke a coverage/grounding collision — so
+this sample is not merely small, it is selected in the direction of the finding.
+A fixture with no named-tool gaps would be the control for this control.
+
+**The narrowing this suggests is NOT made here.** Changing P3's criterion 1 would
+invalidate every rubric number this project has taken against it, including the
+six versions in `docs/eval/generation-model-comparison.md` and the two above, with
+no budget to re-baseline. It is recorded as a backlog item with this evidence
+attached, and the criterion is untouched.
 
 ## Run metadata
 

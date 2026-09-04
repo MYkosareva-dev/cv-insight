@@ -29,41 +29,50 @@ it is in the rounds below, waiting on nothing but a decision to do it.
 
 ## Read these first
 
-Seven, chosen for consequence rather than for severity label — two product
+Eight, chosen for consequence rather than for severity label — three product
 findings about the pipeline, two open code defects, one migration risk, one gap
 in the evidence, and one entry holding the two owner actions that gate sharing
 the link.
 
-1. **`p5-16` — grounding fails on the first draft in 4 of 4 measured runs, on
-   BOTH generators and now on BOTH corpora.** The strongest open finding in the
-   file. It was three runs against a base that deliberately under-covers its
-   posting, which left two suspects — prompt P2, and the thin corpus. **The
-   control has now been run** (`docs/eval/generation-coverage-control.md`): a
-   base covering nine of twelve requirements, scoring 82, produced a first draft
-   that failed grounding and a rewrite that failed it too. The corpus is no
-   longer a sufficient explanation, so what is left is P2. Still one run per
-   fixture — this is a direction, not a rate. Phase 5, guardrail round;
-   controlled in Phase 7.
+1. **`p7-1` — the grounding criterion is answering the coverage question, so
+   the 4-of-4 figure does not mean what it looked like it meant.** Read this
+   before quoting any grounding number this project has produced. On the one run
+   whose violation text survives, **every** grounding violation is the reviewer
+   refusing a sentence the career base *does* contain, because it does not name a
+   tool the posting names — and on one of them the reviewer writes "this is not a
+   grounding violation—it is a coverage gap" inside the violation it is filing.
+   Strip them and that draft's grounding is clean. Verbatim evidence in
+   `docs/eval/generation-coverage-control.md`. Phase 7.
 
-2. **`p3-23` — the coverage gate compares term FORMS.** A base saying
+2. **`p5-16` — grounding fails on the first draft in 4 of 4 measured runs, on
+   BOTH generators and BOTH corpora.** Still open, and still the headline number
+   — but `p7-1` above changes what it is a number *about*. It was three runs
+   against a base that deliberately under-covers its posting, which left two
+   suspects, prompt P2 and the thin corpus; the Phase-7 control removed the
+   corpus and looked like it left P2 alone. Classifying the violations removed P2
+   as well, for that run. What the figure now says is that four first drafts were
+   refused, and why they were refused is open. One run per fixture: a direction,
+   not a rate. Phase 5, guardrail round; controlled and re-read in Phase 7.
+
+3. **`p3-23` — the coverage gate compares term FORMS.** A base saying
    "Microsoft Office" or "NodeJS" does not satisfy a posting saying "MS Office"
    or "Node.js", and that row is a false Gap at any similarity — the same class
    of error the gate was built to remove, narrowed from topic to spelling.
    User-visible on every scan. Phase 3, lexical-gate round.
 
-3. **`M-3` (= `ns-4`) — the career `[id]` route still does not parse its
+4. **`M-3` (= `ns-4`) — the career `[id]` route still does not parse its
    segment**, so a non-UUID reaches Postgres and returns 500 where Block D
    mandates 404. Open since Phase 2 across two review rounds, and easy to believe
    is fixed: a comment on `src/app/api/applications/[id]/route.ts` says the
    finding was "closed here rather than repeated", which it was — for that route
    only. Phase 2, and again Phase 6.
 
-4. **`M-4` — `POST /api/career/import` spends a metered model call before rule
+5. **`M-4` — `POST /api/career/import` spends a metered model call before rule
    B9's cap refuses the save.** Re-checked while writing this section and still
    open: the handler has no item count in front of the model call. It is the one
    open item that costs money every time it fires. Phase 2.
 
-5. **`p4-27` — the committed migrations may not run on a fresh project.**
+6. **`p4-27` — the committed migrations may not run on a fresh project.**
    `001_init.sql` installs and uses `moddatetime`, which was not available on the
    project this app actually runs against; `004_profiles.sql` was rewritten to
    match reality and the other three were not re-read. SPEC Block C reproduces
@@ -71,7 +80,7 @@ the link.
    assumption, and Block C never gained `profiles` at all. This is what a reader
    following the README's local-setup steps would hit first. Phase 4.
 
-6. **The Playwright suite can no longer create accounts on this project.**
+7. **The Playwright suite can no longer create accounts on this project.**
    Registration is closed in Supabase and that setting is the deployment's only
    gate, so all four specs now fail at their fixture. The next change to a tested
    path has no green suite behind it until a second Supabase project exists or the
@@ -79,7 +88,7 @@ the link.
    `docs/eval/phase-6-e2e-run.txt` with the three options and their costs.
    Phase 6, owner triage.
 
-7. **Two one-line owner actions gate sharing the link.** `IMPRESSUM_FILLED` is
+8. **Two one-line owner actions gate sharing the link.** `IMPRESSUM_FILLED` is
    still `false`, so `/impressum` correctly states the operator is not published —
    accurate, and not a substitute for filling it in. And **Speed Insights must be
    off** in the Vercel dashboard: it beacons per-visit data to a third party, and
@@ -555,7 +564,11 @@ before/after are `docs/eval/generation-model-comparison.md`.
 > grounding and its single rewrite failed too, so `/quality` counts the run as
 > "needed the rewrite and still failed after it". Four first drafts across two
 > corpora and two generators, four failures: the thin corpus is ruled out as a
-> SUFFICIENT explanation and P2 is what remains. NOT closed — one run on the new
+> SUFFICIENT explanation. **P2 looked like what remained, and a later pass the
+> same day removed that too — see `p7-1`.** Classifying the stored violations
+> found every one of them to be a coverage judgement rather than a faithfulness
+> one, so this run measures P3's criterion boundary and says nothing about
+> whether the generator over-claims. NOT closed — one run on the new
 > fixture is a direction and not a rate, and the entry's second option, a P2
 > change measured against both, is untouched. One detail worth carrying: the
 > surviving violation is the reviewer refusing a sentence that IS in the base,
@@ -637,3 +650,13 @@ round and `docs/deploy.md` is the ordered procedure.
 
 - **NOT OURS — the `reportAllChanges` / web-vitals console error is not this app's code, and the investigation is recorded so nobody repeats it.** Symptom on member screens: `Uncaught TypeError: Cannot read properties of undefined (reading 'startTime') at et.reportAllChanges`, with frames in `<anonymous>` / `VM…` rather than `/_next/static/chunks/*`. Checked, in order: no `web-vitals`, `@vercel/speed-insights` or `@vercel/analytics` in `package.json`; `npm ls web-vitals` is empty and the package appears nowhere in `package-lock.json` or `node_modules`; no `reportWebVitals` or `useReportWebVitals` anywhere in `src/`; the single repository match is `eslint-config-next/core-web-vitals` in `eslint.config.mjs`, which is a lint ruleset and is never bundled. Next.js does VENDOR web-vitals at `next/dist/compiled/web-vitals` — and `reportAllChanges` appears **nowhere in a clean `.next/` build**, client or server, because nothing registers a callback for it to tree-shake in. The served HTML references only `/_next/static/chunks/*` and contains no occurrence of "vitals". Our own code contains no `eval`, `new Function` or script injection. **Conclusion: injected at run time by the platform or the browser, not shipped by us.** The two candidates worth checking in the Vercel dashboard are the **Vercel Toolbar** (injected for a visitor authenticated to Vercel — which fits an error only the owner sees) and **Speed Insights** (injectable from project settings with no package installed).
 - **MAJOR if Speed Insights turns out to be enabled — it would be a tracker, and this project has a rule about that.** CLAUDE.md's Privacy section says adding ANY tracker re-opens the no-consent-banner decision, and `/privacy` states in its own words that there are no analytics and no trackers. Speed Insights beacons per-visit performance data to a third party, so switching it on silently makes that sentence false. Note the CSP would currently stop the beacon leaving — `connect-src 'self'` permits no third-party endpoint — so the practical position today is "a script that errors and cannot phone home". **That is a reason to turn it off in the dashboard, not a reason to rely on the CSP**: a header is the wrong place to enforce a privacy promise the page makes in prose. If the owner wants it, it needs the `/privacy` wording changed and the consent question re-opened first.
+
+## Phase 7 — from classifying the stored grounding violations (2026-09-04)
+
+Analysis only: no prompt, threshold or criterion was changed, because changing
+the criterion is what would destroy the ability to compare anything measured
+before it. `docs/eval/generation-coverage-control.md` carries the verbatim
+verdicts and the classification.
+
+- **MAJOR p7-1 — P3's grounding criterion answers the COVERAGE question, and rule B2 then makes that answer uncompensatable.** Grounding asks whether a claim is supported by the career base; coverage asks whether a claim satisfies the posting. On the Vinterlys run all three violations are the second question: the reviewer refusing sentences the base *does* contain — "infrastructure-as-code modules", "streaming ingestion from the checkout event topics" — because they do not name Terraform or Kafka, which the posting names. Three structural tells, none needing a second run: (1) the `claim` field holds VACANCY REQUIREMENT strings verbatim, though P3 defines it as "every factual claim in the resume"; (2) P3 opens "Evaluate the RESUME against the VACANCY REQUIREMENTS and the CAREER ITEMS" and criterion 1 never re-scopes away from the requirements that framing introduces, which also sit in the context as `VACANCY REQUIREMENTS`; (3) `groundingFailed()` in `src/lib/judge.ts` returns true on ANY non-empty violations array, so an entry whose own text says "this is not a grounding violation—it is a coverage gap" still becomes a hard rule-B2 failure. `feedbackForGenerator` then carries it back into P2 as "add Terraform experience to a career item (if true) or remove the claim", plus four entries labelled COVERAGE GAP — so the generator is penalised for not claiming a tool and then instructed to fix it. **The proposed narrowing, NOT made here:** scope criterion 1's enumeration to sentences of the resume, and say in the prompt that a requirement the resume does not claim is not a grounding violation, because coverage is what the coverage map is for. It is not made because every rubric number this project holds was taken against the current criterion, including the six versions in `docs/eval/generation-model-comparison.md`, and re-baselining them is not affordable now. Do it in a round that can re-run both fixtures, and keep the old numbers labelled as pre-narrowing.
+- **MINOR p7-2 — a judge verdict's TEXT survives only as long as the account that produced it, so 8 of 10 first-draft violations are permanently unclassifiable.** The three Hiredbuddy runs each used a fresh throwaway account and every one was deleted; `docs/eval/generation-model-comparison.md` recorded violation COUNTS (3, 2, 3) and no violation text, which is exactly the field `p7-1` turned out to need. The Vinterlys verdicts were recoverable only because that account still exists, and only by reading the server-rendered payload of the app's own page — there is no `GET /api/applications/[id]`, `tests/` may not touch a DAL (R1) and may not hold the service-role key (R10). Two candidate fixes, neither built: have `scripts/demo-seed.mjs` write the full judge JSON into the run's evidence file beside the counts, or add a dev-only read for one application's versions the way `src/app/api/dev/coverage-probe/route.ts` does for coverage. The first is smaller and adds no route. Until one exists, an eval that records only counts is recording the half that cannot answer a follow-up question.

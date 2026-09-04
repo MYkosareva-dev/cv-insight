@@ -231,13 +231,18 @@ Then the part worth reading. Across three runs and six judged versions on one
 fixture, **grounding fails on the first draft in 3 of 3 runs, on both models**.
 The stronger generator did not fix it, which means the grounding failures are a
 property of prompt P2 and/or of a deliberately under-covered career base — not an
-artefact of the wrong model. **A second fixture has since removed the second half
-of that "and/or"**: a career base that genuinely covers its vacancy, scoring 82
-with nine of twelve requirements Covered, still produced a first draft that failed
-grounding — and a rewrite that failed it too
-(`docs/eval/generation-coverage-control.md`). Four first drafts judged across two
-corpora and two generators, four failures. The thin corpus is no longer a
-sufficient explanation, which leaves P2. What did change is the revision step: under the
+artefact of the wrong model. **A second fixture then produced a fourth failure**
+on a career base that genuinely covers its vacancy — 82, nine of twelve
+requirements Covered — which looked like it left P2 as the only suspect. **Reading
+the stored verdicts says otherwise, and this is the more interesting result.**
+Every grounding violation that run recorded is the reviewer refusing a sentence
+the career base *does* contain, because it does not name a tool the posting names;
+on one of them the reviewer writes "this is not a grounding violation—it is a
+coverage gap" inside the violation it is filing. So for that run the figure
+measures P3's criterion boundary, not P2's faithfulness, and the three earlier
+drafts cannot be checked because their accounts were deleted and only violation
+counts survive. The classification, the verbatim verdicts and what they cannot
+support are in `docs/eval/generation-coverage-control.md`. What did change is the revision step: under the
 fallback it made grounding *worse* (3 violations → 5), under gpt-5.4 it converged
 completely once (2 → 0, this project's first `approve`) and not at all once.
 
@@ -521,17 +526,27 @@ the generator is never handed the keyword list and terms the base does not suppo
 are reported separately instead of written into the resume. What it does **not**
 do: it is one model's reading of one draft, with a single revision behind it and no
 loop. Its ATS-format score moved in opposite directions across two runs of the
-same fixture and should not be read. On the covering fixture its one surviving
-objection was to a sentence that **is** in the career base — it refused
-"infrastructure-as-code modules" as evidence for a requirement naming Terraform,
-which is the same lexical judgement the coverage gate makes about the same word.
-Whether that is the judge being right or the judge being merely lexical is
-unresolved, and it is written down rather than smoothed over. It cannot verify
-that anything in the career
+same fixture and should not be read.
+
+**And the criterion boundary leaks, which is the most important limitation on this
+page.** On the covering fixture, all three grounding violations were the reviewer
+refusing sentences the career base *does* contain, because they did not name a
+tool the posting names — a coverage judgement, filed as a faithfulness one. The
+reviewer identified one of them correctly and filed it anyway, in its own words:
+"Resume does NOT claim Kafka, so this is not a grounding violation—it is a
+coverage gap." Strip those and that draft's grounding is clean. So the headline
+figure — a first-draft grounding failure in 4 of 4 measured runs — is **not**
+usable as evidence that the generator over-claims: one of the four is a
+measurement of the reviewer, and the other three cannot be checked because their
+throwaway accounts were deleted and only violation counts survive. It remains an
+open finding, and what it is a finding *about* is now the open question.
+`docs/eval/generation-coverage-control.md` carries the verdicts and the counts.
+The narrowing this suggests is deliberately not made: changing the criterion would
+invalidate every rubric number taken against it, so it is backlog `p7-1`.
+
+It also cannot verify that anything in the career
 base is *true* — grounding means "supported by what you wrote", not "supported by
-reality". And a first-draft grounding failure in **4 of 4** measured runs — three
-against a base that under-covers its vacancy, one against a base that covers it —
-is an open finding about prompt P2, not a solved problem.
+reality".
 
 **The coverage gate matches forms, not meanings.** A base writing "Microsoft
 Office", "PostgreSQL" or "NodeJS" does not satisfy a posting saying "MS Office",
