@@ -70,7 +70,7 @@ llm_calls             9       0
 imports               1       0
 profiles              1       0
 
-select count(*) from auth.users where email = <the throwaway address>  ->  0
+select count(*) from auth.users where email = 'my.kosareva.dev+erasure@gmail.com'  ->  0
 ```
 
 All eight owner-scoped tables go to zero, and the auth user is gone. `documents`
