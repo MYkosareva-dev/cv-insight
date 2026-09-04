@@ -209,6 +209,163 @@ test.describe('generate', () => {
     }
   });
 
+  test("user B gets 404 on user A's REAL application id — read and metered write", async ({
+    browser,
+  }) => {
+    /**
+     * ROW-LEVEL ISOLATION, WITH A ROW THAT ACTUALLY EXISTS.
+     *
+     * The test above this one sends a FABRICATED uuid. That is worth having, but
+     * it proves something weaker than it appears to: it shows the handler copes
+     * with a missing row. It cannot distinguish "no such application" from
+     * "someone else's application", because in that test both are the same
+     * thing — nothing was ever there.
+     *
+     * This one uses user A's real, freshly created application id and asks for
+     * it as user B. Now the row exists, `applications` holds it, and the only
+     * reason B does not get it is the RLS policy. That is the assertion that
+     * demonstrates the policy rather than the null case.
+     *
+     * WHY 404 AND NOT 403, which is the whole point of the pair (edge case
+     * S3/S6). A 403 says "this exists and you may not have it"; a 404 says
+     * nothing at all. With 403, a signed-in user could walk uuids and learn
+     * which ones name real applications — the existence of a row is itself
+     * information about another person, and the status code is where it would
+     * leak. So absent and forbidden must be INDISTINGUISHABLE from outside, and
+     * this test pins that by asserting the same 404 the fabricated-uuid case
+     * gets, for a row that is really there.
+     *
+     * THE CONTROL IS LOAD-BEARING. Before asking as B, the test confirms A can
+     * open the very same URL and get 200. Without that, a 404 for B would be
+     * consistent with the id being wrong, the scan having failed, or the row
+     * never existing — and the test would pass while proving nothing. The
+     * control is what makes B's 404 mean "refused" rather than "absent".
+     *
+     * Two browser CONTEXTS rather than a sign-out, so the two sessions are
+     * genuinely independent and neither can inherit the other's cookies.
+     *
+     * This must run while registration is open: it creates a second account, and
+     * after the deploy step that disables sign-ups no test can do that at all.
+     */
+    test.setTimeout(600_000);
+
+    const contextA = await browser.newContext();
+    const contextB = await browser.newContext();
+
+    try {
+      const pageA = await contextA.newPage();
+      await signUp(pageA, uniqueEmail());
+      await buildCareerBase(pageA);
+      const { applicationId } = await runScan(pageA);
+      expect(applicationId, 'the scan must have produced a real application id').toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+
+      // CONTROL: the owner can read it, and what the owner's page SAYS is
+      // captured here so the foreign read can be checked against it. Everything
+      // below is only meaningful because this passes.
+      const ownerRead = await pageA.goto(`/applications/${applicationId}`);
+      expect(ownerRead?.status(), 'user A must be able to open their own application').toBe(200);
+      const ownerHeading = (await pageA.getByRole('heading', { level: 1 }).innerText()).trim();
+      expect(ownerHeading.length, "A's application must render a heading to compare against").
+        toBeGreaterThan(0);
+
+      const pageB = await contextB.newPage();
+      await signUp(pageB, uniqueEmail());
+
+      /**
+       * SECOND CONTROL: B is really signed in.
+       *
+       * Without this, B's refusal below could just as well mean B's session was
+       * never established and the middleware bounced the request — and `goto`
+       * FOLLOWS that redirect, so what came back would be the login page. Both
+       * failure modes have to be excluded before B's answer says anything about
+       * the policy.
+       */
+      const ownScan = await pageB.goto('/scan');
+      expect(ownScan?.status(), 'user B must be signed in before the test means anything').toBe(
+        200,
+      );
+      expect(new URL(pageB.url()).pathname, 'user B must not be sitting on /login').toBe('/scan');
+
+      /**
+       * READ PATH — the detail page, which is the only read surface for an
+       * application (the API route exposes PATCH, not GET).
+       *
+       * ASSERTED ON WHAT THE PAGE RENDERS, NOT ON ITS HTTP STATUS, and the
+       * reason is worth writing down because the obvious assertion is wrong.
+       * Next.js returns **200** for `notFound()` in DEVELOPMENT while rendering
+       * the not-found UI — measured, and measured against a uuid belonging to
+       * nobody, which takes the same code path and also answers 200 (a genuinely
+       * unrouted path answers 404). This suite only ever runs against a dev
+       * server, so a `toBe(404)` here would be asserting the framework's
+       * development behaviour rather than this app's authorization, and it would
+       * mean something different in production than it does in CI.
+       *
+       * So the read is checked on the two things that are true in both
+       * environments and are what actually matter: B is shown the not-found
+       * page, and none of A's content reaches B's screen. The unambiguous
+       * status assertion lives on the API calls below, where the handler owns
+       * the response and 404-versus-403 is exactly what is being pinned.
+       */
+      await pageB.goto(`/applications/${applicationId}`);
+      await expect(
+        pageB.getByRole('heading', { name: 'Not found' }),
+        "user B must get the not-found page for user A's application",
+      ).toBeVisible();
+      await expect(
+        pageB.getByText(ownerHeading, { exact: false }),
+        "none of user A's application must reach user B's screen",
+      ).toHaveCount(0);
+
+      /**
+       * WRITE PATH — a metered POST, so the assertion covers the endpoints that
+       * SPEND MONEY and not only the ones that render. It must refuse before any
+       * model call: a 404 that arrived after a generation would still be a leak,
+       * and billed to the wrong account.
+       */
+      const foreignWrite = await pageB.request.post(
+        `/api/applications/${applicationId}/generate`,
+        { data: {} },
+      );
+      expect(
+        foreignWrite.status(),
+        "generate on another user's application must be 404, never 403",
+      ).toBe(404);
+      expect(foreignWrite.status(), 'never 403 — that would confirm the row exists').not.toBe(403);
+      expect((await foreignWrite.json()).error.code).toBe('NOT_FOUND');
+
+      // And the non-metered write, which is the other way to touch the row.
+      const foreignPatch = await pageB.request.patch(`/api/applications/${applicationId}`, {
+        data: { status: 'applied' },
+      });
+      expect(foreignPatch.status(), "PATCH on another user's application must be 404").toBe(404);
+
+      // B's own list must not contain it either — the policy seen from the
+      // other direction, and free to check.
+      await pageB.goto('/applications');
+      await expect(
+        pageB.getByText(ownerHeading, { exact: false }),
+        "user A's application must not appear in user B's list",
+      ).toHaveCount(0);
+
+      // The two answers must be the SAME as the fabricated-uuid case. If a real
+      // foreign id and a nonexistent one ever diverged, the difference would be
+      // the oracle this pair exists to close.
+      const absent = await pageB.request.post(
+        '/api/applications/11111111-1111-1111-1111-111111111111/generate',
+        { data: {} },
+      );
+      expect(
+        absent.status(),
+        'a foreign id and an absent id must be indistinguishable from outside',
+      ).toBe(foreignWrite.status());
+    } finally {
+      await contextA.close();
+      await contextB.close();
+    }
+  });
+
   test('generate, judge, edit, re-score, export — the whole US-4/US-5 path', async ({ page }) => {
     test.setTimeout(600_000);
     await signUp(page, uniqueEmail());

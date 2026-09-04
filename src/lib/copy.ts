@@ -42,6 +42,83 @@ export const PRIVACY_ERASURE = {
 } as const;
 
 /**
+ * THE DEMONSTRATION-DEPLOYMENT NOTICE (v2.25, closing gate finding `eu-2`).
+ *
+ * SPEC has said "synthetic data only (the fictional persona)" since the
+ * OpenRouter processing record was written, and until now that constraint was
+ * legible only to someone reading SPEC. The person who can actually breach it is
+ * the person at the keyboard, and nothing on screen told them.
+ *
+ * The reason is not decorative. The API key this deployment uses belongs to an
+ * account the operator does not control, so its logging, retention and training
+ * settings cannot be verified or promised to anyone — which is fine for invented
+ * data and is not fine for a third party's real career history, since that third
+ * party never agreed to any of it and is not the one clicking.
+ *
+ * It renders on the AUTHENTICATED SHELL, so it is present on every screen that
+ * can upload, paste or generate — not on a page someone reads once and leaves.
+ * It goes when the operator has their own provider account and the verification
+ * is recorded; the same event retires the matching paragraph on /privacy.
+ */
+export const DEMO_NOTICE = {
+  lead: 'Demonstration deployment.',
+  body: 'No other person’s real resume or personal details may be uploaded to it — use your own career history, or invented sample data.',
+} as const;
+
+/**
+ * The date /privacy last changed in substance (v2.24).
+ *
+ * A privacy statement with no date gives a reader no way to tell whether it
+ * describes the app in front of them. Bump it when the page's CLAIMS change —
+ * a new data category, a new recipient, a changed legal basis — and not for a
+ * wording tidy-up.
+ */
+export const PRIVACY_UPDATED = '4 September 2026';
+
+/**
+ * THE OPERATOR'S IDENTITY, AND THE TWO VALUES THE AGENT MUST NOT INVENT
+ * (SPEC v2.24, Block E).
+ *
+ * `operatorName` and `email` ship as VISIBLE placeholders and are the owner's to
+ * fill. They are not defaulted, not derived from `git config`, and not guessed
+ * at: an Impressum naming the wrong person is worse than one that admits it is
+ * unfilled, and a contact address nobody reads makes the whole page decorative.
+ * `IMPRESSUM_FILLED` is the switch — while it is false the page says plainly
+ * that the details are not yet published, rather than rendering `[[...]]` at a
+ * reader as though that were an identity.
+ *
+ * This is the same shape as AUDIT_RETENTION_VERIFIED above and for the same
+ * reason: a claim about the operator and the proof of it ship together, or the
+ * page does not make the claim.
+ *
+ * WHY NO POSTAL ADDRESS. Owner decision: the deployment is shared with a named
+ * handful of people and is not a public offering, so §5 DDG's ladungsfähige
+ * Anschrift is very likely not engaged. Art. 13(1)(a) GDPR still requires the
+ * controller be identifiable and contactable, which name + a working email
+ * address plus an undertaking to supply the address on request satisfies for a
+ * closed demo. THE DAY THE DEPLOYMENT BECOMES PUBLIC OR COMMERCIAL this stops
+ * being enough and a real postal address goes in — that is recorded here rather
+ * than in a reviewer's report, because this is the file someone edits.
+ */
+export const IMPRESSUM_FILLED = false;
+
+export const IMPRESSUM = {
+  heading: 'Impressum',
+  /** Angaben gemäß § 5 DDG. */
+  legalBasisLine: 'Angaben gemäß § 5 DDG',
+  operatorName: '[[OPERATOR FULL LEGAL NAME — owner to fill]]',
+  email: '[[OPERATOR CONTACT EMAIL — owner to fill]]',
+  unfilled:
+    'The operator’s name and contact address are not yet published here. They are filled in before this deployment is shared with anyone, and until then this page makes no claim about who operates the app.',
+  responsibleLabel: 'Responsible for the content',
+  contactLabel: 'Contact',
+  addressOnRequest:
+    'A postal address is not published on this page. It is supplied on request to the email address above, without undue delay and in any case within one month.',
+  nonCommercial:
+    'CV Insight is a non-commercial demonstration project. It is not offered as a service, no payment is taken for it, and it carries no advertising.',
+} as const;
+
+/**
  * The score placeholder. Rendered wherever a match score exists as a slot but
  * not as a number:
  *   - the parse produced 0 requirements (edge case N4, matchScore returns null);
@@ -104,6 +181,21 @@ export const AUTH = {
   toSignUp: 'No account? Create one',
   toSignIn: 'Already have an account? Sign in',
   privacyLink: 'Privacy',
+  impressumLink: 'Impressum',
+  /**
+   * /signup on a DEPLOYMENT (v2.25, closing gate finding `vs-1`).
+   *
+   * Password Protection turned out to be a Pro feature, so the deployment is
+   * reachable and the gate is registration being closed in the Supabase
+   * dashboard instead. That setting makes `signUpAction` fail server-side — and
+   * a form that submits into a guaranteed refusal is the app pretending to offer
+   * something it will not do. The route stays and EXPLAINS, which is the only
+   * version of this page that is honest about what the deployment is.
+   */
+  registrationClosedTitle: 'Registration is closed',
+  registrationClosedBody:
+    'CV Insight is a demonstration deployment, not a public service. Accounts are created by hand for a small number of named people, so this page has no sign-up form — an account cannot be created here.',
+  registrationClosedSignIn: 'If an account was created for you, sign in instead.',
   invalidEmail: 'Enter a valid email address.',
   shortPassword: 'Password must be at least 8 characters.',
   /**
@@ -131,7 +223,7 @@ export const AUTH = {
  * resume-source panel and the /career import dialog. Promoted out of SCAN so
  * neither screen reads the other's constant and neither copy can drift.
  */
-export const PDF_DROPZONE = 'Drag & drop or choose a .pdf file, max 5 MB';
+export const PDF_DROPZONE = 'Drag & drop or choose a .pdf file, max 4 MB';
 
 /**
  * The other three strings the PDF path needs, promoted for the same reason as
@@ -141,7 +233,7 @@ export const PDF_DROPZONE = 'Drag & drop or choose a .pdf file, max 5 MB';
  */
 export const UNREADABLE_PDF =
   "We couldn't read text from this PDF. It may be scanned — paste the text instead.";
-export const FILE_TOO_LARGE = 'This file is over 5 MB.';
+export const FILE_TOO_LARGE = 'This file is over 4 MB.';
 export const NOT_PDF = 'Only .pdf files are supported.';
 
 /** Same argument: the paste box on /scan and the one in the import dialog. */
@@ -166,8 +258,30 @@ export const VACANCY_LENGTH = 'Vacancy text must be between 100 and 20000 charac
 const baseNotIndexedCopy =
   'Your career base is not searchable yet — open an item and save it to rebuild the search index.';
 
-/** PDF upload ceiling, in bytes (Block F / edge case L5). 413 before any parsing. */
-export const MAX_PDF_BYTES = 5 * 1024 * 1024;
+/**
+ * PDF upload ceiling, in bytes (Block F / edge case L5). 413 before any parsing.
+ *
+ * FOUR MEGABYTES, AND THE NUMBER IS THE PLATFORM'S, NOT A PREFERENCE (v2.25,
+ * gate findings `vs-7` / `ns-5`, closing backlog `p3-1` and `m-3`).
+ *
+ * Vercel caps a function's request body at **4.5 MB** and answers 413
+ * `FUNCTION_PAYLOAD_TOO_LARGE` itself, before any of this app's code runs
+ * (`/docs/functions/limitations`, verified 2026-09-04). The ceiling was 5 MB, so
+ * every upload between roughly 4.5 and 5 MB was legal by the app's own copy and
+ * refused by the platform — and refused with a generic error page, because the
+ * careful `Content-Length` pre-check on /api/scan never got to execute. The app
+ * was promising a size it could not accept.
+ *
+ * 4 MB rather than 4.4: /api/scan sends the PDF and the job posting in ONE
+ * multipart request, so the body is the file plus up to 20,000 characters of
+ * vacancy text plus framing. `MAX_SCAN_BODY_BYTES` adds 64 KB on top of this
+ * constant and must still land under 4.5 MB — 4 MB + 64 KB leaves room for the
+ * posting; 4.4 MB + 64 KB would not.
+ *
+ * Any change here must keep that arithmetic true, and must move the three copy
+ * strings that quote the number with it.
+ */
+export const MAX_PDF_BYTES = 4 * 1024 * 1024;
 
 /**
  * Grouped digits, the way Block E writes the /scan counter ("4,180 / 20,000").
@@ -1328,10 +1442,10 @@ export const ERROR_MESSAGES = {
    * 413 for a multipart body that is over the ceiling as a WHOLE, checked off
    * `Content-Length` before the body is buffered. Distinct from
    * `FILE_TOO_LARGE`: a scan upload carries the PDF and the job posting in one
-   * request, so "This file is over 5 MB." can be false while the request is
+   * request, so "This file is over 4 MB." can be false while the request is
    * still too large, and a message that names the wrong cause is worse than a
    * general one.
    */
   REQUEST_TOO_LARGE:
-    'That request is too large — keep the PDF under 5 MB and the posting under 20,000 characters.',
+    'That request is too large — keep the PDF under 4 MB and the posting under 20,000 characters.',
 } as const;

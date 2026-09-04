@@ -85,7 +85,7 @@ export const maxDuration = 120;
 /**
  * Ceiling on a multipart scan body, checked off `Content-Length` before the body
  * is buffered. The 64 KB of slack above the PDF ceiling covers the vacancy field
- * and multipart framing; the file's own 5 MB limit is still checked separately
+ * and multipart framing; the file's own 4 MB limit is still checked separately
  * off `file.size`, so this is the outer bound, not a replacement for it.
  */
 const MAX_SCAN_BODY_BYTES = MAX_PDF_BYTES + 64 * 1024;
@@ -264,7 +264,7 @@ async function readUpload(request: Request) {
    *
    * It is a SHORTCUT, not the fence: an absent or unparseable `Content-Length`
    * falls through to the buffered read, and the actual limits are `file.size`
-   * below (5 MB, L5) plus whatever the platform enforces on a request body.
+   * below (4 MB, L5) plus whatever the platform enforces on a request body.
    * Refusing a body that declares no length is recorded as p3-9 rather than
    * done here, since it would also refuse a legitimate chunked upload.
    */

@@ -129,7 +129,7 @@ export type ExtractedItem = z.infer<typeof extractedItemSchema>;
  *
  * SPEC bounded the vacancy (100–20,000) and the pasted scan resume (100–15,000)
  * but never the career import, on either branch. That gap has a price attached:
- * a 5 MB text-dense PDF is legal under the file-size cap and extracts to
+ * a 4 MB text-dense PDF is legal under the file-size cap and extracts to
  * megabytes of characters, which would go out as ONE very large metered prompt.
  * Edge case S7 is explicit that oversized input is rejected BEFORE any LLM spend,
  * so both branches are bounded here rather than trusted.

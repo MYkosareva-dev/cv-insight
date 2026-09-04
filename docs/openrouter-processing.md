@@ -36,12 +36,24 @@ self-preference rule is for.
 
 Sent: vacancy text as pasted by the user; career-item content or the resume text the
 user supplied for the scan; generated resume text on the judge and re-score paths; the
-display name saved in Settings, because a resume carries a name line; the target role
-label; the prompt template.
+display name saved in Settings, because a resume carries a name line; the prompt
+template.
 
 Not sent: the account email address, the account identifier, the session token, or any
 Supabase row id. Prompts carry content only — the request body contains no field that
 identifies the account behind it.
+
+Also not sent, and this line USED TO CLAIM THE OPPOSITE: **the target role label** a user
+gives an import. It is stored on `imports` and rendered as provenance on the career-item
+card, and it reaches no model — there is no prompt slot for it. The complete slot
+inventory in `src/lib/prompts.ts` is `{{vacancyText}}`, `{{candidateName}}`,
+`{{parsedRequirementsJson}}`, `{{retrievedChunksJson}}`, `{{revisionFeedbackBlock}}` and
+`{{resumeText}}`, and none of them carries it. Corrected in v2.25 after the phase-6
+compliance gate caught it (`eu-6`) and the slot inventory was re-checked against the
+code. The error was in the safe direction — the document over-declared what leaves — but
+it was in the ONE file a reviewer reads to establish what leaves this deployment, and an
+over-declaration here is an invitation to the next reader to "restore" a transfer that
+was never designed.
 
 Also not sent, by decision rather than by omission: **the contact details saved in
 Settings** — contact email address, phone number, location, LinkedIn URL, GitHub URL
