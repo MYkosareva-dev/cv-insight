@@ -34,12 +34,16 @@ findings about the pipeline, two open code defects, one migration risk, one gap
 in the evidence, and one entry holding the two owner actions that gate sharing
 the link.
 
-1. **`p5-16` — grounding fails on the first draft in 3 of 3 measured runs, on
-   BOTH generators.** The strongest open finding in the file, and the one most
-   likely to be misread: changing the model did not fix it, so the remaining
-   suspects are prompt P2 and a fixture whose career base deliberately
-   under-covers its vacancy. Nothing about prompt quality should be concluded
-   from the one case that exists. Phase 5, guardrail round.
+1. **`p5-16` — grounding fails on the first draft in 4 of 4 measured runs, on
+   BOTH generators and now on BOTH corpora.** The strongest open finding in the
+   file. It was three runs against a base that deliberately under-covers its
+   posting, which left two suspects — prompt P2, and the thin corpus. **The
+   control has now been run** (`docs/eval/generation-coverage-control.md`): a
+   base covering nine of twelve requirements, scoring 82, produced a first draft
+   that failed grounding and a rewrite that failed it too. The corpus is no
+   longer a sufficient explanation, so what is left is P2. Still one run per
+   fixture — this is a direction, not a rate. Phase 5, guardrail round;
+   controlled in Phase 7.
 
 2. **`p3-23` — the coverage gate compares term FORMS.** A base saying
    "Microsoft Office" or "NodeJS" does not satisfy a posting saying "MS Office"
@@ -132,8 +136,14 @@ second, well-covered case is built.
   set is `SIMILARITY_FLOOR`.
 - **`p4-11`** — the thresholds are reused against the re-score's ephemeral corpus,
   which no labeled set has been run against.
-- **`p5-16`, `p5-17`** — the grounding finding, and the fact that the comparison
-  used the same case but a fresh account each time rather than the same row.
+- **`p5-17`** — the comparison used the same case but a fresh account each time,
+  so it is not a same-row comparison.
+
+`p5-16` was in this group and its condition has arrived: the second fixture is
+`docs/eval/calibration-case-vinterlys.json` and the control run is written up in
+`docs/eval/generation-coverage-control.md`. The entry stays open because the
+finding survived the control — what it is waiting on now is a P2 change measured
+against both fixtures, which is work rather than a precondition.
 - **`p3-26`** — `keywordRegex` escapes a term verbatim with no whitespace
   normalization, so a copy carrying a line-wrap or a double space never matches.
 - **`p3-25`** — `terms` are bounded and never rendered except as the one missing
@@ -536,6 +546,20 @@ before/after are `docs/eval/generation-model-comparison.md`.
 > **CLOSED — CLAUDE.md's model list was amended by the owner (2026-09-04).** Its "AI model calls" section named `anthropic/claude-sonnet-4.6` as the generation model, and CLAUDE.md wins on conflict, so the rule book was naming a model the code does not use and this key cannot reach. The owner dictated the amendment: the generation slug is now `openai/gpt-5.4`, embeddings are named in that section for the first time, and the list carries a new rule — a model named there must be one verified to serve on the configured key, with the verification in `docs/openrouter-processing.md`. The replacement sentence this entry was holding is gone because it is no longer waiting: it is in the file.
 
 - **MAJOR p5-16 — grounding fails on the first draft in 3 of 3 runs, on BOTH models, so P2 is the remaining suspect.** The model change did not rescue it; it only made the single rewrite capable of converging (once in two). The next step is not another model: it is either a second fixture whose career base DOES cover the vacancy — which would separate "the writer over-claims" from "the corpus is thin", the same confound backlog `p3-14` records for the thresholds — or a P2 change measured against both. Nothing about prompt quality should be concluded from one deliberately under-covered case.
+
+> **THE CONTROL THIS ENTRY ASKED FOR HAS BEEN RUN, and the finding SURVIVED
+> it** (Phase 7, `docs/eval/generation-coverage-control.md`). The entry named two
+> next steps and the first one is done: a second fixture,
+> `docs/eval/calibration-case-vinterlys.json`, whose career base genuinely covers
+> its vacancy — 82%, nine of twelve requirements Covered. Its first draft failed
+> grounding and its single rewrite failed too, so `/quality` counts the run as
+> "needed the rewrite and still failed after it". Four first drafts across two
+> corpora and two generators, four failures: the thin corpus is ruled out as a
+> SUFFICIENT explanation and P2 is what remains. NOT closed — one run on the new
+> fixture is a direction and not a rate, and the entry's second option, a P2
+> change measured against both, is untouched. One detail worth carrying: the
+> surviving violation is the reviewer refusing a sentence that IS in the base,
+> on the same lexical grounds rule B1's gate refuses the same word.
 - **MINOR p5-17** — the comparison ran on the same FIXTURE but a fresh account each time, so the application row differs. A true same-row comparison needs the generate model switchable per run rather than per deployment, which is a dev-only affordance nobody should ship as product surface. Worth building only if a second model comparison is ever run.
 - **NIT p5-18** — `MAX_TOKENS_BY_STEP.generate = 2500` was chosen for Sonnet. gpt-5.4 accepts `temperature` silently (it is not in its supported parameters) and billed 0 reasoning tokens at default effort, both verified — but a future OpenRouter default that turns reasoning on would spend that budget before any resume text, and the app would report a truncated draft rather than a refusal. If the generator stays a reasoning-capable model, send an explicit low reasoning effort rather than relying on a default.
 
