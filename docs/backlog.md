@@ -300,3 +300,27 @@ the Phase-4 triage contract. What follows is minors and nits only.
 - **NIT ns-6** — only `/export` sets `Cache-Control: no-store`. Harmless today (every other handler is POST/PATCH/DELETE and the only GET is dev-only), but the default is safe by accident rather than by design; setting it in `apiErrorResponse` and the data-returning handlers would make the next authenticated GET inherit the right thing.
 - **NIT ns-7** — `apiErrorResponse` logs `err.name`, which is `'object'` for a PostgREST error, so a UUID syntax error, an RLS refusal and a connection failure are indistinguishable in the log. `saveContactsAction` already solved this leak-free by logging the `code` alongside; Postgres codes are fixed identifiers and carry no user content.
 - **NIT vs-11** — the middleware calls `getUser()` on every non-excluded request, a round trip to Frankfurt. Once the function region is `fra1`, measure a signed-in navigation from a European client before doing anything; this may be a non-issue and is a NIT precisely because it is unmeasured.
+
+## Phase 6 — owner triage of the three gates (2026-09-04)
+
+The gating mechanism changed during triage: Vercel Password Protection is a Pro
+feature, so the deployment is REACHABLE and closed to registration instead — new
+sign-ups disabled in Supabase, accounts created by hand. SPEC v2.25 declares the
+round and `docs/deploy.md` is the ordered procedure.
+
+> **CLOSED BY THIS ROUND, recorded so nobody reopens finished work.** `vs-1`
+> (/signup explains rather than offering a form that cannot succeed) · `eu-2`
+> (demonstration notice on the authenticated shell) · `ns-2`/`vs-5` (CSP and four
+> security headers, measured against a production build — the strict policy was
+> tried first and broke every page) · `vs-6`/`eu-10` (`fra1` pinned in
+> `vercel.json`) · `vs-4` (preview deployments disabled, secrets scoped to
+> Production — `docs/deploy.md` steps 8 and 9) · `vs-7`/`ns-5` (4 MB ceiling,
+> closing `p3-1` and `m-3` with it) · `eu-6` (the target-role over-declaration
+> removed from the processing record) · `eu-5` and `eu-7` (accepted as folded
+> into the v2.24 privacy rewrite) · the model-slug wording on `/privacy`, replaced
+> by the three provider names on owner instruction.
+
+- **CARRIED by owner decision — `eu-8`, granular erasure.** Only career items are individually deletable; job postings, scans, generated versions, import records and `llm_calls` rows go with the account. The reasoning for carrying it: with registration closed, the store holds only the owner's own data, and account deletion already removes all of it — so the Art. 17 exposure the finding describes has no third-party data to attach to. `/privacy` states the limitation plainly rather than implying the erasure story is complete. **This reopens the moment a second real person holds an account**, which is exactly when the deployment stops being a single-user demo — revisit it then, and note that adding the missing DELETE policies needs an owner amendment to CLAUDE.md's RLS matrix, which is deliberate and should stay deliberate.
+- **OPEN — `eu-9`, `0 owned rows` after deletion is still unwitnessed.** Answered rather than fixed this round; the full assessment is in SPEC Block H item 3. Short version: `tests/e2e/auth.spec.ts` proves the ACCOUNT is gone (the credentials stop working) and exercises the real dialog, but nothing counts rows in the eight tables afterwards, and `privacy.spec.ts` — which SPEC names for that check — does not exist. It cannot be written from the browser, because after deletion there is no session and RLS makes "rows are gone" indistinguishable from "caller may see nothing"; reading them needs the service-role key, and `scripts/check.mjs` R10 fails the build on that key being read anywhere but `lib/supabase/admin.ts`, with `tests/` inside its scope. The recommendation is a SQL-level fixture recorded in `docs/eval/`, not an R10 carve-out.
+- **MINOR — the Playwright suite cannot create accounts once registration is closed.** All four specs sign up through the `/signup` form against the same Supabase project the deployment uses. `docs/deploy.md` step 1 handles it by ordering (run the suite before closing registration), which is correct once and useless the second time. A durable fix is a second Supabase project for tests, or pre-created accounts the suite signs into instead of registering. Needed before the suite can be run again after deploy.
+- **NIT — `IMPRESSUM_FILLED` is still `false`.** The page correctly says the operator's details are not published rather than rendering placeholder tokens, and `docs/deploy.md` step 20 makes filling it a condition of sharing the link. It is a one-line edit with two real values and is nobody's work but the owner's.
