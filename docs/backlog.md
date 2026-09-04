@@ -222,9 +222,11 @@ each fix changed; the report is `docs/reviews/phase-5-architect-diff.md`. The
 ## Phase 5 — from the ai-code-reviewer PR round (2026-09-04)
 
 `docs/reviews/phase-5.md`, verdict REVISE with no blockers. M2–M5, m1, m4, m5 and
-n1 are fixed on this branch and SPEC v2.20 records what each fix changed. **M1 is
-not a code item and is the one thing standing between this branch and merge** — it
-is the owner's, and it is stated in the hand-over rather than here. What is left:
+n1 are fixed on this branch and SPEC v2.20 records what each fix changed.
+**M1 is CLOSED**: the owner applied `005_profile_contacts.sql`, the contact half of
+`tests/e2e/generate.spec.ts` stopped self-skipping, and the run is committed as
+`docs/eval/phase-5-e2e-run.txt` — which is also where A7's header block is now
+visible in a real generated resume. What is left:
 
 - **MINOR p5-5 (was m2)** — `localeCompare` is the comparator for ISO timestamps in `src/lib/quality.ts` and `src/lib/judge.ts`, and ICU ranks `…:00:00+00:00` AFTER `…:00:00.5+00:00`: PostgREST omits a zero fraction, so two rows in the same second can order backwards, misplacing a run's pair and `openingVersion`'s comparison. Plain `<` and `Date.parse` both order it correctly. ~1e-6 per row, and what makes it worth doing is that no test can currently see it — every fixture builds timestamps with `toISOString()` or a hand-written `Z` literal, i.e. a 3-digit fraction, which is a format the database never emits. Fix the comparator and seed a fixture in PostgREST's own shape.
 - **MINOR p5-6 (was m3)** — the cost half of the helper copy is exact on `rescoreHelp` and approximate on the other three: `checkQualityHelp` says "one AI call" for a path that is one embeddings request plus a judge step (up to 2 chat requests), `generateHelp` omits the run's one embeddings row, and `rescoreHelp` itself still says "a paid AI call" for what is 2–7 `rescore` rows. Every number is checkable against `/quality` now, which is exactly why the row of four should be priced by one rule rather than three.
@@ -235,4 +237,14 @@ TITLE
 - **NIT p5-8 (was n2)** — [Regenerate] has no request-count assertion, while SPEC v2.16 note 9's one-click-one-spend rule now covers five metered buttons and `tests/e2e/generate.spec.ts` witnesses it for [Generate] alone. The shared `inFlight` ref does cover it; nothing observes that for the most expensive button in the app.
 - **NIT p5-9 (was n3)** — `rescore()` in `src/components/applications/result-workspace.tsx` reads `shownScore`, a `const` declared below it. Correct today because the closure only runs after render, and a `ReferenceError` the moment anything calls it during one.
 - **NIT p5-10 (was n4)** — `QUALITY.rubricLead` describes a run as "an ai row, and the ai_revision row that follows it" and does not mention the orphan-rewrite rule `classifyRuns` now implements, so at a full window a reader reconciling the bucket total against `resume_versions` finds one run the caption cannot explain. The screen's own rule is that every figure names its rows.
+
+## Phase 5 — from the owner's contact-transfer decision (2026-09-04)
+
+The decision itself is done and declared in SPEC v2.21: the contact block reaches
+no model call, held by `ModelResumeText` and asserted in
+`tests/unit/resume-header.test.mjs`. What building it left open.
+
+- **MINOR p5-11** — `p5-6`'s cost-copy item is now wrong in a second way: `rescoreHelp` says "Costs a paid AI call", and a re-score's spend is embeddings only, which is exactly the distinction the same round drew for `/privacy` and `docs/openrouter-processing.md`. Price the row of four buttons by one rule that names the KIND of call as well as the count, since `/quality` now lets a user check every number.
+- **MINOR p5-12** — the strip is line-based, so a saved `location` of `Berlin` would remove a body line consisting only of the word `Berlin`. Reachable and harmless in practice (a resume line that is one city name and nothing else is a header line by any reading), and the alternative — redacting mid-sentence — is worse, which is why the scope is stated in `stripContactHeader`'s docblock and pinned by a test rather than fixed. Revisit only if a real resume loses a line to it.
+- **NIT p5-13** — `runGenerateWithJudge` still receives `contacts` and passes them on to `generateResume`, which no longer takes them; the spread makes it legal and it is dead weight. Thread the argument only to the two functions that use it (`judgeOrNull`'s defensive strip, and `withHeader`).
 
