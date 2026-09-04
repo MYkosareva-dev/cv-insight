@@ -480,6 +480,18 @@ export const RESULT = {
    * they name two different actions and only one of them is still wired.
    */
   copyBullet: 'Copy to clipboard',
+  /**
+   * KEPT AND UNWIRED, for the same reason and on the same terms as `copyBullet`
+   * above — declared here rather than left to be rediscovered, which is the
+   * distinction Phase 3 drew when it DELETED unreachable constants a branch had
+   * just added and KEPT `APPLICATIONS.loadFailed` because its state was real.
+   *
+   * These two are one pair: `copyBullet` is the button and `copied` / `copyFailed`
+   * are its two outcomes. Deleting only the middle of a three-part mechanism would
+   * leave a label and a failure message for a success nobody could report, so if
+   * the clipboard path is ever wired again it is wired with all three, and if it is
+   * ever abandoned all three go together.
+   */
   copied: 'Copied to your clipboard.',
   copyFailed: 'Could not copy — select the text instead.',
   vacancyRawHeading: 'Job posting',
@@ -666,6 +678,14 @@ export const RESULT = {
    */
   rescoredExplainer:
     'Must-have requirements are matched against the resume in the editor (60%); vacancy keywords are counted in the same text (40%).',
+  /**
+   * The 100-character FLOOR, which used to borrow `emptyEditor` and therefore
+   * told a user with a 50-character paste that their text was empty. It was not:
+   * it was short. This app tells four sign-in outcomes and three retrieval
+   * outcomes apart on exactly that principle, and a bound the schema enforces
+   * deserves a sentence of its own as much as the ceiling below does.
+   */
+  resumeTooShort: 'A resume needs at least 100 characters.',
   resumeTooLong: 'A resume is limited to 15000 characters.',
   savedUserVersion: 'Your edited version was saved.',
   /**

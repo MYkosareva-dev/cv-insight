@@ -593,7 +593,18 @@ export const resumeContentSchema = z.object({
   content: z
     .string()
     .trim()
-    .min(MIN_RESUME_CHARS, RESULT.emptyEditor)
+    /**
+     * TWO LOWER CHECKS, IN THIS ORDER, because they are two different facts
+     * about the text. Zero characters is US-5's "Resume text is empty" and
+     * anything up to the floor is short but not empty — one `.min(100)` said
+     * "empty" to a 50-character paste, which is the app being wrong about the
+     * user's own text. Zod runs every check and reports the issues in
+     * declaration order, and all three consumers read `issues[0]`, so the
+     * emptiness check has to come first for an empty editor to keep its own
+     * message.
+     */
+    .min(1, RESULT.emptyEditor)
+    .min(MIN_RESUME_CHARS, RESULT.resumeTooShort)
     .max(MAX_RESUME_CHARS, RESULT.resumeTooLong),
 });
 

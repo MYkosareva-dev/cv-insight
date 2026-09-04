@@ -6,6 +6,7 @@ import {
   MAX_DISPLAY_NAME_CHARS,
   MAX_RESUME_CHARS,
   MAX_SCAN_RESUME_CHARS,
+  MIN_RESUME_CHARS,
   credentialsSchema,
   cleanDisplayName,
   displayNameSchema,
@@ -347,6 +348,19 @@ describe('resumeContentSchema — the editor body', () => {
 
   test('an empty editor is refused with US-5 own copy', () => {
     const result = resumeContentSchema.safeParse({ content: '   ' });
+    assert.equal(result.success, false);
+    assert.equal(result.error.issues[0].message, RESULT.emptyEditor);
+  });
+
+  test('a SHORT editor is not an empty one, and does not borrow its copy', () => {
+    const result = resumeContentSchema.safeParse({ content: 'x'.repeat(50) });
+    assert.equal(result.success, false);
+    assert.equal(result.error.issues[0].message, RESULT.resumeTooShort);
+    assert.equal(MIN_RESUME_CHARS, 100);
+  });
+
+  test('the emptiness check still wins for an empty editor, declaration order', () => {
+    const result = resumeContentSchema.safeParse({ content: '' });
     assert.equal(result.success, false);
     assert.equal(result.error.issues[0].message, RESULT.emptyEditor);
   });
