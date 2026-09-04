@@ -2,6 +2,7 @@ import 'server-only';
 
 import { type CallLedger, runChat, runChatJson } from '@/lib/chat';
 import { listCareerItemsByIds } from '@/lib/db/careerItems';
+import { countDocuments } from '@/lib/db/documents';
 import type { JudgeReport, ParsedVacancy } from '@/lib/db/types';
 import { AiUnavailableError, DailyLimitError } from '@/lib/errors';
 import {
@@ -78,6 +79,28 @@ export async function retrieveItemsFor(
   applicationId: string,
   aiUnavailableMessage: string,
 ): Promise<RetrievedItems> {
+  /**
+   * REFUSED BEFORE THE SPEND, and this check is what makes that sentence true.
+   *
+   * Both callers refuse an empty corpus with `RESULT.generateNeedsBase`, and both
+   * said they did it "before the spend" while the embeddings request had already
+   * gone out one line above: a user whose base is unindexed paid for one
+   * request per click and received a 400. `countDocuments()` is a `head: true`
+   * count over the caller's own RLS-scoped rows — one cheap database read, no
+   * metered call — so the refusal now happens where the comments always claimed.
+   *
+   * It costs that one read on the happy path too, which is the honest trade: a
+   * round trip against a table bounded at 4,000 rows per user, in front of a
+   * pipeline whose worst case is four chat calls.
+   *
+   * Zero documents is NOT the same as `found_nothing`. There is nothing to
+   * search, so no search runs and none is reported — the three-outcome rule is
+   * about searches, and this is the case where the corpus itself is absent.
+   */
+  if ((await countDocuments()) === 0) {
+    return { items: [], droppedForSize: 0 };
+  }
+
   const outcome = await matchDocuments(
     vacancyQueryText(parsed),
     MATCH_COUNT_FOR_GENERATE,
