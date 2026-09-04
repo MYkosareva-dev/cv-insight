@@ -11,7 +11,7 @@ import { getUser } from '@/lib/supabase/server';
 import {
   type ChatMessage,
   type ConnectionResult,
-  type LlmStep,
+  type ChatStep,
   MODEL_BY_STEP,
   OpenRouterError,
   OpenRouterUsageError,
@@ -72,7 +72,13 @@ async function requireUser(): Promise<User> {
   return user;
 }
 
-export type ChatStep = Extract<LlmStep, 'import_resume' | 'parse_vacancy' | 'generate' | 'judge'>;
+/**
+ * Re-exported from the connection, which owns the step vocabulary and keys its
+ * model and output-ceiling maps on this exact type. Derived here a second time,
+ * the two definitions could drift and the maps would silently stop covering a
+ * step this gate accepts.
+ */
+export type { ChatStep };
 
 export type ChatRequest = {
   step: ChatStep;

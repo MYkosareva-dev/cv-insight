@@ -41,13 +41,26 @@ export type LlmStep =
   | 'embed'
   | 'rescore';
 
+/**
+ * The steps that reach the COMPLETIONS endpoint. `embed` and `rescore` go to the
+ * embeddings endpoint, which takes neither a model choice nor an output ceiling.
+ *
+ * Split out so the two maps below can be TOTAL over their own key space. A
+ * `Partial<Record<LlmStep, …>>` accepts a map with a step missing, which is how
+ * `parse_vacancy` fell out of `MAX_TOKENS_BY_STEP` in the v2.16 round and was
+ * masked by a `?? 1200` default: same number, no error, and the per-step map had
+ * quietly stopped being the thing it exists to be. Total maps make the next
+ * omission a BUILD failure instead of a silent inheritance.
+ */
+export type ChatStep = Extract<LlmStep, 'import_resume' | 'parse_vacancy' | 'generate' | 'judge'>;
+
 /** Primary model per step; the fallback is always FALLBACK_MODEL. */
 export const MODEL_BY_STEP = {
   import_resume: 'anthropic/claude-haiku-4.5',
   parse_vacancy: 'anthropic/claude-haiku-4.5',
   judge: 'anthropic/claude-haiku-4.5',
   generate: 'anthropic/claude-sonnet-4.6',
-} as const satisfies Partial<Record<LlmStep, string>>;
+} as const satisfies Record<ChatStep, string>;
 
 /**
  * Output ceiling per step (SPEC Block F, amended v2.10).
@@ -64,6 +77,15 @@ export const MODEL_BY_STEP = {
 export const MAX_TOKENS_BY_STEP = {
   import_resume: 8000,
   /**
+   * One small JSON object, which is what the v2.10 ternary was written for.
+   * Stated EXPLICITLY rather than left to a default: this entry was deleted by
+   * the v2.16 edit that raised `judge`, and because the fallback beside the
+   * lookup supplied the same 1200 the deletion changed no behaviour and broke
+   * no build. A map whose entries can vanish without consequence is not the
+   * mechanism this docblock describes.
+   */
+  parse_vacancy: 1200,
+  /**
    * v2.16 — 1200 -> 3000. Raised for the reason `import_resume` was raised in
    * v2.10, and found the same way: by watching a real run rather than by
    * reading. A judge report is not one small object. `judgeReportSchema` permits
@@ -77,7 +99,7 @@ export const MAX_TOKENS_BY_STEP = {
    */
   judge: 3000,
   generate: 2500,
-} as const satisfies Partial<Record<LlmStep, number>>;
+} as const satisfies Record<ChatStep, number>;
 
 /**
  * Prices and the micro-USD arithmetic live in `lib/pricing.ts` and are
@@ -251,7 +273,7 @@ type ChatResponse = {
 
 /** POST /chat/completions with `models: [primary, FALLBACK_MODEL]` routing. */
 export async function chatCompletion(args: {
-  step: LlmStep;
+  step: ChatStep;
   primaryModel: string;
   messages: ChatMessage[];
   jsonMode: boolean;
@@ -265,7 +287,7 @@ export async function chatCompletion(args: {
     // metered-call rules — and the response tells us which model answered.
     models: [primaryModel, FALLBACK_MODEL],
     messages,
-    max_tokens: MAX_TOKENS_BY_STEP[step as keyof typeof MAX_TOKENS_BY_STEP] ?? 1200,
+    max_tokens: MAX_TOKENS_BY_STEP[step],
     temperature: step === 'generate' ? 0.4 : 0,
   };
   // P1/P3/P4 are JSON mode; P2 (generate) returns plain text.
