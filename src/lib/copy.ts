@@ -670,6 +670,73 @@ export const RESULT = {
   rescoredLabel: 'Live score for the text in the editor — not saved.',
   rescoredRevert: 'Show the original scan',
   rescoreFailed: 'Could not re-score — try again.',
+
+  /**
+   * A RUN THAT CHANGED NOTHING STILL HAS TO REPORT ITSELF (SPEC v2.20, owner
+   * feedback). Re-scoring text nobody edited returns the score it returned
+   * before, the ring does not move, and the screen was indistinguishable from a
+   * button that did nothing — which is the same defect the busy indicator fixes
+   * at the other end of the request. An unchanged measurement is a RESULT, and
+   * the number is named so the user can see which one it is.
+   */
+  rescoredUnchanged: (score: string) =>
+    `Re-scored — the score is unchanged at ${score}. Nothing in your edit moved it.`,
+  rescoredChanged: (from: string, to: string) => `Re-scored — ${from} → ${to} for the text in the editor.`,
+  /**
+   * The quality check finished. Said out loud for the same reason: the card
+   * below may come back with the same four scores it had, and a screen that
+   * looks identical after a paid call reads as a click that missed.
+   */
+  qualityChecked: 'Quality check complete — the card below is the new verdict.',
+
+  /**
+   * REGENERATE (SPEC v2.20, from the owner's live use).
+   *
+   * Block E hides [Generate tailored resume] once a version exists, which left a
+   * user who changes their name, fills in their profile, or simply wants a second
+   * attempt locked to the first text forever. This is the way back — and it is
+   * METERED, so it says what it costs BEFORE it runs and asks once, rather than
+   * being a button a stray click can spend money on.
+   *
+   * IT APPENDS. `resume_versions` is append-only by design, so a regenerate adds
+   * to the history and replaces nothing; the dialog says so, because a user who
+   * thinks they are about to lose their current text will not press it.
+   */
+  regenerate: 'Regenerate',
+  regenerating: 'Regenerating',
+  regenerateDialogTitle: 'Write another resume?',
+  regenerateDialogBody:
+    'This writes a new resume from your career base and has the reviewer check it. Your current version is kept — every version stays in the history below.',
+  regenerateDialogCost:
+    'It costs two AI calls, or four if the reviewer asks for a rewrite.',
+  regenerateConfirm: 'Write another',
+  regenerateCancel: 'Cancel',
+
+  /**
+   * ONE LINE PER ACTION, saying what it does and that it costs a model call
+   * (SPEC v2.20, from the owner's live use: the three buttons gave no clue what
+   * they would do or what they would spend).
+   *
+   * THE COSTS ARE STATED IN THE UNITS THE APP ACTUALLY SPENDS, which is why
+   * [Re-score] does not say "one AI call" and stop there. It makes no chat call
+   * at all — rule B7 excludes embeddings by definition and rule B7a exists
+   * precisely because that made it the one metered path with no ceiling — so
+   * copy that priced it like a generate would be wrong in the user's favour on
+   * the daily limit and wrong in the app's favour on what it does.
+   *
+   * [Download .docx] gets a line too even though it spends nothing, because the
+   * absence of one in a row of three annotated buttons reads as an omission
+   * rather than as "this one is free". Its line says what it saves, which is the
+   * part of it a user does not expect.
+   */
+  generateHelp:
+    'Writes a resume from your career base and has the reviewer check it. Costs two AI calls, or four with a rewrite.',
+  rescoreHelp:
+    'Re-measures the match against the text in the editor. Costs one AI call and saves nothing.',
+  checkQualityHelp:
+    'Asks the reviewer for a fresh verdict on the text in the editor. Costs one AI call and saves the text as a version.',
+  downloadHelp:
+    'Builds the .docx from the text in the editor and saves it as a version. No AI call.',
   /**
    * A re-score matches the requirements against the resume in the EDITOR, not
    * against the career base, so the "Best match" column names the user's own

@@ -35,6 +35,13 @@ export const metadata = { title: 'Scan result — CV Insight' };
  *      requirements (edge case N4). A measured emptiness, with its own notice.
  *   3. entries present — the normal result.
  *
+ * NOTES LIVE IN THE LEFT COLUMN (SPEC v2.20, from the owner's live use). They had
+ * drifted to the bottom of the page, under the tabs and far below the fold, which
+ * is not where a note taken while reading a posting is usable. This file still
+ * owns the row and renders the form in BOTH result states; in the analysed state
+ * it hands it to `ResultWorkspace` as a NODE, so the client component decides
+ * only where in the rail it sits and never holds a second copy of its state.
+ *
  * THE INTERACTIVE HALF IS ONE CLIENT COMPONENT (`ResultWorkspace`), and the
  * split is where it is for a reason rather than by taste: [Re-score] has to move
  * the ring in the RAIL from a button inside a TAB, and [Add to resume] has to
@@ -119,6 +126,7 @@ export default async function ApplicationDetailPage({
           sourceIsBase={application.resume_source === 'career_base'}
           versions={versions}
           judgeTerms={judgeTerms}
+          notes={<NotesForm applicationId={application.id} notes={application.notes} />}
         />
       ) : (
         /* Rail 280 px beside the content at 1280; stacked at 375 (Block E). */
@@ -135,6 +143,14 @@ export default async function ApplicationDetailPage({
               </p>
               <RerunScan applicationId={application.id} />
             </div>
+            {/*
+              Notes belong to the APPLICATION and not to the analysis, so they
+              render in this state too — a draft whose AI step failed is still an
+              application the user takes notes on. Same place in the rail as in
+              the analysed state (v2.20), so the field does not move between two
+              screens the user reaches from the same list.
+            */}
+            <NotesForm applicationId={application.id} notes={application.notes} />
           </div>
 
           {/*
@@ -168,14 +184,6 @@ export default async function ApplicationDetailPage({
         </div>
       )}
 
-      {/*
-        Notes belong to the application, not to the analysis, so they render in
-        both states — a draft whose AI step failed is still an application the
-        user takes notes on.
-      */}
-      <div className="lg:max-w-[280px]">
-        <NotesForm applicationId={application.id} notes={application.notes} />
-      </div>
     </section>
   );
 }

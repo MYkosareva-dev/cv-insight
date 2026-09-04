@@ -10,7 +10,7 @@ import { BusyDots } from '@/components/ui/busy-dots';
 import { ResumeEditor } from '@/components/applications/resume-editor';
 import { ScoreRing } from '@/components/applications/score';
 import { Button } from '@/components/ui/button';
-import { RESULT } from '@/lib/copy';
+import { NO_SCORE, RESULT } from '@/lib/copy';
 import type {
   CoverageEntry,
   JudgeReport,
@@ -18,7 +18,7 @@ import type {
   ParsedVacancy,
   ResumeVersion,
 } from '@/lib/db/types';
-import { judgeIssueCounts, openingVersion } from '@/lib/judge';
+import { judgeIssueCounts, mergeVersionsNewestFirst, openingVersion } from '@/lib/judge';
 
 /**
  * `missingHonest`, split into what the career base literally contains and what
@@ -29,6 +29,16 @@ type JudgeTerms = { supported: string[]; notInBase: string[] };
 
 /** A review and the terms it may suggest. Never held apart — see the state below. */
 type Review = { report: JudgeReport | null; terms: JudgeTerms };
+
+/**
+ * The actions that spend money, and the one that does not.
+ *
+ * `generate` and `regenerate` are the SAME endpoint and are told apart only so
+ * the busy label can say which one the user pressed — a "Generating" label on a
+ * button reading [Regenerate] is a small lie about what is happening. Both draw
+ * on the one shared in-flight lock, because both are a Sonnet call.
+ */
+type MeteredAction = 'generate' | 'regenerate' | 'rescore' | 'judge' | 'export';
 
 /**
  * Read the partition off an endpoint's response.
@@ -95,6 +105,7 @@ export function ResultWorkspace({
   sourceIsBase,
   versions: initialVersions,
   judgeTerms: initialJudgeTerms,
+  notes,
 }: {
   applicationId: string;
   entries: CoverageEntry[];
@@ -112,6 +123,19 @@ export function ResultWorkspace({
    * needs one yes-or-no per term rather than the corpus.
    */
   judgeTerms: JudgeTerms;
+  /**
+   * The Notes form, rendered by the SERVER and slotted into the left column
+   * (SPEC v2.20, owner feedback: they had drifted to the bottom of the page, far
+   * below the fold).
+   *
+   * Passed as a node rather than as data, because the notes belong to the
+   * application and not to the analysis: `page.tsx` owns the row and renders the
+   * form in BOTH result states, and this component only decides where in the
+   * rail it sits. Threading `notes` through here as a string would have put a
+   * second copy of that form's state in the one component that must not grow
+   * any.
+   */
+  notes: React.ReactNode;
 }) {
   const router = useRouter();
 
@@ -165,12 +189,12 @@ export function ResultWorkspace({
     keywords: KeywordRow[];
   } | null>(null);
 
-  const [pending, setPending] = useState<'generate' | 'rescore' | 'judge' | 'export' | null>(null);
+  const [pending, setPending] = useState<MeteredAction | null>(null);
   /** Set synchronously — the `disabled` prop cannot guard a double click. */
   const inFlight = useRef(false);
 
   async function run<T>(
-    action: 'generate' | 'rescore' | 'judge' | 'export',
+    action: MeteredAction,
     request: () => Promise<Response>,
     onOk: (res: Response) => Promise<T>,
     fallbackMessage: string,
@@ -201,15 +225,31 @@ export function ResultWorkspace({
       body: JSON.stringify(body),
     });
 
-  function generate() {
+  /**
+   * ONE FUNCTION FOR BOTH GENERATE AND REGENERATE, because they are one endpoint
+   * (SPEC v2.20).
+   *
+   * `POST …/generate` already appended rather than replaced — `resume_versions`
+   * is append-only by design and the route has never had a "there is already a
+   * version" refusal — so regenerating needed no server change at all. What it
+   * needed was a way to ASK for it, which Block E's "hidden after first version"
+   * had taken away.
+   *
+   * THE ROWS ARE MERGED AND NOT SUBSTITUTED. The 200 body carries only the rows
+   * this run wrote; taking it as the whole list was correct while a generate
+   * could only ever happen on an empty history, and wrong the moment one can
+   * happen on top of five earlier versions — the history would visibly lose
+   * every older row until the next server render landed.
+   */
+  function generate(action: 'generate' | 'regenerate' = 'generate') {
     void run(
-      'generate',
+      action,
       // Body is `{}`: every input lives server-side, so nothing a client sends
       // can change what is generated or from what.
       () => post('generate', {}),
       async (res) => {
         const data = await res.json();
-        setVersions(data.versions ?? []);
+        setVersions((current) => mergeVersionsNewestFirst(current, data.versions ?? []));
         setContent(data.content ?? '');
         setReview({ report: data.judge ?? null, terms: termsOf(data) });
         setRevisionNotBetter(Boolean(data.revisionNotBetter));
@@ -225,17 +265,39 @@ export function ResultWorkspace({
   }
 
   function rescore() {
+    /**
+     * READ BEFORE THE RUN, so the comparison afterwards is against what the user
+     * was actually looking at — the stored scan's number on a first re-score,
+     * the previous live reading on a second one.
+     */
+    const before = shownScore;
     void run(
       'rescore',
       () => post('rescore', { content }),
       async (res) => {
         const data = await res.json();
+        const after: number | null = data.matchScore ?? null;
         setRescored({
-          matchScore: data.matchScore ?? null,
+          matchScore: after,
           entries: data.coverage ?? [],
           keywords: data.keywords ?? [],
         });
         setTab('analysis');
+        /**
+         * A RUN THAT MOVED NOTHING STILL REPORTS ITSELF (SPEC v2.20, owner
+         * feedback). Re-scoring text nobody edited returns the number it
+         * returned before and the ring does not move, which is indistinguishable
+         * from a button that did nothing — after a paid call. An unchanged
+         * measurement is a result, so it is said, with the number named.
+         *
+         * `null` compares equal to `null` here, which is right: rule B1b's "—"
+         * staying "—" is also a measurement that did not move.
+         */
+        if (after === before) {
+          toast.success(RESULT.rescoredUnchanged(scoreText(after)));
+        } else {
+          toast.success(RESULT.rescoredChanged(scoreText(before), scoreText(after)));
+        }
       },
       RESULT.rescoreFailed,
     );
@@ -252,6 +314,13 @@ export function ResultWorkspace({
         // pass no longer describe what is on screen.
         setRevisionNotBetter(false);
         setRevisionWithheld(false);
+        /**
+         * SAID OUT LOUD, for the same reason the re-score reports an unchanged
+         * number: the card below can come back with the same four scores it had,
+         * and a screen that looks identical after a paid call reads as a click
+         * that missed.
+         */
+        toast.success(RESULT.qualityChecked);
         // The reviewed text is now a row of its own; the refresh brings it back
         // with the timestamp the database gave it, rather than one this browser
         // made up.
@@ -325,20 +394,34 @@ export function ResultWorkspace({
         />
 
         {/* Block E: the violet hero, hidden once a version exists — the editor
-            tab owns the action from then on. */}
+            tab owns the action from then on, and [Regenerate] is the way back to
+            a second attempt (v2.20). */}
         {versions.length === 0 ? (
-          <Button variant="hero" onClick={generate} disabled={pending !== null}>
-            <Sparkles aria-hidden />
-            {pending === 'generate' ? (
-              <>
-                {RESULT.generating}
-                <BusyDots />
-              </>
-            ) : (
-              RESULT.generate
-            )}
-          </Button>
+          <div className="flex flex-col gap-1.5">
+            <Button variant="hero" onClick={() => generate()} disabled={pending !== null}>
+              <Sparkles aria-hidden />
+              {pending === 'generate' ? (
+                <>
+                  {RESULT.generating}
+                  <BusyDots />
+                </>
+              ) : (
+                RESULT.generate
+              )}
+            </Button>
+            <p className="text-muted-foreground text-xs">{RESULT.generateHelp}</p>
+          </div>
         ) : null}
+
+        {/*
+          NOTES, BACK IN THE LEFT COLUMN (SPEC v2.20, owner feedback). They had
+          drifted to the bottom of the page, below the tabs and far below the
+          fold, which is not where a note taken while reading a posting is
+          usable. They sit under the measurement — the ring and the bars are what
+          the screen is FOR and stay first — and above the fold at both test
+          widths.
+        */}
+        {notes}
       </div>
 
       <ResultTabs
@@ -367,7 +450,8 @@ export function ResultWorkspace({
             revisionNotBetter={revisionNotBetter}
             revisionWithheld={revisionWithheld}
             pending={pending}
-            onGenerate={generate}
+            onGenerate={() => generate()}
+            onRegenerate={() => generate('regenerate')}
             onRescore={rescore}
             onCheckQuality={checkQuality}
             onDownload={download}
@@ -377,6 +461,15 @@ export function ResultWorkspace({
     </div>
   );
 }
+
+/**
+ * A score as the ring shows it, for copy that names the number.
+ *
+ * `NO_SCORE` and not "0" for null: rule B1b's insufficient-signal case renders
+ * "—" everywhere else in the app, and a sentence quoting a 0 there would state a
+ * measurement the app refuses to display two inches above.
+ */
+const scoreText = (score: number | null): string => (score === null ? NO_SCORE : `${score}%`);
 
 /** The server's own filename, so the browser saves what the export named. */
 function filenameFrom(res: Response): string | null {

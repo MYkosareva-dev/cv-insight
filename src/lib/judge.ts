@@ -252,3 +252,39 @@ export function judgeIssueCounts(report: Rubric | null): {
     quality: report.grounding.violations.length + weakCriteria(report).length,
   };
 }
+
+/**
+ * Two lists of version rows, merged into one NEWEST-FIRST list with no duplicates.
+ *
+ * Needed by the REGENERATE action (SPEC v2.20). A run's 200 body carries only the
+ * rows that run wrote, and the client used to take them as the whole list —
+ * correct while a generate could only happen on an empty history, and wrong the
+ * moment one can happen on top of five earlier versions: the list would lose
+ * every older row until the next server render landed.
+ *
+ * NEWEST FIRST, because that is the order `listResumeVersions` returns and the
+ * order the version list renders. The response's own array is oldest-first
+ * (`[original, revision]`), so taking it verbatim also displayed one run's pair
+ * upside down relative to every other render — a pre-existing inconsistency this
+ * closes as a consequence rather than as its purpose.
+ *
+ * INCOMING WINS a collision by id: it is the fresher read of the same row.
+ *
+ * The sort is stable and `incoming` is REVERSED into the input, so two rows
+ * sharing a `created_at` keep the response's pair in newest-first order —
+ * `ai_revision` ahead of `ai`. That is the order `openingVersion` needs to make
+ * its comparison at all, and it is a stated dependency there for the same
+ * reason: the two inserts are separate transactions with distinct `now()`
+ * values, so the tie is a defensive case rather than an expected one.
+ */
+export function mergeVersionsNewestFirst<T extends { id: string; created_at: string }>(
+  existing: readonly T[],
+  incoming: readonly T[],
+): T[] {
+  const incomingIds = new Set(incoming.map((version) => version.id));
+  const merged = [
+    ...[...incoming].reverse(),
+    ...existing.filter((version) => !incomingIds.has(version.id)),
+  ];
+  return merged.sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
