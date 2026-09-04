@@ -38,12 +38,25 @@ type Review = { report: JudgeReport | null; terms: JudgeTerms };
  * checked those terms against the base, and the honest answer to "which terms
  * does your base support" is then to suggest none. Falling back to the raw list
  * is the one thing this whole mechanism exists to prevent.
+ *
+ * THE MEMBERS ARE CHECKED, NOT ONLY THE CONTAINER. `Array.isArray` alone
+ * accepted an array of objects, which the judge card renders into its findings
+ * list as `[object Object]`. The payload is same-origin and server-computed, so
+ * this is a guard against a shape drifting rather than against an attacker — but
+ * it is the ONLY guard between a malformed `judgeTerms` and the panel whose whole
+ * purpose is not to suggest a term the base lacks, and a guard that validates the
+ * wrapper and trusts the contents is half a guard. A non-string entry is dropped
+ * rather than stringified, on the same reasoning as the fallback above: a term
+ * nobody can vouch for is not suggested.
  */
+const stringsOf = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+
 function termsOf(data: { judgeTerms?: unknown }): JudgeTerms {
   const terms = data.judgeTerms as JudgeTerms | undefined;
   return {
-    supported: Array.isArray(terms?.supported) ? terms.supported : [],
-    notInBase: Array.isArray(terms?.notInBase) ? terms.notInBase : [],
+    supported: stringsOf(terms?.supported),
+    notInBase: stringsOf(terms?.notInBase),
   };
 }
 

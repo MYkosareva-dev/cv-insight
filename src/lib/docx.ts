@@ -38,6 +38,16 @@ const BODY_HALF_POINTS = 22;
  *
  * The length bound is what stops a shouted sentence inside a bullet from being
  * promoted to a heading.
+ *
+ * WHAT IT GETS WRONG, said here rather than left for a user to find in a
+ * downloaded document: any all-caps line of 40 characters or fewer is bolded, so
+ * a company name a user typed in capitals on its own line — "ACME LOGISTICS" —
+ * comes out as a section heading. The consequence is one wrongly-bold line in a
+ * .docx, and it is accepted rather than fixed, because the alternative is a
+ * hard-coded list of heading words: that would bold EXPERIENCE and not
+ * BERUFSERFAHRUNG, and rule B10 allows a non-English posting to be parsed even
+ * though the resume comes out in English. A shape test is wrong about one line;
+ * a word list is wrong about whole documents.
  */
 const MAX_HEADING_CHARS = 40;
 
