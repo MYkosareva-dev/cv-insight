@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 
 import { AppSidebar } from '@/components/app-sidebar';
 import { FlashToast } from '@/components/flash-toast';
+import { SignOutButton } from '@/components/sign-out-button';
 import { Toaster } from '@/components/ui/sonner';
 import { AUTH } from '@/lib/copy';
 import { getUser } from '@/lib/supabase/server';
@@ -25,7 +26,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Toaster />
       <AppSidebar />
       <div className="flex w-full max-w-5xl flex-1 flex-col">
-        <main className="flex-1 p-4 md:p-8">{children}</main>
+        {/*
+          Sign out, top-right, on every member screen (SPEC v2.20, owner
+          feedback). It lived on /settings, which is not where anyone looks for
+          it: signing out is wanted from whatever screen the user is on, and it
+          changes no setting. `justify-end` and nothing else in the bar, so the
+          page's own heading stays the first thing read on every screen.
+        */}
+        <header className="flex justify-end px-4 pt-4 md:px-8">
+          <SignOutButton />
+        </header>
+        <main className="flex-1 px-4 pt-2 pb-4 md:px-8 md:pb-8">{children}</main>
         {/*
           Art. 12(1): the privacy statement has to be reachable from anywhere in the
           app, not only from the signed-out screens.
