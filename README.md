@@ -67,6 +67,8 @@ could-not-search. A dead embeddings call fails the whole scan with
 requirement is missing on the strength of a request that never completed is the
 app lying about data it did not check.
 
+![Career base screen listing six items grouped under Role, Skills and Education. Each card carries a type badge, a date range and a "from: Resume 1" provenance chip.](docs/images/career-base.png)
+
 ### 4. The lexical evidence gate
 
 Similarity alone decides coverage for `general` requirements. For a `tool` or
@@ -81,6 +83,12 @@ source resume: someone who pastes a one-page CV that omits Python still has
 Python in their base, and searching the paste would manufacture a gap. (The
 re-score endpoint searches a different corpus on purpose — see the limitations
 below.)
+
+![Requirement coverage table. Nine rows read Covered, naming the career item and a similarity percentage. Three read Gap with the best-match cell replaced by no mention of "Apache Kafka" at 42%, no mention of "Terraform" at 42%, and no mention of "Apache Spark" at 50% — all three above the 36% coverage threshold.](docs/images/scan-coverage.png)
+
+Those three gaps are the gate, not the threshold: every one of them scored above
+the 0.36 cut, so similarity alone would have called all three Covered. The base
+does adjacent work in each case and never names the tool.
 
 ### 5. Scoring
 
@@ -128,6 +136,11 @@ The reviewer is held to the same standard as the writer: a term it reports as
 `missingHonest` only reaches a screen or a rewrite if the career base literally
 contains it, checked with the same `keywordPresent` the coverage gate uses.
 
+![Tailored resume editor above the Quality check panel. Grounding is marked Failed, keyword coverage 3/5, relevance 5/5, ATS format 5/5. An "Unsupported claims" list quotes the flagged sentence and says why; below it, five terms the posting asked for that the career base does not contain. The version rail shows an AI draft and an AI revision, both labelled Needs work.](docs/images/judge-verdict.png)
+
+That screenshot is a real refusal, not a staged one, and the run behind it is
+written up in `docs/eval/generation-coverage-control.md`.
+
 ### The call budget
 
 Model calls are metered, so they are bounded by arithmetic rather than by
@@ -146,6 +159,8 @@ Every OpenRouter request writes one `llm_calls` row — including failures — w
 the model that *actually* answered and whether the fallback was used. `/quality`
 renders that table, which is how a silently-falling-back deployment stops being
 invisible.
+
+![Quality dashboard. Tiles show total AI cost $0.0473, 6 of 50 chat calls in the last 24 hours, and 0 of 9 calls served by the fallback model. A rubric section reports one AI run that needed the rewrite and still failed after it, and grounding as 0 passed and 2 failed. A per-step table names the model that served each step: openai/gpt-5.4 for generate, anthropic/claude-haiku-4.5 for the judge, the parse and the import.](docs/images/quality-dashboard.png)
 
 ---
 
@@ -216,7 +231,13 @@ Then the part worth reading. Across three runs and six judged versions on one
 fixture, **grounding fails on the first draft in 3 of 3 runs, on both models**.
 The stronger generator did not fix it, which means the grounding failures are a
 property of prompt P2 and/or of a deliberately under-covered career base — not an
-artefact of the wrong model. What did change is the revision step: under the
+artefact of the wrong model. **A second fixture has since removed the second half
+of that "and/or"**: a career base that genuinely covers its vacancy, scoring 82
+with nine of twelve requirements Covered, still produced a first draft that failed
+grounding — and a rewrite that failed it too
+(`docs/eval/generation-coverage-control.md`). Four first drafts judged across two
+corpora and two generators, four failures. The thin corpus is no longer a
+sufficient explanation, which leaves P2. What did change is the revision step: under the
 fallback it made grounding *worse* (3 violations → 5), under gpt-5.4 it converged
 completely once (2 → 0, this project's first `approve`) and not at all once.
 
@@ -487,9 +508,11 @@ Beyond the core pipeline, and each one built rather than sketched:
 
 **The calibration is small.** The similarity thresholds rest on seven labeled
 requirements from one posting against one career base. The generation comparison
-rests on three runs and six judged versions on one fixture. Both files say so
-themselves. Neither is a benchmark, no accuracy figure should be quoted from
-either, and both numbers are expected to move when a second case is labeled.
+rests on three runs and six judged versions on one fixture, and the control that
+answers it rests on **one** run on a second fixture. Every one of those files says
+so on its own first page. None is a benchmark, no accuracy figure should be quoted
+from any of them, and the numbers are expected to move when a third case is
+labeled.
 
 **What the judge does and does not catch.** It catches claims with no career item
 behind them — that is the grounding criterion, and a failure there cannot be
@@ -498,10 +521,17 @@ the generator is never handed the keyword list and terms the base does not suppo
 are reported separately instead of written into the resume. What it does **not**
 do: it is one model's reading of one draft, with a single revision behind it and no
 loop. Its ATS-format score moved in opposite directions across two runs of the
-same fixture and should not be read. It cannot verify that anything in the career
+same fixture and should not be read. On the covering fixture its one surviving
+objection was to a sentence that **is** in the career base — it refused
+"infrastructure-as-code modules" as evidence for a requirement naming Terraform,
+which is the same lexical judgement the coverage gate makes about the same word.
+Whether that is the judge being right or the judge being merely lexical is
+unresolved, and it is written down rather than smoothed over. It cannot verify
+that anything in the career
 base is *true* — grounding means "supported by what you wrote", not "supported by
-reality". And a first-draft grounding failure in 3 of 3 measured runs is an open
-finding about prompt P2, not a solved problem.
+reality". And a first-draft grounding failure in **4 of 4** measured runs — three
+against a base that under-covers its vacancy, one against a base that covers it —
+is an open finding about prompt P2, not a solved problem.
 
 **The coverage gate matches forms, not meanings.** A base writing "Microsoft
 Office", "PostgreSQL" or "NodeJS" does not satisfy a posting saying "MS Office",

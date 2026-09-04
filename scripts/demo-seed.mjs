@@ -166,6 +166,35 @@ const captured = [];
  * show — so a layout change breaks the run instead of quietly producing an
  * image of the wrong thing.
  */
+/**
+ * Photograph an element, but stop the frame ABOVE some later element.
+ *
+ * /quality is 2,500 pixels tall and its last third is a call-by-call log. The
+ * dashboard's argument — what each run cost, which model served it, what the
+ * reviewer said — is over by then, so the log is length rather than evidence.
+ * The cut is expressed as "everything above this heading" instead of a pixel
+ * count, so it survives the screen growing.
+ */
+async function captureUntil(page, locator, name, stopBefore, mustContain = []) {
+  await locator.first().waitFor({ state: 'visible', timeout: 30_000 });
+  const text = await locator.first().innerText();
+  for (const needle of mustContain) {
+    if (!text.includes(needle)) {
+      throw new Error(`capture ${name}: the framed element does not contain ${JSON.stringify(needle)}`);
+    }
+  }
+  const box = await locator.first().boundingBox();
+  const stop = await stopBefore.first().boundingBox();
+  if (!box || !stop) throw new Error(`capture ${name}: could not measure the frame`);
+  await page.screenshot({
+    path: shot(name),
+    fullPage: true,
+    clip: { x: box.x, y: box.y, width: box.width, height: Math.max(1, stop.y - box.y - 8) },
+  });
+  captured.push(name);
+  console.log(`shot: ${name}.png (cropped above "${await stopBefore.first().innerText()}")`);
+}
+
 async function capture(locator, name, mustContain = []) {
   await locator.first().scrollIntoViewIfNeeded();
   await locator.first().waitFor({ state: 'visible', timeout: 30_000 });
@@ -281,17 +310,21 @@ async function buildBase(page) {
   await page.getByRole('button', { name: 'Import resume' }).first().click();
   const dialog = page.getByRole('dialog');
 
-  const extracted = page.waitForResponse(
-    (res) => res.url().includes('/api/career/import') && res.request().method() === 'POST',
-    { timeout: 180_000 },
+  const extracted = pending(
+    page.waitForResponse(
+      (res) => res.url().includes('/api/career/import') && res.request().method() === 'POST',
+      { timeout: 180_000 },
+    ),
   );
   await dialog.getByPlaceholder('Paste your resume text here.').fill(CASE.resumeText);
   await dialog.getByRole('button', { name: 'Extract items' }).click();
   const proposed = await (await extracted).json();
 
-  const saved = page.waitForResponse(
-    (res) => res.url().includes('/api/career/items') && res.request().method() === 'POST',
-    { timeout: 180_000 },
+  const saved = pending(
+    page.waitForResponse(
+      (res) => res.url().includes('/api/career/items') && res.request().method() === 'POST',
+      { timeout: 180_000 },
+    ),
   );
   await dialog.getByRole('button', { name: /^Save \d+ items? to base$/ }).click();
   const committed = await (await saved).json();
@@ -310,9 +343,11 @@ async function buildBase(page) {
 async function runScan(page) {
   await page.goto(`${BASE_URL}/scan`);
   await page.getByLabel('Job posting').fill(CASE.vacancyText);
-  const scanned = page.waitForResponse(
-    (res) => res.url().includes('/api/scan') && res.request().method() === 'POST',
-    { timeout: 240_000 },
+  const scanned = pending(
+    page.waitForResponse(
+      (res) => res.url().includes('/api/scan') && res.request().method() === 'POST',
+      { timeout: 240_000 },
+    ),
   );
   await page.getByRole('button', { name: 'Analyze' }).click();
   const response = await scanned;
@@ -349,11 +384,18 @@ function reportCoverage(body) {
 async function generate(page, applicationId) {
   await page.goto(`${BASE_URL}/applications/${applicationId}`);
   await page.getByRole('tab', { name: 'Tailored resume' }).click();
-  const generated = page.waitForResponse(
-    (res) => res.url().includes('/generate') && res.request().method() === 'POST',
-    { timeout: 300_000 },
+  // The tab has rendered when its empty state has. Waiting on the thing the
+  // screen actually says, rather than on a duration.
+  await page.getByText('No tailored resume yet.').waitFor({ timeout: 60_000 });
+  const generated = pending(
+    page.waitForResponse(
+      (res) => res.url().includes('/generate') && res.request().method() === 'POST',
+      { timeout: 300_000 },
+    ),
   );
-  await page.getByRole('button', { name: 'Generate tailored resume' }).click();
+  // `.first()` because the label appears on more than one control; without it
+  // Playwright's strict mode throws and the run dies pointing at the wrong line.
+  await page.getByRole('button', { name: 'Generate tailored resume' }).first().click();
   const response = await generated;
   const body = await response.json();
   if (response.status() !== 200) {
@@ -394,6 +436,34 @@ function reportRubric(body) {
   console.log('');
 }
 
+/**
+ * `waitForResponse` returns a promise that is created BEFORE the click that
+ * triggers it. If the click throws, nothing ever awaits that promise, and when
+ * the browser closes it rejects on its own — as an unhandled rejection that
+ * replaces the real error with "Target page, context or browser has been
+ * closed". That is how a strict-mode violation on a button cost one run.
+ *
+ * Attaching a no-op catch makes the rejection handled without consuming it: the
+ * real `await` below still sees the same settled promise, and a failing click
+ * now reports the failing click.
+ */
+function pending(promise) {
+  promise.catch(() => {});
+  return promise;
+}
+
+/*
+ * THERE IS NO `GET /api/applications/[id]`, so a per-version rubric cannot be
+ * read from an endpoint: the detail page is a Server Component that reads the
+ * versions through the DAL, and a script may not touch a DAL (check.mjs R1).
+ * An earlier draft of this file asked for one anyway and got a 405.
+ *
+ * That measurement is not lost, it just lives on a screen: `/quality` counts
+ * grounding across EVERY stored verdict — "0 passed · 2 failed" is both
+ * versions of one run — and the Versions rail on the detail page labels each
+ * version with its own verdict. Both are captured below.
+ */
+
 /** The four README images. Each one framed on the thing it is there to show. */
 async function captureAll(page, applicationId) {
   // 1. The scan result: the requirement table, with Covered rows AND a row the
@@ -411,13 +481,34 @@ async function captureAll(page, applicationId) {
   await page.getByRole('tab', { name: 'Tailored resume' }).click();
   await page.getByRole('heading', { name: 'Quality check' }).waitFor({ timeout: 60_000 });
   const resumeTab = page.getByRole('tabpanel');
-  await capture(resumeTab, 'judge-verdict', ['Quality check', CASE.displayName ?? 'Versions']);
+  /*
+   * The resume is the VALUE of a textarea, and a textarea's value is not part of
+   * any ancestor's innerText — so asserting the name against the panel's text
+   * fails on an image that is perfectly correct. The fence was right to refuse
+   * and the assertion was wrong: the editor is checked through inputValue(),
+   * which is where that text actually lives, and the panel is checked for the
+   * verdict copy.
+   */
+  const editor = page.getByRole('textbox', { name: 'Tailored resume' }).first();
+  const written = await editor.inputValue();
+  if (CASE.displayName && !written.includes(CASE.displayName)) {
+    throw new Error(
+      `the editor does not contain ${CASE.displayName} — the resume in frame is not this fixture's`,
+    );
+  }
+  await capture(resumeTab, 'judge-verdict', ['Quality check']);
 
   // 3. The observability dashboard.
   await page.goto(`${BASE_URL}/quality`);
   await page.getByRole('heading', { name: 'Quality', exact: true }).waitFor({ timeout: 30_000 });
   await page.waitForTimeout(1_000);
-  await capture(page.locator('main'), 'quality-dashboard', ['Total AI cost']);
+  await captureUntil(
+    page,
+    page.locator('main'),
+    'quality-dashboard',
+    page.getByRole('heading', { name: 'Last 50 AI calls' }),
+    ['Total AI cost', 'Served by the fallback model', 'Cost by pipeline step'],
+  );
 
   // 4. The career base the whole pipeline reads from.
   await page.goto(`${BASE_URL}/career`);
@@ -431,16 +522,23 @@ try {
   await signIn(page);
 
   let applicationId = flag('application');
-  if (!SHOTS_ONLY) {
+
+  /*
+   * THREE ENTRY POINTS, because the two expensive halves fail independently and
+   * a re-run should not buy the cheap half twice. Seeding spends an import and a
+   * scan; generating spends up to four chat steps. Passing --application skips
+   * the first, --shots-only skips both.
+   */
+  if (!applicationId && !SHOTS_ONLY) {
     await assertBaseIsEmpty(page);
     await saveProfile(page);
     await buildBase(page);
     applicationId = await runScan(page);
-    await generate(page, applicationId);
   }
   if (!applicationId) {
     throw new Error('--shots-only needs --application <uuid>');
   }
+  if (!SHOTS_ONLY) await generate(page, applicationId);
 
   await captureAll(page, applicationId);
   console.log('');
