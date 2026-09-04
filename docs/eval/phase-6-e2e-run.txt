@@ -185,4 +185,6 @@ WHAT THIS DOES NOT MEAN. It is not a regression and it does not expire this
 file: this run tested the code at the commit it names, and that evidence stands.
 What it means is that the NEXT change to a tested path has no green suite behind
 it until one of the three options above exists. That is a real gap, not a
-formality, and it is carried in docs/backlog.md under "Testing".
+formality. It is carried in docs/backlog.md in two places, both added by the
+same pass that wrote this note: "Read these first" item 6, and the group "When
+the test suite can create accounts again".

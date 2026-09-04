@@ -29,9 +29,10 @@ it is in the rounds below, waiting on nothing but a decision to do it.
 
 ## Read these first
 
-Seven, chosen for consequence rather than for severity label. Three are product
-findings, two are money or correctness, two are one-line owner actions that gate
-sharing the link.
+Seven, chosen for consequence rather than for severity label — two product
+findings about the pipeline, two open code defects, one migration risk, one gap
+in the evidence, and one entry holding the two owner actions that gate sharing
+the link.
 
 1. **`p5-16` — grounding fails on the first draft in 3 of 3 measured runs, on
    BOTH generators.** The strongest open finding in the file, and the one most
@@ -106,13 +107,20 @@ being unwilling to write the test.
 - **`e-1`, `e-2`, `e-3`, `e-4`** — the Phase-2 evidence gaps: the dedup bound, the
   Edit-save request count, `CAREER.truncated` reaching a screen, the target-role
   round trip.
-- **`p3-3`, `p3-4`** — a successful draft re-run, and "exactly one `parse_vacancy`
-  row per scan".
+- **`p3-3`** — a successful draft re-run has no test; the failing-service path
+  does.
 - **`p4-6`** — the auto-revision wiring has no deterministic test.
 - **`p5-8`** — [Regenerate] has no request-count assertion, the only one of five
   metered buttons without one.
-- **`m-5`, `n-5`** — edge case S6 asserted nowhere; a substring count assertion
-  that also matches the wrong number.
+- **`m-5`** — edge case S6 is cited as the reason for a design decision in three
+  files and asserted in none.
+
+`p3-4` used to sit in this group and does not belong here: its own entry says the
+blocker is that `tests/` may reach neither a DAL nor the service-role key, so no
+spec can count `llm_calls` rows at all — R6 and R10, not the fixture — and the
+`/quality` dashboard it named as the place this becomes observable now exists.
+`n-5` is not here either: a substring count assertion that also matches the wrong
+number is a one-line edit to a spec file with no precondition on it.
 
 ### When a second calibration case exists
 
@@ -126,22 +134,31 @@ second, well-covered case is built.
   which no labeled set has been run against.
 - **`p5-16`, `p5-17`** — the grounding finding, and the fact that the comparison
   used the same case but a fresh account each time rather than the same row.
-- **`p3-24`, `p3-25`, `p3-26`** — the gate and the keyword table read different
-  corpora and can legitimately disagree; whitespace normalization on a term; the
-  `terms` bound.
-- **`p3-19`** — the enumeration split is a shape test, so prose built from four
-  short clauses splits like a skills list.
+- **`p3-26`** — `keywordRegex` escapes a term verbatim with no whitespace
+  normalization, so a copy carrying a line-wrap or a double space never matches.
+- **`p3-25`** — `terms` are bounded and never rendered except as the one missing
+  term, so a parser returning twenty near-duplicates would go unseen.
+
+Two ids were filed here and moved out. `p3-24` — the keywords table counts against
+the scored source while the gate searches the base, so the two can legitimately
+disagree — names its own fix in its entry, and it is a shared label on the result
+screen, not a calibration question. `p3-19` — the enumeration split is a shape
+test — asks for a unit assertion of that boundary, which `tests/unit/chunking.test.mjs`
+can make today against no fixture at all. Both are ordinary open work.
 
 ### When `resume_versions` learns which model wrote a version
 
-One migration, and three things resolve together.
+One migration, and two things resolve with it.
 
 - **`p5-14`** — "written by" describes the application's most recent generation,
   not the version on screen.
-- **`p5-15`** — the rail names whose measurement it shows; the judge card does not.
 - The measurement this unlocks is the one worth having: rubric outcomes grouped
   BY MODEL on `/quality`, which turns "does the fallback fail grounding more
   often" from an impression into rows.
+
+`p5-15` was filed here and is not waiting on the column: its entry ends "one line
+there would close the last gap in the same class", and that line is copy on the
+judge card.
 
 ### When the app runs on more than one instance, or a user opens two tabs
 
@@ -151,9 +168,11 @@ Each of these is a race that a single warm serverless instance hides.
   one for the same application and run two full pipelines.
 - **`p3-10`** — the draft re-run has no in-flight lock at all, while `/generate`
   has a 409.
-- **`p4-29`, `p4-5`** — two concurrent exports both append; and text identical to
-  an OLDER version is not deduped. One fix, if the version list ever starts
-  reading as a download log.
+- **`p4-29`** — two concurrent exports both read the latest version before either
+  inserts, and both append. `p4-5` is a DIFFERENT case in the same function —
+  text identical to an OLDER version is not deduped at all — and it is not a
+  race, so it is ordinary open work; the two become one fix only if the version
+  list ever starts reading as a download log.
 - **`a-3`, `a-5`** — the import's two statements have no transaction; the dedup
   guard is not idempotent under concurrency.
 - **`p4-14`** — no server-side one-click guard on `POST …/judge`, which has only
