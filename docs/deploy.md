@@ -12,7 +12,7 @@ setting must therefore be in place *before* a URL exists, because there is no
 safe window in which the site is live and registration is open.
 
 Steps 1–3 happen before the first deploy. Steps 4–9 configure the project. Step
-10 deploys. Steps 11–20 verify.
+10 deploys. Steps 11–21 verify.
 
 ---
 
@@ -235,7 +235,25 @@ open `/quality` and confirm real rows for `parse_vacancy`, `embed`, `generate` a
 Use invented data. The demonstration notice on every member screen says why, and
 it applies to the person running this checklist first of all.
 
-### 20. Public pages
+### 20. No third-party script is being injected
+
+Open a member screen with the console visible and confirm there is no error from
+a script whose frames are `<anonymous>` / `VM…` rather than
+`/_next/static/chunks/*`. This app ships no analytics, no telemetry and no
+web-vitals reporter — verified against a clean build — so anything of that shape
+came from the platform or the browser, and two settings can put it there:
+
+- Vercel → Project → **Speed Insights**: must be **off**. It injects a reporting
+  script with no package installed, and `/privacy` states there are no analytics
+  and no trackers. Enabling it makes that sentence false and re-opens the
+  no-consent-banner decision in CLAUDE.md. The CSP's `connect-src 'self'` would
+  block its beacon, but a header is the wrong place to enforce a promise the
+  page makes in prose.
+- Vercel → **Toolbar**: injected for visitors authenticated to Vercel. Harmless
+  for other viewers, and worth knowing about before treating its console noise
+  as an app defect.
+
+### 21. Public pages
 
 `https://<url>/privacy` and `https://<url>/impressum` must load in a private
 window with no redirect. **`/impressum` will say the operator's details are not
