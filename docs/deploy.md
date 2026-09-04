@@ -257,6 +257,8 @@ Not blockers, recorded so they are not rediscovered as surprises.
 - **Erasure is account-level.** Career items are individually deletable; job
   postings, scans and generated versions go with the account. `/privacy` says so.
   Backlog `eu-8`.
-- **`0 owned rows` after deletion is not witnessed by a test.** SPEC Block H
-  item 3 records what it would take.
+- ~~`0 owned rows` after deletion is not witnessed.~~ **Closed** — owner-run on
+  2026-09-04 and recorded in `docs/eval/erasure-evidence.md`. Note the run needed
+  registration to still be open, so it had to happen before step 2; re-running it
+  later needs a second Supabase project or registration briefly re-opened.
 - **The Playwright suite cannot create accounts once step 2 is done.** See step 1.
