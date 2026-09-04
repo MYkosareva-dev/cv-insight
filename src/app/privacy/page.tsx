@@ -45,10 +45,14 @@ export default function PrivacyPage() {
         <p className="text-muted-foreground text-sm">
           {APP_NAME} stores the email address you sign up with, together with your career items,
           the name and optional target role you give each resume you import, job postings you
-          paste or upload, scans and their results, generated resume versions, the notes and
-          status you set on an application, and per-call AI usage metadata, in a Supabase Postgres
-          database hosted in the EU (Frankfurt). Rows are scoped to your account: the database
-          refuses to return another account&rsquo;s rows, and there is no administrator view.
+          paste or upload, <strong>the resume text you paste or upload for a scan</strong>, the
+          results of each scan, <strong>a search index built from your career items</strong> (a
+          second, chunked copy of them, stored so they can be matched by meaning), generated
+          resume versions, <strong>the notes and the status you set on each application</strong>{' '}
+          — including whether you were interviewed or rejected — and per-call AI usage metadata,
+          in a Supabase Postgres database hosted in the EU (Frankfurt). Rows are scoped to your
+          account: the database refuses to return another account&rsquo;s rows, and there is no
+          administrator view.
         </p>
         <p className="text-muted-foreground text-sm">
           The AI usage metadata is metadata only — which step ran, which model answered, how many

@@ -268,3 +268,35 @@ before/after are `docs/eval/generation-model-comparison.md`.
 - **MINOR p5-17** — the comparison ran on the same FIXTURE but a fresh account each time, so the application row differs. A true same-row comparison needs the generate model switchable per run rather than per deployment, which is a dev-only affordance nobody should ship as product surface. Worth building only if a second model comparison is ever run.
 - **NIT p5-18** — `MAX_TOKENS_BY_STEP.generate = 2500` was chosen for Sonnet. gpt-5.4 accepts `temperature` silently (it is not in its supported parameters) and billed 0 reasoning tokens at default effort, both verified — but a future OpenRouter default that turns reasoning on would spend that budget before any resume text, and the app would report a truncated draft rather than a refusal. If the generator stays a reasoning-capable model, send an explicit low reasoning effort rather than relying on a default.
 
+
+## Phase 6 — from the three pre-deploy gates (2026-09-04)
+
+`nextjs-security`, `vercel-security` and `eu-compliance-reviewer` each ran for the
+first time. The three reports are `docs/reviews/phase-6-nextjs-security.md`,
+`docs/reviews/phase-6-vercel-security.md` and
+`docs/reviews/phase-6-eu-compliance.md`, saved verbatim before anything was acted
+on. Blockers were fixed on the branch or, where the fix is a dashboard setting
+this repository cannot reach, put to the owner in the hand-over. Majors are the
+owner's call and are NOT carried here — they are in the hand-over, undecided, per
+the Phase-4 triage contract. What follows is minors and nits only.
+
+> **CLOSED IN THIS BRANCH, so they are recorded rather than listed as work.**
+> `eu-11` (four stored data categories missing from /privacy — the retained scan
+> resume text, the derived search index, application notes and application
+> status) is fixed in the rewrite; the owner's task named "every data category"
+> and these were part of it. `eu-14` (no last-updated date) is fixed by
+> `PRIVACY_UPDATED`. `eu-15` (a section whose body was the word "Placeholder")
+> is gone with the Impressum work. `ns-1`/`vs-3` (the dev-route fence
+> unwitnessed) is closed by `docs/eval/dev-routes-production-evidence.md`.
+> `p3-2` and `p4-1` are closed by SPEC v2.24's function-duration table.
+
+- **MINOR ns-4** — `src/app/api/career/items/[id]/route.ts` is the last `[id]` route that does not parse its segment, so a non-UUID reaches Postgres and returns 500 where Block D mandates 404; every other handler does `if (!z.uuid().safeParse(id).success) throw new NotFoundError();` first. This is backlog `M-3` from Phase 2, still open, and the comment at `src/app/api/applications/[id]/route.ts` saying the finding was "closed here rather than repeated" is easy to misread as meaning the career endpoints were fixed too. They were not. Add the parse to both verbs and close `M-3`.
+- **MINOR ns-5 / vs-7 / p3-1 / m-3** — the same ceiling question, now answered: Vercel's request-body limit is **4.5 MB** (`/docs/functions/limitations`, verified 2026-09-04), and the app advertises 5 MB while `/api/scan`'s outer bound is 5 MB + 64 KB. A 4.6 MB PDF is legal by the app's copy and refused by the platform, so the user gets an opaque 413 instead of edge case L5's exact string and the careful `Content-Length` pre-check never runs. Lower `MAX_PDF_BYTES` to 4 MB and update the two copy strings; and adopt the pre-check in `src/app/api/career/import/route.ts`, which still calls `request.formData()` before it looks at the size.
+- **MINOR vs-8** — `prebuild` runs `check` + `test`, which is right and should stay, but it makes a docs edit able to fail a production deploy (R12 and R13 both read files under `docs/`), and `npm test` needs Node ≥ 22 for its glob. Pin the Vercel project's Node version to 22.x explicitly rather than inheriting a default that moves.
+- **MINOR vs-9** — if any Deployment Protection is enabled, Vercel offers a Protection Bypass token that defeats it, optionally as `VERCEL_AUTOMATION_BYPASS_SECRET`. It is a secret under CLAUDE.md's rules and `scripts/check.mjs` would not catch it pasted as a literal into a config file. Do not enable automation bypass unless CI needs it; never commit the value.
+- **MINOR vs-10** — the `/api/dev/*` production fence is now witnessed for the two routes that exist, but nothing stops a THIRD dev route shipping without the guard: the thirteen check rules are frozen and none covers it, so the control is code review. An R14 asserting the guard is the first statement of every `route.ts` under `src/app/api/dev/` would convert that into a build failure. Needs an owner decision, because it means unfreezing the rule set.
+- **MINOR eu-12** — SPEC Block G edge case G2 says the retention decision is "documented in README", and README is five lines that do not contain it; the decision lives in `docs/openrouter-processing.md`, which is the better home. Either point README at it or amend G2 to name the doc. Block H item 8 wants a full README anyway.
+- **MINOR eu-13** — the EU AI Act classification is favourable and is argued in full in `docs/reviews/phase-6-eu-compliance.md`, but nowhere a reader would look for it, and it is not self-evident: a model scoring a CV against a job posting *looks* like Annex III(4)(a), and the reason it is not is a fact about who the user is. Lift that section into a new docs/ai-act-note.md file (deliberately not backticked: R13 requires a backticked repo path to resolve, and this one is a proposal rather than a file), especially the four tripwires that would change the answer — an employer-facing mode, offering it to recruiters, any output a third party acts on, or a claim that the score predicts hiring outcomes.
+- **NIT ns-6** — only `/export` sets `Cache-Control: no-store`. Harmless today (every other handler is POST/PATCH/DELETE and the only GET is dev-only), but the default is safe by accident rather than by design; setting it in `apiErrorResponse` and the data-returning handlers would make the next authenticated GET inherit the right thing.
+- **NIT ns-7** — `apiErrorResponse` logs `err.name`, which is `'object'` for a PostgREST error, so a UUID syntax error, an RLS refusal and a connection failure are indistinguishable in the log. `saveContactsAction` already solved this leak-free by logging the `code` alongside; Postgres codes are fixed identifiers and carry no user content.
+- **NIT vs-11** — the middleware calls `getUser()` on every non-excluded request, a round trip to Frankfurt. Once the function region is `fra1`, measure a signed-in navigation from a European client before doing anything; this may be a non-issue and is a NIT precisely because it is unmeasured.
