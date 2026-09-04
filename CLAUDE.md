@@ -165,6 +165,12 @@ SPEC.md, then anything else.
   owned rows (verified by test).
 - Never log resume or vacancy CONTENT anywhere outside the database rows the
   user owns; log metadata (tokens, model, latency) only.
+- The only profile field that reaches a model provider is the display name, wrapped in
+  a tagged block in P2 and P3 because a resume needs a name line. Contact email, phone,
+  location and profile links are stored, rendered and exported, and reach no model call
+  on any path — enforced by the type of the text those calls accept, so a call site
+  that skips the strip does not compile. A convention someone has to remember would not
+  have held.
 
 ## Owner's private files
 - **WORKLOG.md is the owner's private file — never read it.** It is gitignored
