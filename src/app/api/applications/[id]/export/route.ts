@@ -6,11 +6,12 @@ import { z } from 'zod';
 import { requireApiUser } from '@/lib/auth/requireApiUser';
 import { NAME_PLACEHOLDER, RESULT } from '@/lib/copy';
 import { getApplication } from '@/lib/db/applications';
-import { getDisplayName } from '@/lib/db/profiles';
+import { getContacts, getDisplayName } from '@/lib/db/profiles';
 import { getLatestResumeVersion, insertResumeVersion } from '@/lib/db/resumeVersions';
 import { getVacancy } from '@/lib/db/vacancies';
 import { NotFoundError, ValidationError, apiErrorResponse } from '@/lib/errors';
 import { exportFilename, resumeToDocx } from '@/lib/docx';
+import { contactLines } from '@/lib/resumeHeader';
 import { resumeContentSchema } from '@/lib/validation';
 
 /**
@@ -43,6 +44,12 @@ import { resumeContentSchema } from '@/lib/validation';
  * absent and the file is `CV_<Company>_<Role>.docx`: dropping a part the app does
  * not know beats inventing one, and `exportFilename` already sanitises every part
  * for the filesystem while keeping non-Latin letters intact.
+ *
+ * IT ALSO REPORTS A MISSING CONTACT HEADER (v2.20). The block is inserted at
+ * GENERATION time, so a resume written before the user saved their contact
+ * details has none — and that is precisely the state migration 005 exists to
+ * fix. The export cannot graft one on (the text the user edited is what they are
+ * downloading), so it says so and names the way out.
  *
  * AND IT REPORTS A PLACEHOLDER RATHER THAN HIDING IT. A file whose name line
  * still reads `[YOUR NAME]` must never look finished: the placeholder is in the
@@ -112,6 +119,31 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     const displayName = await getDisplayName(user.id);
+    /**
+     * THE HEADER IS NOT ADDED HERE, AND ITS ABSENCE IS REPORTED.
+     *
+     * `withContactHeader` runs during GENERATION, so the block is part of the
+     * stored version and this route writes the editor's text verbatim — which is
+     * the whole point: the document on disk is the text the user saw and edited,
+     * not a second composition that could differ from it.
+     *
+     * The reachable gap is a resume WRITTEN BEFORE the contact details were
+     * saved. It has no header, the export cannot honestly graft one on (the user
+     * never saw it, never approved it, and the text they edited is what they are
+     * downloading), and without this check the download would look finished while
+     * the one thing migration 005 exists to fix stayed broken for every
+     * application they already had.
+     *
+     * So it is a WARNING and not a refusal, exactly like the name placeholder
+     * below: the file is the user's and the app does not decide what they may
+     * send. Detected by asking whether any line the header WOULD have contained
+     * is in the text, which is the same function that composes it — so the two
+     * cannot hold different opinions about what a header is.
+     */
+    const contacts = await getContacts(user.id);
+    const header = contactLines(contacts);
+    const headerMissing = header.length > 0 && !header.some((line) => content.includes(line));
+
     const bytes = await resumeToDocx(content);
     const filename = exportFilename({
       // The user's own saved name, or nothing. Never the document's first line.
@@ -140,6 +172,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
          * a response body is not available on a file download.
          */
         ...(content.includes(NAME_PLACEHOLDER) ? { 'X-Name-Placeholder': '1' } : {}),
+        /**
+         * The user has contact details saved and this document carries none of
+         * them. A boolean header for the same reason as the one above: the copy
+         * belongs in `lib/copy.ts` with every other string, and a response body
+         * is not available on a file download.
+         */
+        ...(headerMissing ? { 'X-Missing-Contacts': '1' } : {}),
       },
     });
   } catch (err) {

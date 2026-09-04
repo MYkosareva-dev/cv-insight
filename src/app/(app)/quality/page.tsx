@@ -110,22 +110,29 @@ export default async function QualityPage() {
           value={formatUsdFromMicro(summary.totalCostMicro)}
           source={QUALITY.tileTotalCostSource(summary.calls)}
         />
+        {/*
+          "PER APPLICATION", not "per run". The denominator is distinct
+          `application_id` values, and since [Regenerate] one application can
+          hold several AI runs — so this tile and the "AI runs" section below
+          count different things and now say so. Two quantities under one word is
+          the defect on a screen whose one rule is traceability.
+        */}
         <Tile
-          label={QUALITY.tileCostPerRun}
+          label={QUALITY.tileCostPerApplication}
           value={
-            summary.costPerRunMicro === null
+            summary.costPerApplicationMicro === null
               ? QUALITY.nothingMeasured
-              : formatUsdFromMicro(summary.costPerRunMicro)
+              : formatUsdFromMicro(summary.costPerApplicationMicro)
           }
-          source={QUALITY.tileCostPerRunSource(
+          source={QUALITY.tileCostPerApplicationSource(
             formatUsdFromMicro(summary.attributableCostMicro),
-            summary.runs,
+            summary.applicationsWithCalls,
           )}
         />
         <Tile
-          label={QUALITY.tileRuns}
-          value={formatCount(summary.runs)}
-          source={QUALITY.tileRunsSource}
+          label={QUALITY.tileApplications}
+          value={formatCount(summary.applicationsWithCalls)}
+          source={QUALITY.tileApplicationsSource}
         />
         <Tile
           label={QUALITY.tileUnattributed}
@@ -217,7 +224,16 @@ export default async function QualityPage() {
           <p className="text-muted-foreground max-w-prose text-sm">{QUALITY.distributionLead}</p>
           <p className="text-muted-foreground text-xs">
             {QUALITY.distributionJudged(distribution.judged)} ·{' '}
-            {QUALITY.versionWindowNote(Math.min(versions.length, QUALITY_VERSION_WINDOW))}
+            {/*
+              The window says when it is FULL, like the call window above. The
+              read is newest-first, so a full window means the OLDEST versions
+              were cut — and a figure that quietly stops at a limit is the one
+              thing this screen must not print. `versions.length` is already
+              bounded by the query, so the comparison is the whole test.
+            */}
+            {versions.length >= QUALITY_VERSION_WINDOW
+              ? QUALITY.versionWindowFull(QUALITY_VERSION_WINDOW)
+              : QUALITY.versionWindowNote(versions.length)}
           </p>
         </div>
         <div className="overflow-x-auto">

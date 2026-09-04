@@ -582,9 +582,18 @@ export const displayNameSchema = z.object({
  * rather than failing validation, and the columns never hold a present-and-empty
  * value.
  */
+export const MIN_CONTACT_EMAIL_CHARS = 3;
 export const MAX_CONTACT_EMAIL_CHARS = 254;
+export const MIN_PHONE_CHARS = 3;
 export const MAX_PHONE_CHARS = 40;
 export const MAX_LOCATION_CHARS = 120;
+/**
+ * `https://a` is twelve characters — the shortest value the column's
+ * `between 12 and 200` accepts, and the reason this constant exists rather than
+ * being a bare 1: every one of these bounds is the DATABASE's bound, and the
+ * schema's job is to answer with copy before Postgres answers with a constraint.
+ */
+export const MIN_LINK_CHARS = 12;
 export const MAX_LINK_CHARS = 200;
 
 /** Trim, and treat a blank as absent. Shared by every contact field. */
@@ -595,26 +604,66 @@ const blankToNull = (value: unknown): string | null => {
 };
 
 /**
- * An optional field that is either null or a bounded string.
+ * An optional field that is either null or a string inside the column's OWN
+ * bounds — both of them.
+ *
+ * THE MINIMUM IS NOT DECORATION. `005_profile_contacts.sql` bounds `phone`
+ * `between 3 and 40` and `contact_email` `between 3 and 254`, so a two-character
+ * value this schema blessed would reach a CHECK that refuses it — and the form
+ * would answer `contactsFailed` ("try again") for something no retry can fix.
+ * The rule the whole contacts boundary rests on is that **what Zod accepts must
+ * be a SUBSET of what the column accepts**; a backstop that refuses what the
+ * fence in front of it approved is not a backstop, it is a second opinion.
  *
  * The generous pre-bound refuses a megabyte of text before any work is done on
- * it; the real bound is the column's own CHECK and is applied after trimming,
- * because trimming can only ever shorten the value.
+ * it; the real bounds are applied after trimming, because trimming can only ever
+ * shorten the value.
  */
-const optionalText = (max: number, tooLong: string) =>
+const optionalText = (min: number, max: number, badLength: string) =>
   z
     .string()
-    .max(max * 10, tooLong)
+    .max(max * 10, badLength)
     .transform(blankToNull)
-    .refine((v) => v === null || v.length <= max, tooLong);
+    .refine((v) => v === null || (v.length >= min && v.length <= max), badLength);
 
 /**
- * `https://` ONLY, decided by the URL parser.
+ * `https://` ONLY — matched literally, then confirmed by the URL parser, then
+ * stored with the scheme in lower case.
  *
- * The host is required to be non-empty as well, so `https://` on its own — which
- * parses — is refused rather than stored as a link to nowhere.
+ * THREE STEPS, AND EACH ONE CLOSES SOMETHING THE OTHERS DO NOT:
+ *
+ *  1. **The literal prefix, case-insensitively.** This is what makes the value a
+ *     subset of the column's `like 'https://%'` once step 3 has run. Parsing
+ *     alone is not enough: WHATWG accepts `https:example.com` and
+ *     `https:/\/github.com` as host `example.com` / `github.com`, and neither
+ *     string starts with `https://` — so the parser would bless a value the
+ *     CHECK then rejects with a 23514 the form has no words for.
+ *  2. **The parse.** This is what decides the SCHEME rather than guessing at it,
+ *     and it is what refuses `javascript:void("https://…")` — a value containing
+ *     the blessed string without starting with it — and `https://` on its own,
+ *     which parses but names no host and is a link to nowhere.
+ *  3. **Lower-casing the scheme, and only the scheme.** `HTTPS://` is a legal
+ *     spelling and refusing it would be the app being wrong about the user's own
+ *     link, but the column's `like` is case-sensitive. Slicing the first eight
+ *     characters is exact — step 1 has already proved they are `https://` in some
+ *     case — and leaves every other character byte-identical, which
+ *     `url.href` would not: it appends a trailing slash and re-encodes the path,
+ *     and a link the user did not type is not the link they gave us.
+ *
+ * ANGLE BRACKETS ARE REFUSED, on the same reasoning as `cleanDisplayName`. A
+ * stored URL is interpolated into the resume text P3 reads inside its `<resume>`
+ * block, so a value carrying `</resume>` would close that block early and put the
+ * rest of itself outside the region the prompt marks as data. No URL needs a
+ * literal `<` or `>` — they are percent-encoded in a well-formed one — so this
+ * costs nothing and removes the new column as a second author of that block.
  */
+const HTTPS_PREFIX = /^https:\/\//i;
+const URL_ANGLE_BRACKETS = /[<>]/u;
+const HTTPS_PREFIX_LENGTH = 'https://'.length;
+
 function isHttpsUrl(value: string): boolean {
+  if (!HTTPS_PREFIX.test(value)) return false;
+  if (URL_ANGLE_BRACKETS.test(value)) return false;
   try {
     const url = new URL(value);
     return url.protocol === 'https:' && url.hostname.length > 0;
@@ -623,23 +672,40 @@ function isHttpsUrl(value: string): boolean {
   }
 }
 
+/** Step 3: the scheme in lower case, every other character untouched. */
+function normalizeHttpsUrl(value: string): string {
+  return `https://${value.slice(HTTPS_PREFIX_LENGTH)}`;
+}
+
 const optionalHttpsUrl = () =>
   z
     .string()
     .max(MAX_LINK_CHARS * 10, SETTINGS.linkTooLong)
     .transform(blankToNull)
-    .refine((v) => v === null || v.length <= MAX_LINK_CHARS, SETTINGS.linkTooLong)
-    .refine((v) => v === null || isHttpsUrl(v), SETTINGS.linkNotHttps);
+    // MIN_LINK_CHARS is the column's own floor. Without it `https://a` — which
+    // parses and names a host — reaches a CHECK that refuses it.
+    .refine(
+      (v) => v === null || (v.length >= MIN_LINK_CHARS && v.length <= MAX_LINK_CHARS),
+      SETTINGS.linkTooLong,
+    )
+    .refine((v) => v === null || isHttpsUrl(v), SETTINGS.linkNotHttps)
+    .transform((v) => (v === null ? null : normalizeHttpsUrl(v)));
 
 export const contactsSchema = z.object({
-  contactEmail: optionalText(MAX_CONTACT_EMAIL_CHARS, SETTINGS.contactEmailTooLong).refine(
+  contactEmail: optionalText(
+    MIN_CONTACT_EMAIL_CHARS,
+    MAX_CONTACT_EMAIL_CHARS,
+    SETTINGS.contactEmailTooLong,
+  ).refine(
     // Checked AFTER the blank-to-null transform, so an empty field is not an
     // invalid address — it is a field the user chose not to fill in.
     (v) => v === null || z.email().safeParse(v).success,
     SETTINGS.contactEmailInvalid,
   ),
-  phone: optionalText(MAX_PHONE_CHARS, SETTINGS.phoneTooLong),
-  location: optionalText(MAX_LOCATION_CHARS, SETTINGS.locationTooLong),
+  phone: optionalText(MIN_PHONE_CHARS, MAX_PHONE_CHARS, SETTINGS.phoneTooLong),
+  // The column's floor is 1 and a blank is already null, so the trimmed value
+  // cannot be shorter than that.
+  location: optionalText(1, MAX_LOCATION_CHARS, SETTINGS.locationTooLong),
   linkedinUrl: optionalHttpsUrl(),
   githubUrl: optionalHttpsUrl(),
   /**

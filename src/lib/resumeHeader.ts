@@ -92,8 +92,15 @@ export function hasAnyContact(contacts: ResumeContacts): boolean {
   return contactLines(contacts).length > 0;
 }
 
-/** The separator between contact fields on one line. */
-const FIELD_SEPARATOR = ' · ';
+/**
+ * The separator between contact fields on one line.
+ *
+ * EXPORTED, because `lib/docx.ts` needs it: `isHeading` refuses a line that
+ * contains it, so a location typed in capitals is not bolded as a section
+ * heading. A second copy of the character over there would have meant changing
+ * the separator here silently disabled that guard.
+ */
+export const FIELD_SEPARATOR = ' · ';
 
 /**
  * The header block, as lines, in the order a recruiter reads them.

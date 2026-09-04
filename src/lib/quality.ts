@@ -81,7 +81,10 @@ export function share(count: number, of: number): Share {
     count,
     of,
     percent: of > 0 ? Math.round((count / of) * 100) : null,
-    thin: of < SMALL_SAMPLE,
+    // A sample of NOTHING is not a thin sample: "too few runs to read as a rate"
+    // is a statement about observations, and there are none to be too few of.
+    // `of === 0` has its own rendering ("Nothing measured yet").
+    thin: of > 0 && of < SMALL_SAMPLE,
   };
 }
 
@@ -116,10 +119,21 @@ export type CallSummary = {
    */
   attributableCostMicro: number;
   unattributedCostMicro: number;
-  /** Distinct non-null `application_id` values — the runs the cost divides by. */
-  runs: number;
-  /** `attributableCostMicro / runs`, or null when there are no runs. */
-  costPerRunMicro: number | null;
+  /**
+   * Distinct non-null `application_id` values — and the field is named for that
+   * rather than for "runs", which is what it was called first.
+   *
+   * AN APPLICATION IS NOT A RUN, and since [Regenerate] the difference is
+   * reachable: one application can hold several AI runs, so a figure divided by
+   * applications is not the cost of one generation. `rubricOutcomes.runs` below
+   * counts runs, and two quantities under one word on a screen whose one rule is
+   * traceability is the defect, not the arithmetic — an `llm_calls` row can be
+   * attributed to an application and cannot name a `resume_versions` run, so the
+   * name moved to match the arithmetic rather than the other way round.
+   */
+  applicationsWithCalls: number;
+  /** `attributableCostMicro / applicationsWithCalls`, or null when there are none. */
+  costPerApplicationMicro: number | null;
   /** Rows where OpenRouter's `models` array fell through to the fallback. */
   fallbackCalls: number;
   fallbackShare: Share;
@@ -178,16 +192,19 @@ export function summariseCalls(rows: readonly CallRow[]): CallSummary {
     steps.set(row.step, step);
   }
 
-  const runs = applications.size;
+  const applicationsWithCalls = applications.size;
   return {
     calls: rows.length,
     totalCostMicro,
     attributableCostMicro,
     unattributedCostMicro,
-    runs,
+    applicationsWithCalls,
     // Integer micro-USD throughout: the column is an integer and money in this
     // app is never a float (Block A's own decision).
-    costPerRunMicro: runs > 0 ? Math.round(attributableCostMicro / runs) : null,
+    costPerApplicationMicro:
+      applicationsWithCalls > 0
+        ? Math.round(attributableCostMicro / applicationsWithCalls)
+        : null,
     fallbackCalls,
     fallbackShare: share(fallbackCalls, rows.length),
     unknownPricingCalls,
@@ -270,11 +287,31 @@ export function classifyRuns(versions: readonly VersionRow[]): RunOutcome[] {
     // Oldest first, so an `ai` row is followed by its own revision.
     const ordered = [...list].sort((a, b) => a.created_at.localeCompare(b.created_at));
     for (let i = 0; i < ordered.length; i += 1) {
-      const draft = ordered[i]!;
-      if (draft.source !== 'ai') continue;
-      const next = ordered[i + 1];
-      const revision = next?.source === 'ai_revision' ? next : null;
-      outcomes.push(outcomeOf(draft, revision));
+      const row = ordered[i]!;
+      if (row.source === 'ai') {
+        const next = ordered[i + 1];
+        const revision = next?.source === 'ai_revision' ? next : null;
+        outcomes.push(outcomeOf(row, revision));
+        continue;
+      }
+      /**
+       * AN ORPHAN REWRITE IS STILL A RUN. `ai_revision` with no `ai` before it
+       * happens at the WINDOW BOUNDARY: the read is newest-first, so truncation
+       * cuts the oldest rows and can take a draft while leaving its rewrite. The
+       * first version of this loop only ever started a run at an `ai` row, so
+       * that run disappeared from all five buckets — while the same row went on
+       * being counted in `rubricDistribution`, leaving two denominators
+       * disagreeing with nothing on screen to say a row had been dropped.
+       *
+       * The rewrite is the version that was KEPT, so its own verdict is the
+       * run's outcome, which is exactly what `outcomeOf` reads from a revision
+       * when the draft is present. Nothing is invented: the draft's verdict is
+       * unknown and is not needed.
+       */
+      if (row.source === 'ai_revision') {
+        const previous = ordered[i - 1];
+        if (previous?.source !== 'ai') outcomes.push(outcomeOf(row, row));
+      }
     }
   }
   return outcomes;

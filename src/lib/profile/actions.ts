@@ -14,13 +14,30 @@ import {
 } from '@/lib/validation';
 
 /**
- * PostgREST forwards Postgres' own SQLSTATE, and 42703 is `undefined_column` —
- * the answer until `005_profile_contacts.sql` has been applied.
+ * THE TWO CODES THAT MEAN "005 HAS NOT BEEN APPLIED", and it took the Playwright
+ * run to find the second one.
  *
- * `'use server'` permits only async exports, so this cannot be a module constant
- * here; it is inlined at its one use site below and named in this comment
- * instead. The code is the contract, the message is not: the message names the
- * missing column and changes with the schema.
+ * `42703` is Postgres' own `undefined_column`, which is what a direct SQL path
+ * answers. It is NOT what this app sees: supabase-js goes through PostgREST,
+ * which validates the payload against its cached schema BEFORE any SQL runs and
+ * answers **`PGRST204`** — "Could not find the 'contact_email' column of
+ * 'profiles' in the schema cache". So the first version of this branch handled
+ * only the code that cannot occur here, and the form rendered `contactsFailed`
+ * ("try again") for the one state where retrying can never work — which is
+ * exactly the defect `contactsNotMigrated` was written to prevent.
+ *
+ * Both are kept. `PGRST204` is what happens today; `42703` is what happens if a
+ * future write reaches Postgres without PostgREST's schema check in front of it,
+ * and dropping it would make this branch depend on which client is in use.
+ *
+ * READ OFF THE CODE AND NEVER OFF THE MESSAGE: the message names the missing
+ * column and moves with the schema; the code is the contract. This was ALSO
+ * unobservable until a test asserted the copy, which is the second lesson —
+ * the branch existed, was wrong, and nothing in the repo disagreed with it.
+ *
+ * `'use server'` permits only async exports, so these cannot be module constants
+ * here; they are inlined at their one use site below and named in this comment
+ * instead.
  */
 
 /**
@@ -147,7 +164,9 @@ export async function saveContactsAction(
     return {
       fieldErrors: {},
       formError:
-        code === '42703' ? SETTINGS.contactsNotMigrated : SETTINGS.contactsFailed,
+        code === 'PGRST204' || code === '42703'
+          ? SETTINGS.contactsNotMigrated
+          : SETTINGS.contactsFailed,
       notice: null,
     };
   }

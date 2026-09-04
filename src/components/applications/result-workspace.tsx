@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { NotesForm } from '@/components/applications/notes-form';
 import { ResultTabs } from '@/components/applications/result-tabs';
 import { BusyDots } from '@/components/ui/busy-dots';
 import { ResumeEditor } from '@/components/applications/resume-editor';
@@ -124,18 +125,21 @@ export function ResultWorkspace({
    */
   judgeTerms: JudgeTerms;
   /**
-   * The Notes form, rendered by the SERVER and slotted into the left column
-   * (SPEC v2.20, owner feedback: they had drifted to the bottom of the page, far
-   * below the fold).
+   * The application's saved notes (SPEC v2.20, owner feedback: the field had
+   * drifted to the bottom of the page, far below the fold).
    *
-   * Passed as a node rather than as data, because the notes belong to the
-   * application and not to the analysis: `page.tsx` owns the row and renders the
-   * form in BOTH result states, and this component only decides where in the
-   * rail it sits. Threading `notes` through here as a string would have put a
-   * second copy of that form's state in the one component that must not grow
-   * any.
+   * THE STRING AND NOT THE ELEMENT. The first version of this took the rendered
+   * `<NotesForm />` as a `ReactNode` prop, on the reasoning that `page.tsx` owns
+   * the row — and the Playwright run answered that with a React warning on every
+   * render of this screen ("Each child in a list should have a unique key prop
+   * … it was passed a child from ApplicationDetailPage"): an element created in
+   * a Server Component and handed across the boundary as a prop is not the same
+   * thing as a child rendered in place. `NotesForm` is already a client
+   * component, so rendering it here costs nothing and keeps no state — it holds
+   * its own — and `page.tsx` still renders it directly in the not-analysed
+   * branch from the same row.
    */
-  notes: React.ReactNode;
+  notes: string | null;
 }) {
   const router = useRouter();
 
@@ -355,6 +359,15 @@ export function ResultWorkspace({
         if (res.headers.get('X-Name-Placeholder') === '1') {
           toast.warning(RESULT.exportedWithPlaceholderName);
         }
+        /**
+         * The document has no contact header while the profile has contacts
+         * (v2.20) — a resume written before they were saved. Said beside the
+         * success, not instead of it: the download worked and the version was
+         * saved, and what is also true is that the file has no way to reply to.
+         */
+        if (res.headers.get('X-Missing-Contacts') === '1') {
+          toast.warning(RESULT.exportedWithoutContacts);
+        }
         router.refresh();
       },
       RESULT.exportFailed,
@@ -421,7 +434,7 @@ export function ResultWorkspace({
           the screen is FOR and stay first — and above the fold at both test
           widths.
         */}
-        {notes}
+        <NotesForm applicationId={applicationId} notes={notes} />
       </div>
 
       <ResultTabs

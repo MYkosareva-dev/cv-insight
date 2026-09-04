@@ -186,7 +186,7 @@ export function ResumeEditor({
           }
         />
         <Action
-          help={RESULT.generateHelp}
+          help={RESULT.regenerateHelp}
           button={
             <Button
               variant="outline"

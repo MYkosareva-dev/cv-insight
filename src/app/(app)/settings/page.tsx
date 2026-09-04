@@ -78,15 +78,18 @@ export default async function SettingsPage() {
       <DisplayNameForm displayName={displayName} readFailed={readFailed} />
 
       {/*
-        A LIGHT DIVIDER between the identity block and the account block (v2.20,
-        owner feedback). The three blocks above it are things the user WRITES; the
-        email below it is a fact about the account they cannot change. A rule is
-        the cheapest way to say that, and it needs no heading to do it.
+        TWO LIGHT DIVIDERS (v2.20, owner feedback), and they do different jobs.
+        The first separates the two things a user WRITES about themselves — their
+        name and their contact details — which are one form each and would
+        otherwise read as one long form. The second separates both of those from
+        the account email below, which is a fact about the account they cannot
+        change. A rule is the cheapest way to say that, and it needs no heading.
       */}
       <hr className="border-border" />
 
       <ContactsForm contacts={contacts} readFailed={readFailed} />
 
+      {/* Written above, given below: the email is not a field. */}
       <hr className="border-border" />
 
       <div className="flex flex-col gap-1.5">

@@ -731,8 +731,27 @@ export const RESULT = {
    */
   generateHelp:
     'Writes a resume from your career base and has the reviewer check it. Costs two AI calls, or four with a rewrite.',
+  /**
+   * ITS OWN LINE, not `generateHelp` reused. The two actions cost the same and do
+   * the same thing to the same corpus, but only one of them is happening to a
+   * screen that already HAS a resume on it — and the fact a reader needs there is
+   * what happens to the text in front of them, which "Writes a resume…" does not
+   * answer.
+   */
+  regenerateHelp:
+    'Writes another resume from your career base and has it checked. Your current version is kept. Costs two AI calls, or four with a rewrite.',
+  /**
+   * IT IS NOT "ONE AI CALL", and the first version of this line said so — which
+   * is the exact sentence the paragraph above forbids, shipped by the copy it
+   * was written to constrain. A re-score makes NO chat call: it re-embeds the
+   * requirements and the editor's text, which is two paid embedding requests on
+   * a measured run, and it is counted against rule B7a's separate ceiling rather
+   * than against rule B7's 50. A user told "one AI call" would read forty
+   * re-scores as forty of their fifty daily calls, and be wrong in both
+   * directions at once.
+   */
   rescoreHelp:
-    'Re-measures the match against the text in the editor. Costs one AI call and saves nothing.',
+    'Re-measures the match against the text in the editor. Costs a paid AI call — no writing, just re-reading your text — with its own daily limit, and saves nothing.',
   checkQualityHelp:
     'Asks the reviewer for a fresh verdict on the text in the editor. Costs one AI call and saves the text as a version.',
   downloadHelp:
@@ -762,6 +781,21 @@ export const RESULT = {
    * silent would let a resume reach an employer with "[YOUR NAME]" at the top
    * because nobody mentioned it.
    */
+  /**
+   * THE EXPORTED FILE HAS NO CONTACT HEADER (v2.20), which is reachable and was
+   * silent. `withContactHeader` runs during GENERATION, so a resume written
+   * before the contact details were saved has no header block — and the export
+   * writes the editor's text verbatim. The one thing migration 005 exists to fix
+   * would then stay broken for every application the user already had, with the
+   * download looking finished.
+   *
+   * A WARNING AND NOT A REFUSAL, exactly like the name placeholder beside it: the
+   * file is the user's and the app does not decide what they may send. It names
+   * the way out, because [Regenerate] is not an obvious answer to "my phone
+   * number is missing".
+   */
+  exportedWithoutContacts:
+    'Downloaded — but this resume was written before your contact details were saved, so it has no contact header. Regenerate it, or paste the details into the editor.',
   exportedWithPlaceholderName:
     'Downloaded — but the name line still reads [YOUR NAME]. Replace it, or save your name in Settings.',
   /** In the editor, where the placeholder is still on screen and still editable. */
@@ -848,6 +882,15 @@ export const QUALITY = {
     `Counted over the ${formatCount(rows)} most recent AI calls — the ceiling this screen reads, so calls older than those are not included in the totals above.`,
   versionWindowNote: (rows: number) =>
     `Counted over the ${formatCount(rows)} most recent resume versions.`,
+  /**
+   * The version window has to say it is full for the same reason the call window
+   * does. It was missing, and the asymmetry mattered more here: this read is
+   * newest-first, so truncation cuts the OLDEST rows, and a run whose draft fell
+   * outside the window while its rewrite stayed inside would have gone missing
+   * from every bucket with nothing on screen to say a row had been dropped.
+   */
+  versionWindowFull: (rows: number) =>
+    `Counted over the ${formatCount(rows)} most recent resume versions — the ceiling this screen reads, so older runs are not included.`,
 
   /** Said wherever a share rests on too few observations to be read as a rate. */
   thinSample: 'Too few runs to read as a rate — the fraction is the whole of it.',
@@ -856,12 +899,25 @@ export const QUALITY = {
   tileTotalCost: 'Total AI cost',
   tileTotalCostSource: (calls: number) =>
     `Sum of cost_usd_micro over ${formatCount(calls)} logged call${calls === 1 ? '' : 's'}.`,
-  tileCostPerRun: 'Cost per pipeline run',
-  tileCostPerRunSource: (cost: string, runs: number) =>
-    `${cost} of call cost carries an application id, divided by ${formatCount(runs)} application${runs === 1 ? '' : 's'} that made calls.`,
-  tileRuns: 'Pipeline runs',
-  tileRunsSource:
-    'Distinct application ids in the AI-call log. A run is one application’s scan, generation and reviews.',
+  /**
+   * "COST PER APPLICATION", and not "per run" — which is what this tile said
+   * first, over a denominator that could not mean that.
+   *
+   * The figure divides by DISTINCT APPLICATION IDS, and since [Regenerate] one
+   * application can hold several AI runs: the tile would have read "1 run" with
+   * three generations' cost in it, eight inches above a section correctly saying
+   * "3 AI runs". Two quantities under one word, on the screen whose one rule is
+   * traceability. The denominator is what it is — an application is what an
+   * `llm_calls` row can be attributed to, and a `resume_versions` run is not
+   * something a call row names — so the LABEL moved to match the arithmetic
+   * rather than the arithmetic being bent to match the label.
+   */
+  tileCostPerApplication: 'Cost per application',
+  tileCostPerApplicationSource: (cost: string, applications: number) =>
+    `${cost} of call cost carries an application id, divided by the ${formatCount(applications)} application${applications === 1 ? '' : 's'} that made calls. An application may hold several AI runs, so this is not the cost of one generation.`,
+  tileApplications: 'Applications with AI calls',
+  tileApplicationsSource:
+    'Distinct application ids in the AI-call log — one per posting you scanned, whatever it cost. Not the same as the AI runs counted below.',
   tileUnattributed: 'Not attributable to a run',
   tileUnattributedSource:
     'Calls with no application id: resume imports and career-base indexing. Real spend, and not part of any one run — so it is stated rather than averaged into the figure above.',
@@ -882,7 +938,15 @@ export const QUALITY = {
   tileFallback: 'Served by the fallback model',
   tileFallbackSource: 'Rows with fallback_used = true.',
   tileFailed: 'Calls that failed',
-  tileFailedSource: 'Rows with ok = false. They are logged and billed like any other request.',
+  /**
+   * NOT "billed like any other request", which the first version said. A request
+   * that never reached the service is logged with `cost_usd_micro = 0` and
+   * `cost_known = true`, because nothing was spent and that is known — so
+   * claiming every failure was billed would be this screen making the inverse of
+   * the mistake `cost_known` exists to prevent.
+   */
+  tileFailedSource:
+    'Rows with ok = false. Each one is logged; whether it cost anything depends on how far it got, and its own cost column says which.',
   tileUnknownPricing: 'Calls with unknown pricing',
   tileUnknownPricingSource:
     'Rows with cost_known = false: the serving model had no price entry, so their cost is 0 in the total above and is genuinely unknown rather than free.',
@@ -931,8 +995,17 @@ export const QUALITY = {
 
   /** Block E's table of the last 50 calls. */
   callsHeading: 'Last 50 AI calls',
+  /**
+   * IT IS NOT "the rows every figure above is counted from", which is what this
+   * line said first. Three independent reads back this screen: the AI-call
+   * window for the tiles and the step table, a `resume_versions` window for the
+   * rubric sections, and this table's own newest-50 — and the DAL deliberately
+   * lets the first and the third differ. On the one screen whose stated rule is
+   * that every number is traceable to a row, a caption claiming the wrong rows
+   * was the untraceable claim.
+   */
   callsLead:
-    'The rows every figure above is counted from. Metadata only — no resume or vacancy text is ever logged.',
+    'The newest 50 of the AI calls the figures at the top are counted from. The rubric sections above come from your saved resume versions instead. Metadata only — no resume or vacancy text is ever logged.',
   colTime: 'Time',
   colModel: 'Model',
   colTokens: 'Tokens in / out',
@@ -1040,8 +1113,14 @@ export const SETTINGS = {
    */
   contactsNotMigrated:
     'Contact details cannot be saved yet — this part of the app is still being set up. Your name and everything else still work.',
+  /**
+   * "Saving will still work" was too strong: this line fires because a database
+   * READ failed, and if the cause is the database being unreachable the write
+   * will fail too. What is true is that the write is a separate round trip, so
+   * saving is worth trying — and the form will say what happened either way.
+   */
   contactsLoadFailed:
-    'Could not load your saved contact details, so the fields below are blank — they may not be empty. Saving will still work.',
+    'Could not load your saved contact details, so the fields below are blank — they may not be empty. Saving is a separate step and is still worth trying.',
   contactsSignedOut: 'Your session has expired — sign in again to save your contact details.',
   contactEmailInvalid: 'Enter a valid email address, or leave it empty.',
   contactEmailTooLong: 'An email address is limited to 254 characters.',

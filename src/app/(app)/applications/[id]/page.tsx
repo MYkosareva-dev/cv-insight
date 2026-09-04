@@ -39,8 +39,11 @@ export const metadata = { title: 'Scan result — CV Insight' };
  * drifted to the bottom of the page, under the tabs and far below the fold, which
  * is not where a note taken while reading a posting is usable. This file still
  * owns the row and renders the form in BOTH result states; in the analysed state
- * it hands it to `ResultWorkspace` as a NODE, so the client component decides
- * only where in the rail it sits and never holds a second copy of its state.
+ * it passes the notes STRING to `ResultWorkspace`, which renders the same client
+ * form in the rail. Handing over the rendered ELEMENT was the first attempt and
+ * the Playwright run rejected it: an element created in a Server Component and
+ * passed as a prop into a Client Component draws React's missing-key warning on
+ * every render, because it is not a child rendered in place.
  *
  * THE INTERACTIVE HALF IS ONE CLIENT COMPONENT (`ResultWorkspace`), and the
  * split is where it is for a reason rather than by taste: [Re-score] has to move
@@ -126,7 +129,7 @@ export default async function ApplicationDetailPage({
           sourceIsBase={application.resume_source === 'career_base'}
           versions={versions}
           judgeTerms={judgeTerms}
-          notes={<NotesForm applicationId={application.id} notes={application.notes} />}
+          notes={application.notes}
         />
       ) : (
         /* Rail 280 px beside the content at 1280; stacked at 375 (Block E). */

@@ -51,6 +51,12 @@ describe('share — a rate never leaves its denominator behind', () => {
     assert.equal(share(0, 0).percent, null);
   });
 
+  test('a sample of NOTHING is not a THIN sample', () => {
+    // "Too few runs to read as a rate" is a statement about observations, and
+    // there are none to be too few of. `of === 0` has its own rendering.
+    assert.equal(share(0, 0).thin, false);
+  });
+
   test('marks a sample too thin to read as a rate', () => {
     assert.equal(share(1, SMALL_SAMPLE - 1).thin, true);
     assert.equal(share(1, SMALL_SAMPLE).thin, false);
@@ -62,10 +68,10 @@ describe('summariseCalls — every cost is a sum over named rows', () => {
     const summary = summariseCalls([]);
     assert.equal(summary.calls, 0);
     assert.equal(summary.totalCostMicro, 0);
-    assert.equal(summary.runs, 0);
-    // Not 0: there is no run to divide by, and a $0.0000 per-run cost would be
-    // a figure about runs that do not exist.
-    assert.equal(summary.costPerRunMicro, null);
+    assert.equal(summary.applicationsWithCalls, 0);
+    // Not 0: there is nothing to divide by, and a $0.0000 per-application cost
+    // would be a figure about applications that do not exist.
+    assert.equal(summary.costPerApplicationMicro, null);
     assert.equal(summary.fallbackShare.percent, null);
   });
 
@@ -78,15 +84,22 @@ describe('summariseCalls — every cost is a sum over named rows', () => {
     assert.equal(summary.calls, 2);
   });
 
-  test('a run is a distinct application id, and cost per run divides by it', () => {
+  test('the denominator is distinct APPLICATION ids, and is named for that', () => {
+    /**
+     * NOT "runs". Since [Regenerate] one application can hold several AI runs,
+     * so a cost divided by applications is not the cost of one generation — and
+     * two quantities under one word was the defect on a screen whose one rule is
+     * traceability. An `llm_calls` row can be attributed to an application and
+     * cannot name a `resume_versions` run, so the name follows the arithmetic.
+     */
     const summary = summariseCalls([
       call({ application_id: 'app-1', cost_usd_micro: 1_000 }),
       call({ application_id: 'app-1', cost_usd_micro: 3_000 }),
       call({ application_id: 'app-2', cost_usd_micro: 2_000 }),
     ]);
-    assert.equal(summary.runs, 2);
+    assert.equal(summary.applicationsWithCalls, 2);
     assert.equal(summary.attributableCostMicro, 6_000);
-    assert.equal(summary.costPerRunMicro, 3_000);
+    assert.equal(summary.costPerApplicationMicro, 3_000);
   });
 
   test('cost with NO application id is stated apart, never averaged into a run', () => {
@@ -100,10 +113,14 @@ describe('summariseCalls — every cost is a sum over named rows', () => {
       call({ application_id: 'app-1', cost_usd_micro: 4_000 }),
       call({ step: 'import_resume', application_id: null, cost_usd_micro: 9_000 }),
     ]);
-    assert.equal(summary.runs, 1);
+    assert.equal(summary.applicationsWithCalls, 1);
     assert.equal(summary.attributableCostMicro, 4_000);
     assert.equal(summary.unattributedCostMicro, 9_000);
-    assert.equal(summary.costPerRunMicro, 4_000, 'the import is not in the per-run figure');
+    assert.equal(
+      summary.costPerApplicationMicro,
+      4_000,
+      'the import is not in the per-application figure',
+    );
     assert.equal(summary.totalCostMicro, 13_000, 'but it IS in the total — it was really spent');
   });
 
@@ -244,6 +261,33 @@ describe('classifyRuns — a run is one ai row plus its own rewrite', () => {
     const draft = version({ judge: report({ verdict: 'revise' }) });
     const revision = version({ source: 'ai_revision' });
     assert.deepEqual(classifyRuns([revision, draft]), ['revised_approved']);
+  });
+
+  test('an ORPHAN rewrite is still a run, judged by the verdict that was kept', () => {
+    /**
+     * Reachable at the WINDOW BOUNDARY: the read is newest-first, so truncation
+     * cuts the oldest rows and can take a draft while leaving its rewrite. The
+     * first version of `classifyRuns` only started a run at an `ai` row, so that
+     * run vanished from all five buckets — while the same row went on being
+     * counted in `rubricDistribution`, leaving two denominators disagreeing with
+     * nothing on screen to say a row had been dropped.
+     */
+    const orphan = version({ source: 'ai_revision' });
+    assert.deepEqual(classifyRuns([orphan]), ['revised_approved']);
+
+    const refused = version({ source: 'ai_revision', judge: report({ verdict: 'revise' }) });
+    assert.deepEqual(classifyRuns([refused]), ['revised_still_revise']);
+
+    const unjudged = version({ source: 'ai_revision', judge: null });
+    assert.deepEqual(classifyRuns([unjudged]), ['not_checked']);
+  });
+
+  test('a rewrite that HAS its draft is not counted twice', () => {
+    // The orphan branch must not fire for a revision whose `ai` row is present,
+    // or one run would be reported as two.
+    const draft = version({ judge: report({ verdict: 'revise' }) });
+    const revision = version({ source: 'ai_revision' });
+    assert.equal(classifyRuns([draft, revision]).length, 1);
   });
 
   test('two applications are two runs, and neither borrows the other rewrite', () => {

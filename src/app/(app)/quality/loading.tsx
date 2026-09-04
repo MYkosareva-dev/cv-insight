@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
  * reads, and an awaited Server Component renders nothing until they resolve, so a
  * `loading === true` branch inside it could never run.
  *
- * NINE TILES AND THREE TABLE BLOCKS, matching what the page actually draws. A
+ * TEN TILES AND THREE TABLE BLOCKS, matching what the page actually draws. A
  * skeleton that shows a different shape from the screen it stands in for is a
  * layout shift dressed as a loading state.
  */
@@ -19,7 +19,7 @@ export default function QualityLoading() {
         <Skeleton className="h-4 w-full max-w-prose" />
       </header>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 9 }, (_, i) => (
+        {Array.from({ length: 10 }, (_, i) => (
           <Skeleton key={i} className="h-28 w-full" />
         ))}
       </div>
