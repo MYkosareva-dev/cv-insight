@@ -280,3 +280,48 @@ Not blockers, recorded so they are not rediscovered as surprises.
   registration to still be open, so it had to happen before step 2; re-running it
   later needs a second Supabase project or registration briefly re-opened.
 - **The Playwright suite cannot create accounts once step 2 is done.** See step 1.
+
+---
+
+## Deployment record — live and verified, 2026-09-04
+
+The procedure above was carried out. This section records what was observed, and
+nothing else: a check not listed here was not run, or its result is not recorded.
+
+In checklist order, so the record can be walked against the steps above.
+
+| Step | Check | Result |
+|---|---|---|
+| 11 | Registration closed | `/signup` shows the registration-closed copy and no form; an account cannot be created |
+| 12 | Function region | Functions report **Frankfurt (`fra1`)** — the `vercel.json` setting was picked up |
+| 14 | Dev routes unreachable | `/api/dev/coverage-probe` and `/api/dev/reindex` both answer **404** on the deployment |
+| 16 | Security headers | All five present on the response: `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` |
+| 18 | Cookie flags | Every `sb-*` cookie is **HttpOnly**, **Secure**, **SameSite=Lax**, with `Max-Age` at the **30-day** window (2592000) rather than the library's 400-day default |
+| 19 | One full pipeline run | Sign in → scan → generate → judge → export completed on the deployment, and `/quality` shows real rows for `parse_vacancy`, `embed`, `generate` and `judge` |
+| 19a | Generation model | The `generate` step of that run was served by **`openai/gpt-5.4`**, with no fallback |
+
+Row 19a is the one this record exists for. Every `generate` call from Phase 4
+until SPEC v2.23 was answered by `google/gemini-2.5-flash` because the configured
+model was refused by a guardrail on the provider workspace, and the only witness
+was `llm_calls`. The check that matters is therefore not "a resume came back" but
+"the requested model is the model that served it", which is what `fallback_used`
+on that row reports — and on this run it says the configured model answered. That
+closes the condition that hid four phases of fallback-written resumes. It is one
+run on one deployment, not a series.
+
+### What this record does not cover
+
+- **Step 20 — no third-party script injected — was not run to a conclusion.** A
+  console error of that shape WAS observed on member screens and traced to
+  something this app does not ship (`docs/backlog.md`, "Phase 6 — from the first
+  production deployment"), leaving two candidates: the platform toolbar and Speed
+  Insights. Which one it is has not been confirmed, and Speed Insights being off
+  is what backs `/privacy`'s "no analytics, no trackers". Unresolved, not passed.
+- **`/quality` cost figures** are covered by the pipeline run above; no separate
+  cost reconciliation was performed against the provider's own billing.
+- **The provider-account settings** in `docs/openrouter-processing.md` — logging,
+  retention, training and the guardrail — are properties of an account the
+  operator does not control, and are not verified by anything here.
+- **`IMPRESSUM_FILLED` is still `false`.** `/impressum` therefore states that the
+  operator's details are not published, which is accurate and is not a
+  substitute for filling them in before the link is shared.

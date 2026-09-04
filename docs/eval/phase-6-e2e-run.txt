@@ -141,3 +141,50 @@ Running 34 tests using 1 worker
 
   1 skipped
   33 passed (5.9m)
+
+
+================================================================================
+ADDED IN PHASE 7, 2026-09-04. Nothing above this line was edited: the run output
+is the run output. This is the note a person needs before trying to reproduce it.
+
+THIS RUN CANNOT BE REPRODUCED AGAINST THIS SUPABASE PROJECT.
+
+Registration was closed in the Supabase dashboard immediately after this run
+(docs/deploy.md step 2), and it is what keeps strangers out of a deployment that
+is reachable by anyone with the URL. All four specs create a throwaway account
+by filling in the /signup form against that same project, so every spec that
+needs an account now fails at its fixture rather than at its assertion. Nothing
+in the application broke; the way the suite gets a user did.
+
+Which cases that is: effectively all 34. auth.spec.ts signs up in almost every
+case; career, generate and scan each build a fresh account per file, and
+generate.spec.ts builds TWO (user A and user B) for the cross-user cases.
+
+WHAT SOMEONE RE-RUNNING IT HAS TO DO FIRST. One of these, and neither is built:
+
+  1. A second Supabase project for tests, with sign-ups open, its own URL and
+     anon key in the test environment, and migrations 001-005 applied. The
+     deployment's own project stays closed. This is the durable answer and it is
+     the one to build if the suite is ever going to run more than once more.
+
+  2. Pre-created accounts the specs sign INTO instead of registering. Cheaper to
+     set up and it changes the specs: every signUp helper becomes a signIn, the
+     fixtures stop being disposable, and each spec has to clean up after itself
+     because the account survives the run. It also silently deletes coverage -
+     auth.spec.ts's sign-up case and its duplicate-email case ARE the signup
+     path, and there is nothing left to point them at.
+
+  3. Re-opening registration on the live project for the length of a run. This
+     is what was done for the erasure evidence (docs/eval/erasure-evidence.md),
+     it works, and it is the option with a real cost: for that window the
+     deployment's only gate is off, and the gate is the whole security model of
+     a reachable Hobby deployment. Acceptable once, deliberately, with the
+     window measured in minutes. Not a workflow.
+
+WHAT THIS DOES NOT MEAN. It is not a regression and it does not expire this
+file: this run tested the code at the commit it names, and that evidence stands.
+What it means is that the NEXT change to a tested path has no green suite behind
+it until one of the three options above exists. That is a real gap, not a
+formality. It is carried in docs/backlog.md in two places, both added by the
+same pass that wrote this note: "Read these first" item 6, and the group "When
+the test suite can create accounts again".
