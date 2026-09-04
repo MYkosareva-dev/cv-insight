@@ -65,9 +65,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const vacancy = await getVacancy(application.vacancy_id);
     if (!vacancy) throw new NotFoundError();
-    // P3 evaluates the resume AGAINST the vacancy requirements; without a parse
-    // there is nothing to evaluate it against.
-    if (!vacancy.parsed) throw new ValidationError(RESULT.generateNeedsAnalysis);
+    /**
+     * P3 evaluates the resume AGAINST the vacancy requirements; without a parse
+     * there is nothing to evaluate it against.
+     *
+     * `coverage` is checked TOO, and the parse alone is not enough. A match run
+     * that failed stores the parse and leaves `coverage` null, and the detail
+     * page mounts `ResultWorkspace` — the only reader of `listResumeVersions` —
+     * solely when `coverage !== null`. So this endpoint could spend a Haiku call
+     * to append an append-only row on a table with no DELETE policy, to an
+     * application whose screen will never show it. Same gate as `/generate`,
+     * which has always had both halves.
+     */
+    if (!vacancy.parsed || application.coverage === null) {
+      throw new ValidationError(RESULT.generateNeedsAnalysis);
+    }
 
     let body: unknown;
     try {
@@ -95,7 +107,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
      * grounding gate would fire on the resume's own name line and rule B2 would
      * make that failure uncompensatable.
      */
-    const displayName = await getDisplayName();
+    const displayName = await getDisplayName(user.id);
 
     const judge = await judgeResume({
       parsed: vacancy.parsed,

@@ -67,6 +67,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const vacancy = await getVacancy(application.vacancy_id);
     if (!vacancy) throw new NotFoundError();
 
+    /**
+     * SAME GATE AS `/generate` AND `/judge`, and this endpoint had neither half.
+     *
+     * It SAVES a `source='user'` version before returning the file, and the
+     * detail page mounts `ResultWorkspace` — the only reader of
+     * `listResumeVersions` — solely when `coverage !== null`. A match run that
+     * failed stores the parse and leaves `coverage` null, so a direct POST here
+     * appended a row, on a table with no DELETE policy, to an application whose
+     * screen can never show it. Not reachable through the UI, which renders no
+     * editor in that state; a route that can only be reached directly is exactly
+     * the one whose gate has to be its own.
+     */
+    if (!vacancy.parsed || application.coverage === null) {
+      throw new ValidationError(RESULT.generateNeedsAnalysis);
+    }
+
     let body: unknown;
     try {
       body = await request.json();
@@ -95,7 +111,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       revalidatePath(`/applications/${id}`);
     }
 
-    const displayName = await getDisplayName();
+    const displayName = await getDisplayName(user.id);
     const bytes = await resumeToDocx(content);
     const filename = exportFilename({
       // The user's own saved name, or nothing. Never the document's first line.
