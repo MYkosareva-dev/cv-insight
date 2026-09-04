@@ -42,6 +42,59 @@ export const PRIVACY_ERASURE = {
 } as const;
 
 /**
+ * The date /privacy last changed in substance (v2.24).
+ *
+ * A privacy statement with no date gives a reader no way to tell whether it
+ * describes the app in front of them. Bump it when the page's CLAIMS change —
+ * a new data category, a new recipient, a changed legal basis — and not for a
+ * wording tidy-up.
+ */
+export const PRIVACY_UPDATED = '4 September 2026';
+
+/**
+ * THE OPERATOR'S IDENTITY, AND THE TWO VALUES THE AGENT MUST NOT INVENT
+ * (SPEC v2.24, Block E).
+ *
+ * `operatorName` and `email` ship as VISIBLE placeholders and are the owner's to
+ * fill. They are not defaulted, not derived from `git config`, and not guessed
+ * at: an Impressum naming the wrong person is worse than one that admits it is
+ * unfilled, and a contact address nobody reads makes the whole page decorative.
+ * `IMPRESSUM_FILLED` is the switch — while it is false the page says plainly
+ * that the details are not yet published, rather than rendering `[[...]]` at a
+ * reader as though that were an identity.
+ *
+ * This is the same shape as AUDIT_RETENTION_VERIFIED above and for the same
+ * reason: a claim about the operator and the proof of it ship together, or the
+ * page does not make the claim.
+ *
+ * WHY NO POSTAL ADDRESS. Owner decision: the deployment is shared with a named
+ * handful of people and is not a public offering, so §5 DDG's ladungsfähige
+ * Anschrift is very likely not engaged. Art. 13(1)(a) GDPR still requires the
+ * controller be identifiable and contactable, which name + a working email
+ * address plus an undertaking to supply the address on request satisfies for a
+ * closed demo. THE DAY THE DEPLOYMENT BECOMES PUBLIC OR COMMERCIAL this stops
+ * being enough and a real postal address goes in — that is recorded here rather
+ * than in a reviewer's report, because this is the file someone edits.
+ */
+export const IMPRESSUM_FILLED = false;
+
+export const IMPRESSUM = {
+  heading: 'Impressum',
+  /** Angaben gemäß § 5 DDG. */
+  legalBasisLine: 'Angaben gemäß § 5 DDG',
+  operatorName: '[[OPERATOR FULL LEGAL NAME — owner to fill]]',
+  email: '[[OPERATOR CONTACT EMAIL — owner to fill]]',
+  unfilled:
+    'The operator’s name and contact address are not yet published here. They are filled in before this deployment is shared with anyone, and until then this page makes no claim about who operates the app.',
+  responsibleLabel: 'Responsible for the content',
+  contactLabel: 'Contact',
+  addressOnRequest:
+    'A postal address is not published on this page. It is supplied on request to the email address above, without undue delay and in any case within one month.',
+  nonCommercial:
+    'CV Insight is a non-commercial demonstration project. It is not offered as a service, no payment is taken for it, and it carries no advertising.',
+} as const;
+
+/**
  * The score placeholder. Rendered wherever a match score exists as a slot but
  * not as a number:
  *   - the parse produced 0 requirements (edge case N4, matchScore returns null);
@@ -104,6 +157,7 @@ export const AUTH = {
   toSignUp: 'No account? Create one',
   toSignIn: 'Already have an account? Sign in',
   privacyLink: 'Privacy',
+  impressumLink: 'Impressum',
   invalidEmail: 'Enter a valid email address.',
   shortPassword: 'Password must be at least 8 characters.',
   /**
