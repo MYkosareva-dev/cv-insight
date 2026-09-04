@@ -40,6 +40,47 @@ export async function listRecentLlmCalls(limit = 50): Promise<LlmCall[]> {
 }
 
 /**
+ * The window /quality computes over (SPEC v2.20).
+ *
+ * A CEILING AND NOT A FILTER, and the screen states it rather than hiding it.
+ * `llm_calls` has no aggregate function and adding one would be a SQL function
+ * in a migration this phase does not make, so the totals are summed in process
+ * over the rows read — which means there has to be a bound, and a bound means
+ * the words "total cost" are only true of what was read. Rule B7 caps a user at
+ * 50 chat calls a day, so 1,000 rows is roughly three weeks of heavy use; when
+ * the ceiling is actually reached the page says the older calls are not counted,
+ * because a total that quietly stops at a limit is exactly the untraceable
+ * figure that screen exists not to print.
+ */
+export const QUALITY_CALL_WINDOW = 1_000;
+
+/**
+ * Every recent call, newest first, for the /quality dashboard.
+ *
+ * RLS scopes it to the caller, and there is no user id parameter here for the
+ * same reason there is none anywhere else in this DAL: the identity comes from
+ * the session the client carries, so this function has no vocabulary to ask for
+ * another account's rows.
+ *
+ * Separate from `listRecentLlmCalls`, which answers Block E's "last 50" table
+ * and is a different question with a different bound. One function taking a
+ * limit would make the table and the totals share a number that must be allowed
+ * to differ.
+ */
+export async function listLlmCallsForQuality(
+  limit = QUALITY_CALL_WINDOW,
+): Promise<LlmCall[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('llm_calls')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as LlmCall[];
+}
+
+/**
  * Rows of the given steps in the rolling 24 h window — not calendar-midnight
  * (edge case T2). One query behind both ceilings: two copies of the window this
  * arithmetic depends on could drift, and a cap measuring a different window from

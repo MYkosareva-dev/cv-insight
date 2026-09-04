@@ -822,8 +822,136 @@ export const APPLICATION_STATUS_ORDER = [
 ] as const;
 
 export const QUALITY = {
+  /**
+   * The observability dashboard (SPEC Block E, Block H item 7; built in v2.20).
+   *
+   * EVERY LABEL NAMES ITS ROWS, and that is a copy rule on this screen rather
+   * than a style preference. It is the product's own evidence that quality is
+   * MEASURED rather than asserted, so a figure a reader cannot trace back to a
+   * row is worse than no figure: it asks to be believed. Each caption therefore
+   * says which table the number was counted in and what its denominator was.
+   *
+   * A SHARE ALWAYS SHOWS ITS FRACTION. "33%" and "1 of 3 runs" are the same fact
+   * and only one of them is honest about how much is known, so the fraction is
+   * always rendered and the percentage is dropped below `SMALL_SAMPLE`
+   * observations, where it would imply precision nobody measured.
+   */
+  title: 'Quality',
+  lead: 'Every number here is counted from rows this app already stores: the AI-call log and the reviewer verdicts saved with each resume version. Nothing on this screen is estimated.',
   empty: 'No AI calls yet.',
+  emptyHint: 'Run a scan and generate a resume — this screen fills in from the rows that run writes.',
   loadFailed: "Couldn't load metrics.",
+
+  /** The window the totals are computed over, said out loud. */
+  windowNote: (rows: number) => `Counted over the ${formatCount(rows)} most recent AI calls.`,
+  windowFull: (rows: number) =>
+    `Counted over the ${formatCount(rows)} most recent AI calls — the ceiling this screen reads, so calls older than those are not included in the totals above.`,
+  versionWindowNote: (rows: number) =>
+    `Counted over the ${formatCount(rows)} most recent resume versions.`,
+
+  /** Said wherever a share rests on too few observations to be read as a rate. */
+  thinSample: 'Too few runs to read as a rate — the fraction is the whole of it.',
+  nothingMeasured: 'Nothing measured yet',
+
+  tileTotalCost: 'Total AI cost',
+  tileTotalCostSource: (calls: number) =>
+    `Sum of cost_usd_micro over ${formatCount(calls)} logged call${calls === 1 ? '' : 's'}.`,
+  tileCostPerRun: 'Cost per pipeline run',
+  tileCostPerRunSource: (cost: string, runs: number) =>
+    `${cost} of call cost carries an application id, divided by ${formatCount(runs)} application${runs === 1 ? '' : 's'} that made calls.`,
+  tileRuns: 'Pipeline runs',
+  tileRunsSource:
+    'Distinct application ids in the AI-call log. A run is one application’s scan, generation and reviews.',
+  tileUnattributed: 'Not attributable to a run',
+  tileUnattributedSource:
+    'Calls with no application id: resume imports and career-base indexing. Real spend, and not part of any one run — so it is stated rather than averaged into the figure above.',
+  /**
+   * THE TWO DAILY CAPS, SHOWN AS THE COUNTERS THEMSELVES.
+   *
+   * Both figures come from the queries rules B7 and B7a actually use, not from a
+   * second count of the same rolling window — so the tile shows the number the
+   * cap compares against. Two implementations of one window is how a dashboard
+   * comes to disagree with the rule it illustrates.
+   */
+  tileChatCalls: 'Chat calls in the last 24 hours',
+  tileChatCallsSource: (limit: number) =>
+    `Rule B7's own counter: import, parse, generate and quality-check rows in the rolling 24 hours, against its cap of ${limit}.`,
+  tileRescoreCalls: 'Re-score calls in the last 24 hours',
+  tileRescoreCallsSource: (limit: number) =>
+    `Rule B7a's own counter: rescore embedding requests in the rolling 24 hours, against its cap of ${limit}. Embeddings are excluded from rule B7 by definition, which is why they have a ceiling of their own.`,
+  tileFallback: 'Served by the fallback model',
+  tileFallbackSource: 'Rows with fallback_used = true.',
+  tileFailed: 'Calls that failed',
+  tileFailedSource: 'Rows with ok = false. They are logged and billed like any other request.',
+  tileUnknownPricing: 'Calls with unknown pricing',
+  tileUnknownPricingSource:
+    'Rows with cost_known = false: the serving model had no price entry, so their cost is 0 in the total above and is genuinely unknown rather than free.',
+  tileTokens: 'Tokens in / out',
+  tileTokensSource: 'Sums of tokens_in and tokens_out over the same rows.',
+
+  /** The rubric outcome of each AI run. */
+  rubricHeading: 'What the reviewer said about each AI run',
+  rubricLead:
+    'One run is one generated draft plus the single rewrite rule B3 allows. Counted from the resume versions themselves: an ai row, and the ai_revision row that follows it.',
+  rubricRuns: (runs: number) => `${formatCount(runs)} AI run${runs === 1 ? '' : 's'}`,
+  outcomeApprovedFirst: 'Passed the rubric on the first attempt',
+  outcomeRevisedApproved: 'Needed the one rewrite, and passed after it',
+  outcomeRevisedStillRevise: 'Needed the rewrite and still failed after it',
+  outcomeReviseNoRewrite: 'Refused, with no rewrite attempted',
+  outcomeReviseNoRewriteHint:
+    'The reviewer refused the draft and either listed nothing specific to act on, or the daily cap or the service refused the rewrite step.',
+  outcomeNotChecked: 'The quality check did not run',
+  outcomeNotCheckedHint:
+    'No reviewer verdict is stored for the version that was kept. Never counted as a pass or a failure — an unmeasured resume is not a measured one.',
+
+  /** The score distribution, per criterion. */
+  distributionHeading: 'Score distribution, per rubric criterion',
+  distributionLead:
+    'Every stored reviewer verdict, including the ones you asked for with [Check quality]. Each row counts how many versions scored 1 to 5 on that criterion.',
+  distributionJudged: (judged: number) =>
+    `${formatCount(judged)} judged version${judged === 1 ? '' : 's'}`,
+  colCriterion: 'Criterion',
+  colMean: 'Mean',
+  colScore: (score: number) => `${score}`,
+  groundingRow: 'Grounding (a gate, not a score)',
+  groundingTally: (passed: number, failed: number) =>
+    `${formatCount(passed)} passed · ${formatCount(failed)} failed`,
+  groundingHint:
+    'Rule B2 makes a grounding failure uncompensatable, so it is counted and never averaged in with the three scored criteria.',
+
+  /** Cost by step. */
+  stepsHeading: 'Cost by pipeline step',
+  stepsLead: 'The same rows, grouped by their step column.',
+  colStep: 'Step',
+  colCalls: 'Calls',
+  colCost: 'Cost',
+  colMeanLatency: 'Mean latency',
+  colFailedShort: 'Failed',
+  colUnknownPricing: 'Unpriced',
+
+  /** Block E's table of the last 50 calls. */
+  callsHeading: 'Last 50 AI calls',
+  callsLead:
+    'The rows every figure above is counted from. Metadata only — no resume or vacancy text is ever logged.',
+  colTime: 'Time',
+  colModel: 'Model',
+  colTokens: 'Tokens in / out',
+  colLatency: 'Latency',
+  colOk: 'Result',
+  okYes: 'ok',
+  okNo: 'failed',
+  fallbackBadge: 'fallback',
+  unpricedBadge: 'unpriced',
+} as const;
+
+/** The `llm_calls.step` values, in pipeline order, with the words a user reads. */
+export const LLM_STEP_LABEL = {
+  import_resume: 'Import resume',
+  parse_vacancy: 'Parse vacancy',
+  embed: 'Embed',
+  generate: 'Generate',
+  judge: 'Quality check',
+  rescore: 'Re-score',
 } as const;
 
 export const SETTINGS = {
