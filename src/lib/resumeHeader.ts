@@ -17,12 +17,22 @@
  * is asking the wrong party. It is told not to write contact details at all, and
  * the block is composed here from the profile row.
  *
- * WHERE THE BLOCK GOES, AND WHY IT IS IN THE STORED TEXT. It is inserted into the
- * generated content before the version is judged and stored, so the editor shows
- * it, the judge reviews the same text that is stored, and the .docx carries it
- * with no second code path — "on screen and in the .docx" is one mechanism rather
- * than two that can disagree. It also means the user can EDIT it, which is right:
- * the header is part of their resume, not a decoration the app owns.
+ * WHERE THE BLOCK GOES, AND WHERE IT MUST NOT GO (owner decision, v2.21).
+ *
+ * It is inserted into the resume version that is STORED, so the editor shows it,
+ * the .docx carries it, and the user can edit it — the header is part of their
+ * resume, not a decoration the app owns.
+ *
+ * IT NEVER REACHES A MODEL. Neither writing a bullet nor judging whether a claim
+ * is grounded depends on a phone number, so sending the block to OpenRouter would
+ * widen the set of personal data leaving to a third party for no gain — the
+ * opposite of data minimisation. So the header is added AFTER the judge has
+ * spoken, and any text on its way to a model goes through `resumeTextForModel`
+ * first, which takes it back out of a stored version that carries it inline.
+ *
+ * The DISPLAY NAME is the exception and stays: P2 rule 4's layout needs a name
+ * line, an invented one is what v2.17 was raised for, and it travels sanitised
+ * and inside a tagged `<candidate_name>` block.
  */
 
 /**
@@ -90,6 +100,24 @@ export function contactsOf(
 
 export function hasAnyContact(contacts: ResumeContacts): boolean {
   return contactLines(contacts).length > 0;
+}
+
+/**
+ * Every saved contact value as a flat list — what must never reach a model, and
+ * what the export checks the document for.
+ *
+ * `OPEN_TO_REMOTE` is in it because the phrase is a value the app prints, not a
+ * label it renders: a header line can consist of nothing else.
+ */
+export function contactValues(contacts: ResumeContacts): string[] {
+  return [
+    contacts.email,
+    contacts.phone,
+    contacts.location,
+    contacts.linkedin,
+    contacts.github,
+    contacts.openToRemote ? OPEN_TO_REMOTE : null,
+  ].filter((field): field is string => field !== null);
 }
 
 /**
@@ -190,4 +218,99 @@ export function withContactHeader(content: string, contacts: ResumeContacts): st
     return [rows[0] ?? '', ...lines, '', ...rows.slice(1)].join('\n');
   }
   return [...rows.slice(0, blank), ...lines, ...rows.slice(blank)].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// The model boundary (owner decision, v2.21)
+// ---------------------------------------------------------------------------
+
+/**
+ * Characters that may sit BETWEEN contact fields on a header line and belong to
+ * no field's value: the block's own separator, the ones a user is likely to type
+ * when editing it by hand, and whitespace.
+ *
+ * Used only to decide whether a line is NOTHING BUT contact fields. The values
+ * are removed from the line first, so a comma inside "Hamburg, Germany" goes with
+ * the value it belongs to rather than being treated as a separator.
+ */
+const HEADER_GLUE = /[·•|,;/\\\-–—()\s]/gu;
+
+/** A line that consists of saved contact values and glue, and nothing else. */
+function isContactOnlyLine(line: string, values: readonly string[]): boolean {
+  if (line.trim().length === 0) return false;
+  let rest = line;
+  for (const value of values) rest = rest.split(value).join('');
+  return rest.replace(HEADER_GLUE, '').length === 0;
+}
+
+/**
+ * A stored resume with its contact header taken back out.
+ *
+ * LINE-BASED, AND THE SCOPE IS STATED RATHER THAN OVERSOLD. What this removes is
+ * the app's own header: a line made of nothing but saved contact values and the
+ * glue between them, whether the app composed it or the user has since edited,
+ * reordered or split it. What it does NOT do is redact a value that also appears
+ * inside a sentence — a career item that says "Nordlicht Digital, Hamburg" keeps
+ * saying it, and that text was already going to the model as a career item long
+ * before this feature existed. The claim is therefore exact: the app stops ADDING
+ * contact details to a model payload. It does not, and cannot, promise that a
+ * city name the user wrote into their own history will not appear in one.
+ *
+ * A BLANK LINE LEFT BEHIND IS REMOVED TOO, but only where the block was: two
+ * blank lines in a row after the cut become one, so the text the judge reads has
+ * the shape the model wrote rather than a gap where the header stood. Blank lines
+ * elsewhere are untouched — they are the document's own paragraph breaks.
+ *
+ * Pure, and it returns the input unchanged when there are no saved contacts,
+ * which is the state most users are in.
+ */
+export function stripContactHeader(content: string, contacts: ResumeContacts): string {
+  const values = contactValues(contacts);
+  if (values.length === 0) return content;
+
+  const rows = content.split('\n');
+  const kept: string[] = [];
+  let cut = false;
+  for (const row of rows) {
+    if (isContactOnlyLine(row, values)) {
+      cut = true;
+      continue;
+    }
+    // Collapse the gap the removed line left, and only that gap.
+    if (cut && row.trim().length === 0 && kept[kept.length - 1]?.trim().length === 0) {
+      cut = false;
+      continue;
+    }
+    cut = false;
+    kept.push(row);
+  }
+  return kept.join('\n');
+}
+
+declare const MODEL_TEXT: unique symbol;
+
+/**
+ * Resume text that has been through `resumeTextForModel`, as a TYPE.
+ *
+ * "Prove it, do not assert it" — this is the half a comment cannot do. Every
+ * parameter that carries resume text to a model is declared as this type, and the
+ * only function that produces one is the strip below, so a caller handing a model
+ * the raw contents of a stored version is a BUILD ERROR rather than a defect
+ * nobody notices. A branded string, so it costs nothing at runtime.
+ */
+export type ModelResumeText = string & { readonly [MODEL_TEXT]: true };
+
+/**
+ * The only way to obtain resume text a model may see.
+ *
+ * Applied at every such call site, including the ones whose text cannot carry a
+ * header today: the generate pipeline judges the model's own output, which the app
+ * has not touched yet — and routing it through here anyway is what keeps the
+ * guarantee true if the header insertion is ever moved back in front of the judge.
+ */
+export function resumeTextForModel(
+  content: string,
+  contacts: ResumeContacts,
+): ModelResumeText {
+  return stripContactHeader(content, contacts) as ModelResumeText;
 }

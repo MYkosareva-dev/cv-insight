@@ -33,11 +33,12 @@ export default function PrivacyPage() {
           address, a phone number, a location, a LinkedIn address, a GitHub address and whether you
           are open to remote work. They are stored with your account and used for the header block
           at the top of the resumes you generate and download, so an employer can reply to one.
-          Because they become part of that resume, they are also sent to OpenRouter with it
-          whenever a resume is generated or quality-checked, in the same way the rest of the resume
-          text is. Each of them is optional and the app works with all of them empty; you can
-          change or remove any of them in Settings at any time, and they are deleted along with
-          everything else when you delete your account.
+          They are <strong>not</strong> sent to the AI provider: the header is added to your resume
+          after it has been written and checked, and it is removed again before any text is sent
+          for a quality check or a re-score. Writing a resume and judging it do not need a phone
+          number, so it does not leave. Each of these fields is optional and the app works with all
+          of them empty; you can change or remove any of them in Settings at any time, and they are
+          deleted along with everything else when you delete your account.
         </p>
       </section>
 
@@ -46,8 +47,9 @@ export default function PrivacyPage() {
         <p className="text-muted-foreground text-sm">
           Resume and vacancy text are personal data. They are sent to OpenRouter for processing so
           the app can parse the posting, score the match, generate a tailored resume and evaluate
-          it. Your name and any contact details you have saved travel with them, because they are
-          part of the resume that is written and reviewed.
+          it. The name you save in Settings travels with them, because a resume needs a name line
+          on it. The contact details you may save do not travel with them at all — the section
+          above says what happens to those instead.
         </p>
       </section>
 

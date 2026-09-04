@@ -8,13 +8,14 @@ import { requireApiUser } from '@/lib/auth/requireApiUser';
 import { newCallLedger } from '@/lib/chat';
 import { NAME_PLACEHOLDER, RESULT } from '@/lib/copy';
 import { getApplication } from '@/lib/db/applications';
-import { getDisplayName } from '@/lib/db/profiles';
+import { getContacts, getDisplayName } from '@/lib/db/profiles';
 import { insertResumeVersion } from '@/lib/db/resumeVersions';
 import { getVacancy } from '@/lib/db/vacancies';
 import { NotFoundError, ValidationError, apiErrorResponse } from '@/lib/errors';
 import { listCareerItemCorpus } from '@/lib/db/careerItems';
 import { itemsCorpus } from '@/lib/generation';
 import { partitionMissingHonest } from '@/lib/judge';
+import { resumeTextForModel } from '@/lib/resumeHeader';
 import { judgeResume, retrieveItemsFor } from '@/lib/tailoring';
 import { resumeContentSchema } from '@/lib/validation';
 
@@ -48,6 +49,10 @@ import { resumeContentSchema } from '@/lib/validation';
  * The version is saved whatever the verdict says. A quality check that refuses
  * the text is still a measurement of it, and discarding the row would leave the
  * user's own edit unsaved after they paid to have it reviewed.
+ *
+ * WHAT IS REVIEWED IS NOT BYTE-FOR-BYTE WHAT IS SAVED, and the difference is
+ * exactly one block (owner decision, v2.21): the contact header is stripped on
+ * the way to P3 and kept in the stored row. See the call below.
  */
 
 /** One embeddings run and one judge step: 60 s, plus the retry wait. */
@@ -109,10 +114,30 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
      */
     const displayName = await getDisplayName(user.id);
 
+    /**
+     * THE CONTACT HEADER COMES OUT BEFORE THE TEXT GOES TO THE REVIEWER (owner
+     * decision, v2.21).
+     *
+     * This endpoint judges what is in the EDITOR, and a version generated with
+     * contact details saved carries the block inline — so without this the user's
+     * email address, phone number, city and both profile URLs went to OpenRouter
+     * on every [Check quality]. Nothing in P3 needs them: grounding asks whether a
+     * claim is supported by a career item, and a phone number is not a claim. The
+     * strip is the enforcement, and `ModelResumeText` is what makes forgetting it
+     * a build error rather than a silent transfer.
+     *
+     * WHAT IS STORED IS STILL THE USER'S WHOLE TEXT, header and all. The version
+     * has to be the document they had, or [Check quality] would quietly delete
+     * their contact details from their own resume — so the row and the prompt
+     * differ by exactly the block the reviewer has no use for, which is declared
+     * in SPEC v2.21 rather than left for a reader to discover.
+     */
+    const contacts = await getContacts(user.id);
+
     const judge = await judgeResume({
       parsed: vacancy.parsed,
       items: retrieved.items,
-      resumeText: parsed.data.content,
+      resumeText: resumeTextForModel(parsed.data.content, contacts),
       applicationId: id,
       ledger,
       candidateName: displayName ?? NAME_PLACEHOLDER,

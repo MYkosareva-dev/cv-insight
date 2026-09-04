@@ -5,8 +5,10 @@ import {
   EMPTY_CONTACTS,
   OPEN_TO_REMOTE,
   contactLines,
+  contactValues,
   contactsOf,
   hasAnyContact,
+  resumeTextForModel,
   withContactHeader,
 } from '../../src/lib/resumeHeader.ts';
 
@@ -188,5 +190,154 @@ describe('withContactHeader — where the block goes', () => {
     const out = withContactHeader('MIRA STEINBERG', FULL).split('\n');
     assert.equal(out[0], 'MIRA STEINBERG');
     assert.ok(out[1].startsWith('mira.steinberg@example.com'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE MODEL BOUNDARY (owner decision, v2.21)
+// ---------------------------------------------------------------------------
+
+/**
+ * The contact details must never reach a model. This is the test that fails if
+ * one can, and it is deliberately built the way the display-name prompt tests in
+ * `validation.test.mjs` are: take the value a user could save, put it through the
+ * exact function the app puts it through, and assert on the STRING that would go
+ * on the wire.
+ *
+ * WHY THE RULE EXISTS. Neither writing bullets nor judging grounding depends on a
+ * phone number — P2 is told not to write contact details at all, and P3 scores
+ * claims against career items — so sending the block widens the set of personal
+ * data leaving to a third party for no gain. v2.20 sent it, because the header
+ * was inserted before the judge ran; v2.21 inserts it after, and strips it out of
+ * any stored version on its way back to a model.
+ *
+ * WHAT THIS CANNOT PROVE, said here rather than left implied: it cannot prove a
+ * city name is absent from a payload when the user's own career items say it.
+ * That text was already going to the model as a career item. The claim under test
+ * is the one the app can keep — that the app stops ADDING contact details to a
+ * model payload — and the call sites are held to it by `ModelResumeText`, which
+ * only `resumeTextForModel` produces, so skipping the strip is a build error
+ * rather than something a test has to catch.
+ */
+
+const CONTACT_FIELDS = [
+  ['email', 'mira.steinberg@example.com'],
+  ['phone', '+49 40 123456'],
+  ['location', 'Hamburg, Germany'],
+  ['linkedin', 'https://www.linkedin.com/in/mira-steinberg'],
+  ['github', 'https://github.com/mira-steinberg'],
+];
+
+/** The model's own output: what P2 returns, before the app touches it. */
+const MODEL_OUTPUT = [
+  'MIRA STEINBERG',
+  'AI Quality Analyst',
+  '',
+  'SUMMARY',
+  'Six years of LLM evaluation and annotation quality work.',
+  '',
+  'EXPERIENCE',
+  'AI Prompt Evaluator - Nordlicht Digital (01/2025 - present)',
+  '- Maintained a 98% QA quality score across annotated batches.',
+].join('\n');
+
+describe('resumeTextForModel - no contact field reaches a model', () => {
+  test('a stored version with a full header goes back to the model without one', () => {
+    const stored = withContactHeader(MODEL_OUTPUT, FULL);
+    const forModel = resumeTextForModel(stored, FULL);
+
+    for (const value of contactValues(FULL)) {
+      assert.ok(!forModel.includes(value), `${value} must not reach a model`);
+    }
+    /**
+     * And what is left is the model's own text, unchanged — not a text with a
+     * hole in it. A judge reading a document with a gap where the header stood
+     * would be reviewing a shape the writer never produced.
+     */
+    assert.equal(forModel, MODEL_OUTPUT);
+  });
+
+  test('ONE saved field is enough to be stripped', () => {
+    // The likeliest real profile is a partial one, and the field-by-field
+    // collapse means the header may be a single line.
+    for (const [field, value] of CONTACT_FIELDS) {
+      const contacts = { ...EMPTY_CONTACTS, [field]: value };
+      const stored = withContactHeader(MODEL_OUTPUT, contacts);
+      assert.ok(stored.includes(value), `${field} is in the stored version`);
+      assert.equal(resumeTextForModel(stored, contacts), MODEL_OUTPUT, field);
+    }
+  });
+
+  test('"Open to remote" is a value and not a label, so it is stripped too', () => {
+    const contacts = { ...EMPTY_CONTACTS, openToRemote: true };
+    const stored = withContactHeader(MODEL_OUTPUT, contacts);
+    assert.ok(stored.includes(OPEN_TO_REMOTE));
+    assert.equal(resumeTextForModel(stored, contacts), MODEL_OUTPUT);
+  });
+
+  test('an EDITED header is still stripped', () => {
+    /**
+     * The header is deliberately editable — it is part of the user's resume — so
+     * the strip cannot depend on matching the line the app composed. A user who
+     * reorders the fields, splits them across lines or swaps the separator has
+     * still not asked for their phone number to be sent to a model.
+     */
+    for (const edited of [
+      'mira.steinberg@example.com | +49 40 123456',
+      '+49 40 123456 · mira.steinberg@example.com · Hamburg, Germany',
+      'mira.steinberg@example.com\n+49 40 123456\nHamburg, Germany',
+      '(mira.steinberg@example.com) - +49 40 123456',
+      'https://github.com/mira-steinberg, https://www.linkedin.com/in/mira-steinberg',
+    ]) {
+      const stored = ['MIRA STEINBERG', edited, '', 'SUMMARY', 'Six years.'].join('\n');
+      const forModel = resumeTextForModel(stored, FULL);
+      for (const value of contactValues(FULL)) {
+        assert.ok(!forModel.includes(value), `${value} survived: ${edited}`);
+      }
+    }
+  });
+
+  test('it does not eat the document around the header', () => {
+    // The one failure that would be worse than the leak: a strip that removes a
+    // line of the user's actual experience.
+    const forModel = resumeTextForModel(withContactHeader(MODEL_OUTPUT, FULL), FULL);
+    assert.ok(forModel.includes('AI Prompt Evaluator - Nordlicht Digital (01/2025 - present)'));
+    assert.ok(forModel.includes('Maintained a 98% QA quality score'));
+    assert.ok(forModel.startsWith('MIRA STEINBERG\nAI Quality Analyst'));
+  });
+
+  test('a value inside a SENTENCE is left alone, and the scope says so', () => {
+    /**
+     * The honest limit of the mechanism, pinned so nobody later reads the rule as
+     * wider than it is: a career item that says "Nordlicht Digital, Hamburg,
+     * Germany" keeps saying it, because that text is a career item and career
+     * items are what the model is for. Redacting mid-sentence would hand the judge
+     * a resume the writer never wrote.
+     */
+    const body = [
+      'MIRA STEINBERG',
+      '',
+      'EXPERIENCE',
+      'AI Prompt Evaluator, Nordlicht Digital in Hamburg, Germany since 01/2025',
+    ].join('\n');
+    assert.equal(resumeTextForModel(body, FULL), body);
+  });
+
+  test('an empty profile is a no-op, byte for byte', () => {
+    assert.equal(resumeTextForModel(MODEL_OUTPUT, EMPTY_CONTACTS), MODEL_OUTPUT);
+  });
+
+  test('the name line is NOT stripped - P2 rule 4 needs it', () => {
+    // The display name is the one profile value that still travels, sanitised and
+    // inside a tagged block. Stripping it would be the v2.17 defect back.
+    const forModel = resumeTextForModel(withContactHeader(MODEL_OUTPUT, FULL), FULL);
+    assert.ok(forModel.includes('MIRA STEINBERG'));
+  });
+
+  test('stripping is idempotent', () => {
+    // A stored version may already have been through it, and a second pass must
+    // not start removing body lines.
+    const once = resumeTextForModel(withContactHeader(MODEL_OUTPUT, FULL), FULL);
+    assert.equal(resumeTextForModel(once, FULL), once);
   });
 });

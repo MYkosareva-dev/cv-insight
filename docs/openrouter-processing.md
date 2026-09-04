@@ -20,11 +20,25 @@ provider that serves the requested model slug:
 ## What is sent
 
 Sent: vacancy text as pasted by the user; career-item content or the resume text the
-user supplied for the scan; the target role label; the prompt template.
+user supplied for the scan; generated resume text on the judge and re-score paths; the
+display name saved in Settings, because a resume carries a name line; the target role
+label; the prompt template.
 
-Not sent: email address, account identifier, session token, or any Supabase row id.
-Prompts carry content only — the request body contains no field that identifies the
-account behind it.
+Not sent: the account email address, the account identifier, the session token, or any
+Supabase row id. Prompts carry content only — the request body contains no field that
+identifies the account behind it.
+
+Also not sent, by decision rather than by omission: **the contact details saved in
+Settings** — contact email address, phone number, location, LinkedIn URL, GitHub URL
+and the open-to-remote flag. They are stored, rendered into the resume the user sees,
+and written into the exported `.docx`; they reach no model call. The header block is
+composed after a resume has been written and judged, and it is removed again from any
+stored version before that text is sent for a quality check or a re-score. Neither
+writing a resume nor scoring one uses a phone number, so transmitting the block would
+widen the personal data leaving this deployment for no gain. Enforced in code rather
+than by convention: `resumeTextForModel` in `src/lib/resumeHeader.ts` is the only
+producer of the branded type every model-bound resume-text parameter is declared as, so
+a call site that skips the strip does not compile.
 
 ## What is stored on our side
 

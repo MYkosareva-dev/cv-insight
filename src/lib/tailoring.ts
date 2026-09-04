@@ -16,7 +16,13 @@ import {
 } from '@/lib/generation';
 import { type Rubric, needsRevision, revisionFindings, withComputedVerdict } from '@/lib/judge';
 import { P2_GENERATE, P3_JUDGE, fillPrompt, revisionFeedbackBlock } from '@/lib/prompts';
-import { EMPTY_CONTACTS, type ResumeContacts, withContactHeader } from '@/lib/resumeHeader';
+import {
+  EMPTY_CONTACTS,
+  type ModelResumeText,
+  type ResumeContacts,
+  resumeTextForModel,
+  withContactHeader,
+} from '@/lib/resumeHeader';
 import { matchDocuments } from '@/lib/retrieval';
 import { MAX_RESUME_CHARS, judgeReportSchema } from '@/lib/validation';
 
@@ -200,18 +206,6 @@ export async function generateResume(args: {
   ledger: CallLedger;
   /** The profile's display name, or the visible placeholder standing in for one. */
   candidateName: string;
-  /**
-   * The profile's contact details, composed into the header block by the APP
-   * after the model has written (SPEC v2.20). P2 rule 7 tells the writer not to
-   * produce contact lines at all, because a paraphrased phone number or a
-   * shortened URL is a document that reaches nobody — and a writer with an empty
-   * slot in a familiar layout fills it.
-   *
-   * Defaulted to none, so a caller with no profile to offer gets a resume with
-   * no header block rather than a type error: every field is optional and the
-   * app works with all of them empty.
-   */
-  contacts?: ResumeContacts;
 }): Promise<string> {
   const prompt = fillPrompt(P2_GENERATE, {
     // The WRITER gets no keyword list — see `requirementsJson`.
@@ -240,13 +234,15 @@ export async function generateResume(args: {
    * saved. Cutting the tail costs the last lines of a resume that was already
    * past one page; losing the whole run costs everything.
    *
-   * THE HEADER BLOCK GOES IN BEFORE THE SLICE, not after, because the slice is
-   * what enforces the column's CHECK and a block added past it would violate
-   * the very bound this comment claims to hold. Two lines of contacts can only
-   * ever cost the last two lines of a resume that was already over one page.
+   *
+   * WHAT COMES BACK IS THE MODEL'S OWN TEXT, with no contact header in it
+   * (v2.21). The block is added when the version is STORED, after the judge has
+   * spoken — see `generateWithJudge`. Adding it here was the first design and it
+   * put the user's email address, phone number and both profile URLs into every
+   * P3 call for no benefit: a reviewer scoring grounding does not need a phone
+   * number, so sending one is personal data leaving to a third party for nothing.
    */
-  const written = withContactHeader(result.data.trim(), args.contacts ?? EMPTY_CONTACTS);
-  return written.slice(0, MAX_RESUME_CHARS);
+  return result.data.trim().slice(0, MAX_RESUME_CHARS);
 }
 
 /**
@@ -263,7 +259,14 @@ export async function generateResume(args: {
 export async function judgeResume(args: {
   parsed: ParsedVacancy;
   items: GenerationItem[];
-  resumeText: string;
+  /**
+   * BRANDED, and that is the enforcement (v2.21). `ModelResumeText` can only be
+   * produced by `resumeTextForModel`, which takes the contact header back out —
+   * so a caller handing this function the raw contents of a stored version is a
+   * build error rather than a quiet leak of the user's contact details into a
+   * prompt. The type is the fence; the comment is only pointing at it.
+   */
+  resumeText: ModelResumeText;
   applicationId: string;
   ledger: CallLedger;
   /**
@@ -346,12 +349,51 @@ export async function generateWithJudge(args: {
   ledger: CallLedger;
   candidateName: string;
   /**
-   * The header block's source (SPEC v2.20). It reaches the GENERATE step, and
-   * the judge never receives the values separately: the block is already in the
-   * resume text P3 reads, and P3 is told those lines come from the profile
-   * rather than from a career item — so telling it twice would only add a way
-   * for the two statements to disagree.
+   * The header block's source, and it reaches NO model call (owner decision,
+   * v2.21). The block is composed here and only after both judge steps have run,
+   * so what is stored carries it and what OpenRouter sees never did.
    */
+  contacts?: ResumeContacts;
+}): Promise<GenerateOutcome> {
+  const outcome = await runGenerateWithJudge(args);
+  /**
+   * THE HEADER IS ADDED LAST, IN ONE PLACE.
+   *
+   * Every draft above is the model's own text; the contact block goes on here,
+   * once, on whichever drafts became rows. That ordering is the whole mechanism
+   * behind the owner's decision: a reviewer scoring grounding has no use for a
+   * phone number, so the block is a RENDER concern — the editor, the .docx — and
+   * putting it in before the judge would have shipped the user's email address
+   * and both profile URLs to a third party on every run for nothing.
+   *
+   * The slice is re-applied because the block is text: `resume_versions.content`
+   * is `char_length <= 15000`, and two lines of contacts added past that bound
+   * would turn a run the user has already paid for into a 500 (edge case L3).
+   */
+  return {
+    ...outcome,
+    original: withHeader(outcome.original, args.contacts),
+    revision: outcome.revision ? withHeader(outcome.revision, args.contacts) : null,
+  };
+}
+
+/** One draft, as it will be STORED: the model's text plus the contact header. */
+function withHeader(draft: Draft, contacts: ResumeContacts | undefined): Draft {
+  return {
+    ...draft,
+    content: withContactHeader(draft.content, contacts ?? EMPTY_CONTACTS).slice(
+      0,
+      MAX_RESUME_CHARS,
+    ),
+  };
+}
+
+async function runGenerateWithJudge(args: {
+  parsed: ParsedVacancy;
+  items: GenerationItem[];
+  applicationId: string;
+  ledger: CallLedger;
+  candidateName: string;
   contacts?: ResumeContacts;
 }): Promise<GenerateOutcome> {
   /**
@@ -431,11 +473,21 @@ async function judgeOrNull(
     applicationId: string;
     ledger: CallLedger;
     candidateName: string;
+    contacts?: ResumeContacts;
   },
   resumeText: string,
 ): Promise<JudgeReport | null> {
   try {
-    return await judgeResume({ ...args, resumeText });
+    /**
+     * THROUGH THE STRIP EVEN THOUGH THIS TEXT CANNOT CARRY A HEADER. What arrives
+     * here is the model's own output and the app has not touched it yet, so the
+     * call is a no-op today — and that is exactly why it is here: if the header
+     * insertion is ever moved back in front of the judge, this line is what keeps
+     * the contact details out of the prompt instead of the guarantee quietly
+     * lapsing.
+     */
+    const resumeTextForJudge = resumeTextForModel(resumeText, args.contacts ?? EMPTY_CONTACTS);
+    return await judgeResume({ ...args, resumeText: resumeTextForJudge });
   } catch (err) {
     if (err instanceof DailyLimitError || err instanceof AiUnavailableError) {
       console.error('[tailoring] the quality check did not run', {

@@ -8,8 +8,10 @@ import { RESULT } from '@/lib/copy';
 import { editorTextCorpus, scoreAgainstCorpus } from '@/lib/coverage';
 import { renderableScore } from '@/lib/scoring';
 import { getApplication } from '@/lib/db/applications';
+import { getContacts } from '@/lib/db/profiles';
 import { getVacancy } from '@/lib/db/vacancies';
 import { NotFoundError, ValidationError, apiErrorResponse } from '@/lib/errors';
+import { resumeTextForModel } from '@/lib/resumeHeader';
 import { resumeContentSchema } from '@/lib/validation';
 
 /**
@@ -34,6 +36,12 @@ import { resumeContentSchema } from '@/lib/validation';
  * two implementations of one measured rule, free to drift while
  * `docs/eval/coverage-thresholds.md` described only one of them.
  *
+ * IT SENDS NO CONTACT DETAILS (owner decision, v2.21). An embeddings request is
+ * still a request leaving to a third party, so the contact header is stripped out
+ * of the editor's text before anything is embedded or counted — nothing in rule
+ * B1 can use a phone number, and the stripped text is also the more honest corpus
+ * to score.
+ *
  * IT WRITES NOTHING, and that is deliberate. `applications.match_score` and
  * `coverage` stay the numbers the SCAN measured, for the reason SPEC v2.12 gives
  * for storing the keyword counts at all: a stored measurement has to keep saying
@@ -55,7 +63,9 @@ export const maxDuration = 60;
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireApiUser();
+    // The verified user is needed now: the contact header is read from their own
+    // profile so it can be taken back out before the text is embedded.
+    const user = await requireApiUser();
 
     const { id } = await params;
     if (!z.uuid().safeParse(id).success) throw new NotFoundError();
@@ -85,13 +95,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       throw new ValidationError(parsed.error.issues[0]?.message ?? RESULT.emptyEditor);
     }
 
+    /**
+     * THE CONTACT HEADER COMES OUT BEFORE ANY OF THIS (owner decision, v2.21).
+     *
+     * A re-score is an EMBEDDINGS call, which is still a request to OpenRouter
+     * carrying the text — so a version generated with contact details saved sent
+     * the user's email address, phone number, city and both profile URLs to a
+     * third party every time they pressed [Re-score], for a measurement that
+     * cannot use them: rule B1 ranks requirements against the resume's claims,
+     * and a phone number answers no requirement.
+     *
+     * IT IS ALSO THE MORE HONEST NUMBER. The stripped text is what gets embedded
+     * AND what K is counted over, so the score measures the resume rather than
+     * the resume plus a header — a vacancy keyword that happened to appear in a
+     * contact field would otherwise have counted as coverage the resume does not
+     * have.
+     */
+    const contacts = await getContacts(user.id);
+    const scored = resumeTextForModel(parsed.data.content, contacts);
+
     const { matchScore, coverage } = await scoreAgainstCorpus({
       vacancy: vacancy.parsed,
       vacancyText: vacancy.raw_text,
       // Both the corpus and the scored source: K is counted over the same text
       // the requirements were ranked against, because there is only one text.
-      sourceText: parsed.data.content,
-      corpus: editorTextCorpus({ content: parsed.data.content, applicationId: id }),
+      sourceText: scored,
+      corpus: editorTextCorpus({ content: scored, applicationId: id }),
       // Nothing was saved by this request, so the scan's "your vacancy was
       // saved" promise would be beside the point here.
       aiUnavailableMessage: RESULT.rescoreFailed,

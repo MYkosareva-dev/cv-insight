@@ -11,6 +11,7 @@ import { getLatestResumeVersion, insertResumeVersion } from '@/lib/db/resumeVers
 import { getVacancy } from '@/lib/db/vacancies';
 import { NotFoundError, ValidationError, apiErrorResponse } from '@/lib/errors';
 import { exportFilename, resumeToDocx } from '@/lib/docx';
+import { contactValues } from '@/lib/resumeHeader';
 import { resumeContentSchema } from '@/lib/validation';
 
 /**
@@ -147,14 +148,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
      * produces changes that line and the export then tells them the resume has
      * no contact details at all — while advising a two-to-four-call regenerate.
      * A field the user kept is a field the document has.
+     *
+     * `contactValues` is the same list `resumeTextForModel` strips by, so the
+     * export's idea of "a contact detail" and the model boundary's cannot drift
+     * apart (v2.21).
      */
-    const saved = [
-      contacts.email,
-      contacts.phone,
-      contacts.location,
-      contacts.linkedin,
-      contacts.github,
-    ].filter((field): field is string => field !== null);
+    const saved = contactValues(contacts);
     const headerMissing = saved.length > 0 && !saved.some((field) => content.includes(field));
 
     const bytes = await resumeToDocx(content);
