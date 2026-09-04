@@ -84,3 +84,117 @@ Checked: secrets ✓, RLS ✓, chokepoints ✓, zod ✓, llm_calls logging ✓
 ---
 
 Two things I would put in front of the owner first, in order: **M1** (apply 005, re-run the suite, commit the run — the branch's own declaration already asks for it, and it is what turns the `/privacy` and Settings promises into performable ones) and **M2** (the SPEC re-sync, because it is the file the next agent will trust over the code).
+
+
+---
+
+# Outcome — the owner round after this review (2026-09-04)
+
+Appended below the report rather than edited into it. The report above is a
+record of what was said at the time and stays true to its date; this section is
+what happened next. Same convention `docs/reviews/phase-4.md` follows.
+
+## M1 — CLOSED
+
+The owner applied `005_profile_contacts.sql` to the live database, and the half
+of the suite that could only ever pass as a skip has now run. The earlier runs
+printed
+
+    [phase-5] contacts: skipped — 005_profile_contacts.sql is not applied
+
+and the committed run does not print it at all:
+
+    ok 23 … generate › a saved display name becomes the resume name line
+           and the file name (40.8s)
+
+is the case that carries the contact assertions, and it passed. What it now
+witnesses rather than skipping: the six fields saving through the Settings form,
+a `javascript:` URL refused with `SETTINGS.linkNotHttps` under the right field,
+the stored row surviving that refusal unchanged, the header block appearing in
+the generated draft with no dangling separator and no blank line, and the export
+naming the file from the profile. `docs/eval/phase-5-e2e-run.txt` is the run:
+**32 passed, 1 skipped, 0 failed**, the one skip being `scan.spec.ts`'s
+AI-unavailable draft, which needs a server started with an invalid model key.
+
+The review's reasoning was right about the shape as well as the fact: the skip
+was honestly keyed on the app's own copy, and what was missing was the run.
+
+## M7 / finding 7 — SETTLED THE OTHER WAY, by owner decision
+
+The architect gate raised `/privacy` being silent about the contact block going
+to OpenRouter, and this report carried it forward. Both rounds assumed the
+transfer and argued about DISCLOSING it. **The owner rejected the premise: do
+not document it, remove it.**
+
+> The contact details carry no value for P2 or P3: neither writing bullets nor
+> judging grounding depends on a phone number. Sending them widens the set of
+> personal data leaving to a third party for no gain, which is the opposite of
+> data minimisation.
+
+That is the better answer and it retires a design property this report verified
+as correct. Recorded here because a reviewer reading the section above would
+otherwise re-verify a mechanism that no longer exists:
+
+- **"Header inserted before the 15,000-char slice"** — still true, but the
+  insertion moved. The block is now composed AFTER both judge steps and applied
+  to the drafts that become rows, so the slice is re-applied there instead
+  (`withHeader` in `src/lib/tailoring.ts`).
+- **v2.20's "the judge reviews the same text that is stored" is retired.** The
+  row has to be the document the user has, or [Check quality] would quietly
+  delete their contact details from their own resume; the prompt has to be free
+  of them. They now differ by exactly the block the reviewer has no use for, and
+  SPEC v2.21 declares it rather than leaving it to be discovered.
+- **P3's contact paragraph shrank** to the half that costs nothing and still
+  protects the user: the block's absence is not a formatting issue, and a
+  contact detail the user typed themselves is not a claim — otherwise rule B2's
+  uncompensatable grounding failure would buy a rewrite for a line no career
+  item can verify.
+
+Enforcement is a TYPE and not a convention. `ModelResumeText` is a branded
+string produced only by `resumeTextForModel`, and `judgeResume`'s `resumeText`
+and `editorTextCorpus`'s `content` are declared as it — so a call site handing a
+model the raw contents of a stored version does not compile. It caught the
+`/judge` route the moment the type landed, which is the argument for doing it
+this way rather than with a comment. `tests/unit/resume-header.test.mjs` is the
+other half, asserting on the string that would go on the wire: every field
+alone, the whole block, an edited or re-punctuated or split header, idempotence,
+and the limit of the claim — a city name inside a career-item sentence is left
+alone, because that text was always going to the model as a career item.
+
+Two consequences worth having on the record:
+
+1. **`/rescore` was in scope and had been missed by both reviews.** An
+   embeddings request is still a request carrying the text, so a re-score of a
+   version generated with contacts saved sent the whole block every time. The
+   stripped text is now also what is embedded and what K is counted over, which
+   makes the score more honest: a vacancy keyword sitting in a contact field
+   would otherwise have counted as coverage the resume does not have.
+2. **`docs/openrouter-processing.md`'s "What is sent" list was incomplete
+   independently of the contact question** — it named neither the generated
+   resume text on the judge and re-score paths nor the display name, both of
+   which were already true. Corrected in the same round.
+
+## The remaining findings
+
+M2, M3, M4, M5, m1, m4, m5 and n1 were fixed before this round and SPEC v2.20
+records what each fix changed. `m2`, `m3`, `m6`, `n2`, `n3` and `n4` are carried
+as `p5-5` … `p5-10` in `docs/backlog.md`, joined by `p5-11` … `p5-13` from this
+round — including one the owner decision creates: `rescoreHelp` now says "Costs
+a paid AI call" for a spend that is embeddings only, which is the same
+kind-of-call distinction this round drew for `/privacy` and the processing
+record, and it should be drawn once for all four buttons.
+
+## Gates, after this round
+
+`tsc --noEmit` clean · `npm test` 367 pass / 0 fail · `node scripts/check.mjs`
+13 rules pass · `eslint` clean · `next build` compiled · `npx playwright test`
+32 passed / 1 skipped / 0 failed with 005 applied.
+
+## Merge verdict, revised
+
+The report above said REVISE and named M1 as the one thing standing between the
+branch and merge. M1 is closed, every major is fixed, and the owner's contact
+decision has been implemented, declared in SPEC v2.21 and pinned by a type and a
+test. **Nothing in this review is now outstanding against the branch.** What
+remains is the owner's own review of the diff, which CLAUDE.md's Process makes
+the condition of a merge and which no subagent can supply.
