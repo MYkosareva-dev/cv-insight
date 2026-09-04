@@ -7,7 +7,8 @@ job posting the app: parses the vacancy into structured requirements, computes a
 ATS-style semantic match score against the career base (pgvector), shows keyword
 gaps and hidden matches from the base, generates a tailored resume grounded ONLY
 in the user's real experience, and evaluates every generated resume with a
-rubric-based LLM judge before showing it.
+rubric-based LLM judge before showing it, or says plainly that the check did
+not run.
 
 ## Why the app is pointless without AI
 Remove the LLM and embeddings and all that remains is a notepad of resume text.
