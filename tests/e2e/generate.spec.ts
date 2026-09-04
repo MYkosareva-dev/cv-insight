@@ -306,11 +306,25 @@ test.describe('generate', () => {
         autoRevised: run.autoRevised,
         revisionNotBetter: run.revisionNotBetter,
         revisionWithheld: run.revisionWithheld,
+        /**
+         * ALL FOUR CRITERIA, not just the verdict (SPEC v2.23). The generation
+         * model had to change because a guardrail on the provider account blocks
+         * the configured one, and comparing two models on this fixture needs the
+         * scores rather than a pass/fail — a rubric that moves 3 → 4 on keyword
+         * coverage while grounding still fails is a different finding from one
+         * that does not move at all. Metadata only: scores and counts, never the
+         * resume text or a violated claim.
+         */
         verdicts: (run.versions as JudgedVersion[]).map((v) => ({
           source: v.source,
           verdict: v.judge?.verdict ?? 'not_checked',
           grounding: v.judge?.grounding.verdict ?? 'not_checked',
           violations: v.judge?.grounding.violations.length ?? 0,
+          keywordCoverage: v.judge?.keywordCoverage.score ?? null,
+          relevance: v.judge?.relevance.score ?? null,
+          atsFormat: v.judge?.atsFormat.score ?? null,
+          missingHonest: v.judge?.keywordCoverage.missingHonest.length ?? 0,
+          atsIssues: v.judge?.atsFormat.issues.length ?? 0,
         })),
       }),
     );

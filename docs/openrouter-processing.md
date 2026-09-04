@@ -10,12 +10,27 @@ All model calls leave through `lib/openrouter/server.ts` (the single connection
 chokepoint) to the OpenRouter API. OpenRouter routes each call to the upstream
 provider that serves the requested model slug:
 
-| Purpose | Model slug | Upstream provider |
-|---|---|---|
-| Vacancy parsing (P1), judge (P3) | `anthropic/claude-haiku-4.5` | Anthropic |
-| Generation (P2) | `anthropic/claude-sonnet-4.6` | Anthropic |
-| Fallback (all chat steps) | `google/gemini-2.5-flash` | Google |
-| Embeddings | `openai/text-embedding-3-small` | OpenAI |
+| Purpose | Model slug | Upstream provider | Verified to serve on this key |
+|---|---|---|---|
+| Vacancy parsing (P1), judge (P3) | `anthropic/claude-haiku-4.5` | Anthropic (via Amazon Bedrock) | yes — HTTP 200, 2026-09-04 |
+| Generation (P2) | `openai/gpt-5.4` | OpenAI | yes — HTTP 200, 2026-09-04 |
+| Fallback (all chat steps) | `google/gemini-2.5-flash` | Google | yes — HTTP 200, 2026-09-04 |
+| Embeddings | `openai/text-embedding-3-small` | OpenAI | in use since Phase 2 |
+
+Every chat slug in that table was requested ALONE on this deployment's key — no
+`models` array, so each answer is that model's own rather than the fallback's —
+and the column records the result. The generation row is `openai/gpt-5.4` and not
+the Anthropic Sonnet this project configured from Phase 4 because that model, and
+every other Anthropic model except Haiku 4.5, is refused by a guardrail on the
+provider account: see setting 4 below. The full probe of 23 candidate slugs, and
+the measurement of what the substitution changed, are in
+`docs/eval/generation-model-comparison.md`.
+
+Two vendors, deliberately. The generator is OpenAI's, the parser and judge are
+Anthropic's, and the fallback behind all of them is Google's — so no single
+provider outage takes the app down, and the judge is a different vendor from the
+generator as well as a different model, which is what CLAUDE.md's
+self-preference rule is for.
 
 ## What is sent
 
@@ -64,7 +79,12 @@ re-checked whenever the key is rotated:
    else reports it — so a guardrail is indistinguishable from a working deployment
    unless someone reads the per-step counts.
 
-   **Observed on 2026-09-04, and NOT YET FIXED at the provider:**
+   **Observed on 2026-09-04. NOT FIXABLE BY THIS PROJECT — the key belongs to
+   another party and the owner has no access to that workspace, so the guardrail
+   stands and the CODE moved instead** (see the model table above, and SPEC
+   v2.23). This entry is kept as the record of WHY the intended model is
+   unreachable; it is not an open task.
+
    `anthropic/claude-sonnet-4.6` is blocked by a guardrail on the `default` workspace.
    Requested alone with this deployment's key it answers HTTP 404,
    `"0 endpoints out of 5 requested are available matching your guardrail restrictions
@@ -74,9 +94,17 @@ re-checked whenever the key is rotated:
    (`anthropic/claude-haiku-4.5` answers 200 on the same key, served by Amazon
    Bedrock). **Consequence while it stands: every tailored resume is written by
    `google/gemini-2.5-flash`, not by the model this deployment configures.** The
-   product now says so on the result screen and `/quality` announces the condition
-   per step, but the fix is an account change and belongs here:
-   https://openrouter.ai/workspaces/default/guardrails
+   product says which model wrote each resume and `/quality` announces a step whose
+   every call fell back, so the condition can no longer hide. The guardrail itself
+   is configured at https://openrouter.ai/workspaces/default/guardrails and can
+   only be changed by whoever owns the workspace.
+
+   **The consequence has been retired, not accepted.** Since v2.23 the generator
+   is `openai/gpt-5.4`, which passes the guardrail, so resumes are no longer
+   written by the fallback — the fallback is a fallback again. The eighteen
+   refused slugs and the five that serve are tabulated in
+   `docs/eval/generation-model-comparison.md`; if the workspace ever admits an
+   Anthropic Sonnet, that table is where to check before changing anything back.
 
 ## Verification
 
@@ -86,7 +114,9 @@ Record the check below before any externally reachable deployment. Replace the m
 with the date, the account label, and the observed value of each of the four settings
 above. Item 4 is known to FAIL as of 2026-09-04 and is recorded there rather than
 here, because a verification section that says "not verified" is silent about a setting
-already known to be wrong.
+already known to be wrong. Items 1-3 are unaffected by the v2.23 model change and
+still need checking against the account: a data-policy or logging setting is a
+property of the workspace, not of which slug this app requests.
 
 <PASTE VERIFICATION HERE>
 

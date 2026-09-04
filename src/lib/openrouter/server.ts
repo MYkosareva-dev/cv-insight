@@ -24,6 +24,22 @@ import { costUsdMicro, normalizeModelId } from '@/lib/pricing';
 export const CHAT_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 export const EMBEDDINGS_ENDPOINT = 'https://openrouter.ai/api/v1/embeddings';
 
+/**
+ * The second entry of every `models` array — and it is a GENUINE fallback again
+ * (SPEC v2.23).
+ *
+ * It was the model writing every resume, because the configured generator was
+ * blocked and this is what routing reached for. With `openai/gpt-5.4` as the
+ * generate primary it goes back to being what its name says: a different VENDOR
+ * (Google, not OpenAI) and a different vendor from the Anthropic primary on the
+ * other three steps, so a single provider outage cannot take the app down — and
+ * verified to serve on this key by the same probe that found the guardrail.
+ *
+ * ONE FALLBACK FOR EVERY STEP still holds, and it is a different vendor from
+ * every primary: OpenAI generates, Anthropic parses and judges, Google catches
+ * both. A per-step fallback map would only be needed if a primary were ever
+ * Google's.
+ */
 export const FALLBACK_MODEL = 'google/gemini-2.5-flash';
 export const EMBEDDING_MODEL = 'openai/text-embedding-3-small';
 /** documents.embedding is vector(1536) — never change without re-embedding all rows. */
@@ -55,11 +71,47 @@ export type LlmStep =
 export type ChatStep = Extract<LlmStep, 'import_resume' | 'parse_vacancy' | 'generate' | 'judge'>;
 
 /** Primary model per step; the fallback is always FALLBACK_MODEL. */
+/**
+ * WHICH MODEL SERVES WHICH STEP — and the generate entry is not a preference,
+ * it is what the provider account permits (SPEC v2.23).
+ *
+ * `anthropic/claude-sonnet-4.6` was the configured generator from Phase 4 and it
+ * has NEVER served a single call. A model guardrail on the OpenRouter workspace
+ * removes all of its endpoints during routing, and because every chat call goes
+ * out as `models: [primary, fallback]`, a blocked primary is answered by using
+ * the second entry. The key belongs to someone else and the owner cannot lift the
+ * guardrail, so the primary had to become a model the key can reach.
+ *
+ * MEASURED, NOT CHOSEN. 23 candidate slugs were requested ALONE on this key —
+ * no `models` array, so each answer is that model's own. FIVE serve:
+ * `openai/gpt-5.4`, `openai/gpt-5.2`, `openai/gpt-5-mini`,
+ * `anthropic/claude-haiku-4.5` and `google/gemini-2.5-flash`. Every other
+ * candidate answers HTTP 404 `model-ignored-by-guardrail`, including every
+ * Anthropic Sonnet and Opus, Gemini 2.5 Pro, Grok, DeepSeek, Mistral Large and
+ * the rest of the GPT-5 family. The full table is in
+ * `docs/eval/generation-model-comparison.md`.
+ *
+ * `openai/gpt-5.4` is the strongest of the five — the highest tier that passes,
+ * priced at $2.50/$15.00 per Mtok, which is the band Sonnet 4.6 occupied — and it
+ * was verified against THIS APP'S REQUEST SHAPE and not merely against a ping:
+ * `temperature` is not in its `supported_parameters` and `reasoning` is, so a
+ * probe sent the app's own body (plain text, `max_tokens: 2500`,
+ * `temperature: 0.4`) and read the answer off `usage` — `finish_reason: stop`,
+ * 149 completion tokens, ZERO reasoning tokens, real resume text. A reasoning
+ * model that spent the output budget thinking would have been a worse defect
+ * than the fallback: a paid run returning nothing.
+ *
+ * THE JUDGE IS DELIBERATELY UNCHANGED. `anthropic/claude-haiku-4.5` serves, and
+ * its verdicts are the only baseline the project has — every rubric number in
+ * `docs/eval/` was produced by it. It is also still a DIFFERENT model from the
+ * generator, which is the whole point of CLAUDE.md's self-preference rule, and
+ * now a different vendor as well.
+ */
 export const MODEL_BY_STEP = {
   import_resume: 'anthropic/claude-haiku-4.5',
   parse_vacancy: 'anthropic/claude-haiku-4.5',
   judge: 'anthropic/claude-haiku-4.5',
-  generate: 'anthropic/claude-sonnet-4.6',
+  generate: 'openai/gpt-5.4',
 } as const satisfies Record<ChatStep, string>;
 
 /**
