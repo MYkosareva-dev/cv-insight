@@ -21,6 +21,13 @@ export default function PrivacyPage() {
           generated resumes and per-call AI usage metadata, in a Supabase Postgres database hosted
           in the EU (Frankfurt). Rows are scoped to your account.
         </p>
+        <p className="text-muted-foreground text-sm">
+          If you choose to save a display name in Settings, it is stored with your account and used
+          for two things only: the name line of the resumes you generate, and the file name when you
+          download one. It is optional — the app works without it, and a resume then asks you to
+          fill the name in yourself. You can change or remove it in Settings at any time, and it is
+          deleted along with everything else when you delete your account.
+        </p>
       </section>
 
       <section className="flex flex-col gap-2">

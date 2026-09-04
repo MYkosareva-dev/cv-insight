@@ -19,6 +19,38 @@ should be read as a measured accuracy figure, and the numbers below are expected
 to move when a second case is labeled. What makes them worth writing down is that
 the shipped thresholds were chosen from no measurement at all.
 
+## v2.16 — a SECOND corpus these numbers were not calibrated against
+
+`SIMILARITY_FLOOR`, `COVERAGE_THRESHOLD` and `SIMILARITY_SPAN` were derived here
+against ONE corpus: the career base, ranked through `match_documents` over the
+whole `documents` index. Phase 4 added a second caller with a different one.
+`POST /api/applications/[id]/rescore` scores the same requirements against the
+resume in the EDITOR — an ephemeral corpus of one document, chunked by the same
+splitter into the same 80–300 character band and compared with the same
+`openai/text-embedding-3-small` cosine similarity, but never stored and never
+ranked by pgvector.
+
+The thresholds are reused there unchanged, and the argument for reusing them is
+real: same embedding model, same units, same distance measure, so the scale is
+the same one this file measured. But an argument is not a measurement, and no
+labeled set has been run against the second corpus. Two consequences follow, and
+both are stated rather than left to a reader of the ring:
+
+1. **A change in the ring after [Re-score] is not attributable to the edit
+   alone.** Part of any delta is the change of corpus. `docs/eval/phase-4-e2e-run.txt`
+   records one run at 57% → 65% and an earlier one at 57% → 57%, and neither
+   separates the two effects, because no re-score of the UNEDITED draft was taken
+   as a baseline.
+2. **A single-document corpus is smaller and less varied than a career base**, so
+   the similarity distribution it produces may sit differently against a cut
+   derived from the other one. Whether it does is the open question.
+
+Carried as backlog `p4-11`: seed the calibration case, re-score its own generated
+draft unedited, and compare the two distributions before deciding whether the
+re-score path needs its own numbers. Until that is done, the numbers this file
+defends are defended for the scan and reused for the re-score.
+
+
 ## Why this exists
 
 Owner testing, 2026-09-03: a senior AI-quality career base (LLM evaluation,

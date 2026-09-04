@@ -83,6 +83,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /** Adding a table means adding a DAL and a line here. */
 const DAL_FILES = [
   'src/lib/db/careerItems.ts',
+  'src/lib/db/profiles.ts',
   'src/lib/db/documents.ts',
   'src/lib/db/vacancies.ts',
   'src/lib/db/applications.ts',

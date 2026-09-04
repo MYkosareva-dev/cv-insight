@@ -400,7 +400,20 @@ test.describe('scan', () => {
       await expect(
         page.getByText(RESULT.foundInItem(hidden[0].careerItemTitle)).first(),
       ).toBeVisible();
-      await expect(page.getByRole('button', { name: RESULT.copyBullet }).first()).toBeVisible();
+      /**
+       * US-3 step 4's button, as of Phase 4: it INSERTS into the tailored-resume
+       * editor and wears the label for that. Through Phase 3 it copied to the
+       * clipboard, because there was no editor — this assertion named
+       * `RESULT.copyBullet` until then.
+       *
+       * DISABLED here, and that is the point of asserting it on this scan: no
+       * version has been generated, so there is nothing to insert into, and the
+       * card says why rather than appending to a panel the app calls empty.
+       */
+      const addToResume = page.getByRole('button', { name: RESULT.addToResume }).first();
+      await expect(addToResume).toBeVisible();
+      await expect(addToResume).toBeDisabled();
+      await expect(page.getByText(RESULT.addToResumeDisabled).first()).toBeVisible();
     } else {
       await expect(page.getByText(RESULT.noHiddenMatches)).toBeVisible();
     }

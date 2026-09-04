@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { toast } from 'sonner';
+import type { ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,28 +9,42 @@ import { RESULT, SCAN } from '@/lib/copy';
 import type { CoverageEntry, CoverageStatus, KeywordRow, ParsedVacancy } from '@/lib/db/types';
 
 /**
- * The result screen's tabs (SPEC Block E, US-2 steps 3–4 and US-3).
+ * The result screen's tabs (SPEC Block E, US-2 steps 3–4, US-3, US-4).
  *
- * Analysis · Base matches · Vacancy. The Tailored-resume tab is Phase 4 —
- * `resume_versions` has no rows and no editor exists, so a fourth tab would be
- * an empty promise (declared in SPEC v2.12).
+ * Analysis · Base matches · Tailored resume · Vacancy. The fourth tab arrived
+ * with `resume_versions` in Phase 4; v2.12 omitted it because there were no rows
+ * and no editor, which would have made it an empty promise.
  *
- * Everything rendered here comes from the STORED coverage map, which is what
- * makes the screen honest about time: the score, the statuses, the item titles
- * and the keyword counts were all measured in the same run (edge case D4). No
- * career item is joined live and no chunk text was ever sent to the browser —
- * retrieved chunks are data for a model call, never echoed to the client
- * (CLAUDE.md, Retrieval).
+ * The coverage it renders is normally the STORED map, which is what makes the
+ * screen honest about time: the score, the statuses, the item titles and the
+ * keyword counts were all measured in the same run (edge case D4). A RE-SCORE
+ * replaces it with a live reading of the editor's text, and the rail says so in
+ * words — the parent owns that switch, so this component renders whatever it is
+ * given and never has to know which of the two it is looking at.
  *
- * A client component only for the tab state and the clipboard.
+ * No career item is joined live, and no career-base chunk has ever been sent to
+ * the browser: retrieved chunks are data for a model call, never echoed to the
+ * client (CLAUDE.md, Retrieval). The one text a coverage row can carry from the
+ * server is `matchedText`, which exists only on a re-score and is a line of the
+ * user's own resume, sent back to the browser that just uploaded it.
+ *
+ * Tab STATE lives in the parent, because [Add to resume] in one tab writes into
+ * the editor in another and then has to show it.
  */
 export function ResultTabs({
+  tab,
+  onTabChange,
   entries,
   keywords,
   parsed,
   rawText,
   sourceIsBase,
+  canAddToResume,
+  onAddToResume,
+  resume,
 }: {
+  tab: string;
+  onTabChange: (next: string) => void;
   entries: CoverageEntry[];
   keywords: KeywordRow[];
   /** The vacancy parse, for the Vacancy tab's requirement list. */
@@ -39,12 +52,18 @@ export function ResultTabs({
   rawText: string;
   /** True when the scan's own source WAS the career base. */
   sourceIsBase: boolean;
+  /** False until a tailored resume exists — see `BaseMatchCard`. */
+  canAddToResume: boolean;
+  onAddToResume: (entry: CoverageEntry) => void;
+  /** The editor, built by the parent so the metered actions stay in one place. */
+  resume: ReactNode;
 }) {
   return (
-    <Tabs defaultValue="analysis">
+    <Tabs value={tab} onValueChange={onTabChange}>
       <TabsList>
         <TabsTrigger value="analysis">{RESULT.tabAnalysis}</TabsTrigger>
         <TabsTrigger value="base">{RESULT.tabBaseMatches}</TabsTrigger>
+        <TabsTrigger value="resume">{RESULT.tabResume}</TabsTrigger>
         <TabsTrigger value="vacancy">{RESULT.tabVacancy}</TabsTrigger>
       </TabsList>
 
@@ -56,8 +75,15 @@ export function ResultTabs({
       </TabsContent>
 
       <TabsContent value="base">
-        <BaseMatches entries={entries} sourceIsBase={sourceIsBase} />
+        <BaseMatches
+          entries={entries}
+          sourceIsBase={sourceIsBase}
+          canAddToResume={canAddToResume}
+          onAddToResume={onAddToResume}
+        />
       </TabsContent>
+
+      <TabsContent value="resume">{resume}</TabsContent>
 
       <TabsContent value="vacancy">
         <VacancyTab parsed={parsed} rawText={rawText} />
@@ -122,9 +148,15 @@ function CoverageTable({ entries }: { entries: CoverageEntry[] }) {
                   similarity threshold and never names the term, so the cell
                   names the term instead of an item that did not prove it.
                 */}
+                {/*
+                  A re-score has no career item to name — it matched the
+                  requirement against a line of the resume in the editor — so the
+                  cell shows that line instead. Without it a covered row would
+                  read "Gap" in the cell that answers "matched against what?".
+                */}
                 {entry.missingTerm
                   ? RESULT.missingTerm(entry.missingTerm)
-                  : (entry.careerItemTitle ?? RESULT.statusGap)}{' '}
+                  : (entry.careerItemTitle ?? entry.matchedText ?? RESULT.statusGap)}{' '}
                 · {percent(entry.similarity)}
               </td>
             </tr>
@@ -201,9 +233,13 @@ function KeywordTable({ keywords }: { keywords: KeywordRow[] }) {
 function BaseMatches({
   entries,
   sourceIsBase,
+  canAddToResume,
+  onAddToResume,
 }: {
   entries: CoverageEntry[];
   sourceIsBase: boolean;
+  canAddToResume: boolean;
+  onAddToResume: (entry: CoverageEntry) => void;
 }) {
   if (sourceIsBase) {
     // Not an empty state: for this scan the status cannot exist, because the
@@ -229,26 +265,26 @@ function BaseMatches({
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       {hidden.map((entry, index) => (
-        <BaseMatchCard key={`${entry.requirement}-${index}`} entry={entry} />
+        <BaseMatchCard
+          key={`${entry.requirement}-${index}`}
+          entry={entry}
+          canAdd={canAddToResume}
+          onAdd={onAddToResume}
+        />
       ))}
     </div>
   );
 }
 
-function BaseMatchCard({ entry }: { entry: CoverageEntry }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(entry.requirement);
-      setCopied(true);
-      toast.success(RESULT.copied);
-    } catch {
-      // A denied clipboard permission or an insecure context. Told, not swallowed.
-      toast.error(RESULT.copyFailed);
-    }
-  }
-
+function BaseMatchCard({
+  entry,
+  canAdd,
+  onAdd,
+}: {
+  entry: CoverageEntry;
+  canAdd: boolean;
+  onAdd: (entry: CoverageEntry) => void;
+}) {
   return (
     <article className="border-border flex flex-col gap-2 rounded-lg border p-4">
       <p className="text-sm font-medium">{entry.requirement}</p>
@@ -258,15 +294,29 @@ function BaseMatchCard({ entry }: { entry: CoverageEntry }) {
       <div className="flex items-center justify-between gap-3">
         <Badge variant="primary">{percent(entry.similarity)}</Badge>
         {/*
-          Labelled for what it DOES. `RESULT.addToResume` is US-3 step 4's
-          promise to insert the bullet into the tailored-resume editor, and that
-          editor arrives in Phase 4 — reusing the label now would name an action
-          the app does not perform.
+          US-3 step 4, as of Phase 4: it INSERTS into the tailored-resume editor.
+          Through Phase 3 it copied to the clipboard and wore a label saying so,
+          because the editor did not exist; now the button performs the promise
+          and carries the name of it.
+
+          DISABLED, with a reason, until a resume exists. Appending to an editor
+          the same screen describes as empty would be an insertion into nothing,
+          and a second label for a second action would make one button mean two
+          things.
         */}
-        <Button variant="outline" size="sm" onClick={copy}>
-          {copied ? RESULT.copied : RESULT.copyBullet}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onAdd(entry)}
+          disabled={!canAdd}
+          title={canAdd ? undefined : RESULT.addToResumeDisabled}
+        >
+          {RESULT.addToResume}
         </Button>
       </div>
+      {canAdd ? null : (
+        <p className="text-muted-foreground text-xs">{RESULT.addToResumeDisabled}</p>
+      )}
     </article>
   );
 }

@@ -53,6 +53,25 @@ export const PRIVACY_ERASURE = {
 export const NO_SCORE = '—';
 
 /**
+ * The NAME line of a generated resume when the user has not saved a display name
+ * (SPEC v2.17).
+ *
+ * A VISIBLE PLACEHOLDER, never a substituted value. The career base holds no
+ * person's name — P4 splits an imported resume into items and the heading
+ * becomes part of none of them — so the generator has nothing to write there,
+ * and owner testing found it writing the vacancy's job title instead: a .docx
+ * that reaches an employer with "Data Annotator" where the candidate's name
+ * belongs, which is what an ATS parser reads as the name.
+ *
+ * Square brackets and capitals because the one thing this must not do is look
+ * finished. An exported file carrying it is obviously incomplete at a glance, in
+ * the document itself and not only in a toast the user has already dismissed —
+ * which is the difference between a reminder and a document that quietly goes
+ * out wrong.
+ */
+export const NAME_PLACEHOLDER = '[YOUR NAME]';
+
+/**
  * App-level error boundary (src/app/error.tsx). Deliberately says nothing about
  * WHAT failed: a thrown error can carry resume or vacancy text in its message,
  * and that must never be rendered or logged (CLAUDE.md, Privacy). Per-screen
@@ -138,6 +157,15 @@ export const RESUME_PASTE_PLACEHOLDER = 'Paste your resume text here.';
  */
 export const VACANCY_LENGTH = 'Vacancy text must be between 100 and 20000 characters.';
 
+/**
+ * Edge case D7's remedy, said once. A base with items but zero index entries
+ * matches nothing, and both the scan screen (before a scan) and the generate
+ * button (before a tailored resume) have to name the same fix — a second copy of
+ * the words is a second place for them to drift.
+ */
+const baseNotIndexedCopy =
+  'Your career base is not searchable yet — open an item and save it to rebuild the search index.';
+
 /** PDF upload ceiling, in bytes (Block F / edge case L5). 413 before any parsing. */
 export const MAX_PDF_BYTES = 5 * 1024 * 1024;
 
@@ -198,10 +226,18 @@ export const SCAN = {
     'This resume is very long — only its first 15,000 characters were used for the match.',
   /**
    * `resumeSource: 'resume_version'` is a valid value of the Block C CHECK
-   * constraint whose rows do not exist yet (`resume_versions` lands in Phase 4),
-   * so the endpoint refuses it with words instead of a Zod shape error.
+   * constraint that this app does not offer as a scan source. The endpoint
+   * refuses it with words instead of a Zod shape error.
+   *
+   * REWORDED IN v2.16, because the sentence it replaced ("Saved resume versions
+   * arrive with the tailored-resume editor") named a milestone that has now
+   * arrived: `resume_versions` has rows from Phase 4 onward, and copy promising
+   * a thing that has shipped while the source is still refused is copy saying
+   * the opposite of the truth. The tab is still not built — deferred, and
+   * declared as deferred — so what the string says now is what the app does.
    */
-  savedVersionUnavailable: 'Saved resume versions arrive with the tailored-resume editor.',
+  savedVersionUnavailable:
+    'Scanning a saved tailored resume is not available — paste its text instead.',
   /**
    * The re-run is for a draft whose analysis never completed. Re-analysing a
    * finished scan would replace the numbers that run measured while its date
@@ -215,8 +251,7 @@ export const SCAN = {
    * and "Using all N items of your base" would then be the app promising a
    * search it cannot perform.
    */
-  baseNotIndexed:
-    'Your career base is not searchable yet — open an item and save it to rebuild the search index.',
+  baseNotIndexed: baseNotIndexedCopy,
 } as const;
 
 export const CAREER = {
@@ -439,12 +474,24 @@ export const RESULT = {
    */
   baseIsSource: 'Your career base is the source — every base match is already in scope.',
   /**
-   * NOT `addToResume`. That string is US-3 step 4's promise to insert a bullet
-   * into the tailored-resume editor, and the editor is Phase 4 — a button
-   * labelled for an action the app does not perform is copy describing a state
-   * the user is not in. This label says what the button does today.
+   * v2.12 shipped `copyBullet` because the editor `addToResume` names did not
+   * exist yet. It does now, so the button performs US-3 step 4 and wears the
+   * label for it — the two constants are kept apart rather than merged, since
+   * they name two different actions and only one of them is still wired.
    */
   copyBullet: 'Copy to clipboard',
+  /**
+   * KEPT AND UNWIRED, for the same reason and on the same terms as `copyBullet`
+   * above — declared here rather than left to be rediscovered, which is the
+   * distinction Phase 3 drew when it DELETED unreachable constants a branch had
+   * just added and KEPT `APPLICATIONS.loadFailed` because its state was real.
+   *
+   * These two are one pair: `copyBullet` is the button and `copied` / `copyFailed`
+   * are its two outcomes. Deleting only the middle of a three-part mechanism would
+   * leave a label and a failure message for a success nobody could report, so if
+   * the clipboard path is ever wired again it is wired with all three, and if it is
+   * ever abandoned all three go together.
+   */
   copied: 'Copied to your clipboard.',
   copyFailed: 'Could not copy — select the text instead.',
   vacancyRawHeading: 'Job posting',
@@ -479,6 +526,180 @@ export const RESULT = {
   addToResume: 'Add to resume',
   qualityCheckFailed: 'Quality check failed — try again.',
   exportFailed: 'Export failed — try again.',
+
+  // --- Phase 4: the tailored-resume tab, the judge card, re-score, export ---
+  tabResume: 'Tailored resume',
+  editorLabel: 'Tailored resume',
+  /**
+   * US-3 step 4 inserts into the editor, and there is no editor until a version
+   * exists. The button is DISABLED with this hint rather than quietly appending
+   * to a panel the same screen says is empty, and rather than wearing a second
+   * label for a second action — one button, one promise, and an honest reason
+   * when it cannot be kept yet.
+   */
+  addToResumeDisabled: 'Generate a tailored resume first, then add this to it.',
+  addedToResume: 'Added to your tailored resume.',
+  /**
+   * The bullet [Add to resume] actually inserts. US-3 step 3's "ready-to-insert
+   * bullet phrased for this vacancy" is NOT what this is: phrasing one needs
+   * either a second metered call or the retrieved chunk's text, and chunks never
+   * reach the client (CLAUDE.md, Retrieval). So the inserted line states the
+   * requirement and names the career item that covers it — both of which the
+   * screen already holds — and the user edits it into their own words. Declared
+   * rather than dressed up as the feature.
+   */
+  insertedBullet: (requirement: string, item: string | null) =>
+    item ? `- ${requirement} (from: ${item})` : `- ${requirement}`,
+
+  /**
+   * A resume can only be tailored to a posting the app has PARSED: with no
+   * requirements there is nothing to write against, and the generator would be
+   * asked to tailor to nothing. Distinct from `notAnalysed`, which describes the
+   * scan; this names what the BUTTON cannot do and points at the remedy on the
+   * same screen.
+   */
+  generateNeedsAnalysis: 'Run the analysis first — there is nothing to tailor to yet.',
+  /**
+   * Edge case D7 on the generation path. The retrieval found no career chunks,
+   * so every claim in a generated resume would be ungrounded by construction and
+   * the reviewer would reject all of them — a Sonnet call spent to produce
+   * something the app is about to refuse. Refused before the spend instead, with
+   * the same remedy `SCAN.baseNotIndexed` names.
+   */
+  generateNeedsBase: baseNotIndexedCopy,
+
+  /**
+   * NO ELLIPSIS, unlike its three siblings below, and the difference is the
+   * point: `<BusyDots />` renders three PULSING dots after this label, and a
+   * static "…" beside them would read as six dots, three of them dead.
+   *
+   * Only the generate button gets the motion. It is the one that runs for the
+   * better part of a minute — a re-score, a quality check and an export are all
+   * seconds — and owner testing found a dimmed button with a changed label
+   * indistinguishable from a hung one over that span.
+   */
+  generating: 'Generating',
+  /** US-4 step 1: the progress text cycles while the pipeline runs. */
+  generateSteps: ['Retrieving your experience…', 'Writing…', 'Quality check…'] as const,
+  rescoring: 'Re-scoring…',
+  checkingQuality: 'Checking quality…',
+  exporting: 'Preparing…',
+
+  // --- the judge card (US-4 step 3, prompt P3's four criteria) ---
+  judgeHeading: 'Quality check',
+  criterionGrounding: 'Grounding',
+  criterionKeywords: 'Keyword coverage',
+  criterionRelevance: 'Relevance',
+  criterionAts: 'ATS format',
+  groundingPassed: 'Passed',
+  groundingFailed: 'Failed',
+  criterionScore: (score: number) => `${score}/5`,
+  /**
+   * The judge's own words for a criterion, shown under it. Kept as a labelled
+   * list rather than free prose so a reader can tell the app's copy from the
+   * model's output — the model wrote the text after the colon, and nothing after
+   * it is ever treated as an instruction.
+   */
+  violationsHeading: 'Unsupported claims',
+  /**
+   * The terms the reviewer says the base supports AND the base literally
+   * contains — every one of them checked with `keywordPresent`, the same
+   * function rule B1's lexical gate uses (SPEC v2.17).
+   *
+   * The check is not belt-and-braces. Owner testing found this section listing
+   * Labelbox, Supervisely, MS Office and Google Suite on a screen that said
+   * `no mention of "Labelbox"` two blocks above: the page asserting both that
+   * the base lacks a term and that the base supports it, with the second
+   * assertion telling the user to write it into their resume. That is the
+   * keyword stuffing this phase removed from P2, arriving through the reviewer
+   * instead of the writer.
+   */
+  missingHonestHeading: 'Supported by your base, missing from the resume',
+  /**
+   * The other half of that split, and it needs its own words. These terms are
+   * asked for by the posting and are NOT in the career base, so the honest thing
+   * to say is that they are gaps — not suggestions. The hint exists because the
+   * heading alone, in a card full of "add these" material, would still read as
+   * an invitation.
+   */
+  notInBaseHeading: 'Asked for by the posting, and not in your career base',
+  notInBaseHint:
+    'These are gaps, not suggestions. Add one to your career base only if you have really done it — never straight into this resume.',
+  atsIssuesHeading: 'Formatting issues',
+  /**
+   * The version was generated and the quality check did NOT run — the daily cap
+   * refused it, or the model was unavailable. Distinct from a judge that ran and
+   * approved: one is a measurement, the other is its absence, and the card must
+   * not show four green rows for a review nobody performed.
+   */
+  judgeNotRun:
+    'Your resume was saved, but the quality check did not run. Use [Check quality] to review it.',
+  /**
+   * Rule B3's revision was EARNED and could not be written: the reviewer refused
+   * the draft and listed nothing to fix. Regenerating against that would be a
+   * paid call carrying no information — a generic "try again" — so it does not
+   * happen, and the card says so rather than showing a bare "revise".
+   */
+  reviseWithoutFindings:
+    'The reviewer flagged this draft without saying what to change, so it was not rewritten.',
+  /**
+   * The revision ran and did NOT beat the original, so the editor opens with the
+   * first draft (Block D #5: "return the best version anyway"). Without this the
+   * "Auto-revised once" badge would sit above the pre-revision text with nothing
+   * explaining which of the two the reader is looking at.
+   */
+  revisionNotBetter: 'The rewrite did not improve on the first draft, so this is the first draft.',
+  versionsHeading: 'Versions',
+  versionLabel: { ai: 'AI draft', ai_revision: 'AI revision', user: 'Your edit' },
+  /**
+   * A version the reviewer approved, and one it did not. Not "Failed": rule B2's
+   * grounding failure and a criterion scoring 2 both land on `revise`, and only
+   * one of them is a factual problem — the row says the verdict, and the card
+   * above says which of the four criteria produced it.
+   */
+  versionApproved: 'Approved',
+  versionNeedsWork: 'Needs work',
+
+  // --- re-score (US-5 step 2) ---
+  /**
+   * A re-score measures the text in the EDITOR, which is not saved anywhere. The
+   * ring is showing a live reading of an unsaved draft, and saying so is what
+   * keeps it from reading as the stored scan result — the number the scan
+   * measured is still the one on the row, and it comes back on reload.
+   */
+  rescoredLabel: 'Live score for the text in the editor — not saved.',
+  rescoredRevert: 'Show the original scan',
+  rescoreFailed: 'Could not re-score — try again.',
+  /**
+   * A re-score matches the requirements against the resume in the EDITOR, not
+   * against the career base, so the "Best match" column names the user's own
+   * line. The scan's explainer describes a different measurement and would be
+   * wrong here.
+   */
+  rescoredExplainer:
+    'Must-have requirements are matched against the resume in the editor (60%); vacancy keywords are counted in the same text (40%).',
+  /**
+   * The 100-character FLOOR, which used to borrow `emptyEditor` and therefore
+   * told a user with a 50-character paste that their text was empty. It was not:
+   * it was short. This app tells four sign-in outcomes and three retrieval
+   * outcomes apart on exactly that principle, and a bound the schema enforces
+   * deserves a sentence of its own as much as the ceiling below does.
+   */
+  resumeTooShort: 'A resume needs at least 100 characters.',
+  resumeTooLong: 'A resume is limited to 15000 characters.',
+  savedUserVersion: 'Your edited version was saved.',
+  /**
+   * The export went out with the name placeholder still in it. Said as a WARNING
+   * on a completed download rather than as a refusal: the file is the user's and
+   * blocking it would be the app deciding what they may send, but leaving it
+   * silent would let a resume reach an employer with "[YOUR NAME]" at the top
+   * because nobody mentioned it.
+   */
+  exportedWithPlaceholderName:
+    'Downloaded — but the name line still reads [YOUR NAME]. Replace it, or save your name in Settings.',
+  /** In the editor, where the placeholder is still on screen and still editable. */
+  namePlaceholderNotice:
+    'Replace [YOUR NAME] with your own, or save it once in Settings and the next resume uses it.',
 } as const;
 
 export const APPLICATIONS = {
@@ -541,6 +762,45 @@ export const QUALITY = {
 export const SETTINGS = {
   title: 'Settings',
   emailLabel: 'Email',
+
+  /**
+   * The display name (SPEC v2.17, Block E). One optional field, and the copy has
+   * to earn the asking: it says what the name is FOR, which is the only reason a
+   * resume tool has to hold one.
+   *
+   * OPTIONAL IN WORDS as well as in the schema. The app works without it — the
+   * resume gets a placeholder the user replaces — and a field that looks
+   * required collects personal data from people who would rather not give it.
+   */
+  displayNameLabel: 'Your name',
+  displayNameHint:
+    'Optional. Used as the name line on resumes you generate, and in the file name when you download one. Leave it empty and the resume asks you to fill the name in yourself.',
+  displayNamePlaceholder: 'e.g. Mira Steinberg',
+  displayNameSave: 'Save name',
+  displayNameSaving: 'Saving…',
+  displayNameSaved: 'Name saved.',
+  displayNameCleared: 'Name removed.',
+  displayNameFailed: 'Could not save your name — try again.',
+  /**
+   * The READ failed, which is not the same as having no name saved — and the
+   * difference matters, because an empty field with no explanation reads as "the
+   * app forgot my name". Said inline, on a page that still renders: a Settings
+   * screen that 500s because one optional field could not load is out of all
+   * proportion to the field, and it takes the route's prefetch down with it,
+   * which was observed breaking navigation across the whole app.
+   */
+  displayNameLoadFailed:
+    'Could not load your saved name, so the field below is blank — it may not be empty. Saving a name will still work.',
+  displayNameTooLong: 'A name is limited to 120 characters.',
+  /**
+   * The action ran without a verified session. Its OWN outcome, not
+   * `displayNameFailed`: "try again" is advice that can never work here, and
+   * this app tells three retrieval outcomes and four sign-in outcomes apart for
+   * the same reason. Unreachable through the UI — the layout has already
+   * verified the session — but a Server Action is a public endpoint.
+   */
+  displayNameSignedOut: 'Your session has expired — sign in again to save your name.',
+
   dangerZone: 'Danger zone',
   deleteAccount: 'Delete account and data',
   /**
@@ -614,6 +874,31 @@ export const ERROR_CODES = {
 
 export const ERROR_MESSAGES = {
   DAILY_LIMIT: 'Daily AI limit reached (50 calls). Try again tomorrow.',
+  /**
+   * Rule B7a, the re-score ceiling. 429 DAILY_LIMIT like rule B7, because a quota
+   * is what was reached — a second error CODE would say the same thing to a client
+   * that already handles this one, and Block D would grow a row for it.
+   *
+   * IT DOES NOT NAME THE NUMBER, and B7's message does. B7 caps chat calls one for
+   * one with the actions the user took, so "(50 calls)" is a number they can count.
+   * B7a caps embedding REQUESTS, and one re-score is 2 to 7 of them depending on
+   * how long the posting and the resume are — so naming 100 would invite a user
+   * who clicked thirty times to conclude the app had miscounted.
+   *
+   * It names what still works instead, because nothing about this cap costs the
+   * user their edit: [Download .docx] makes no embeddings call, and it is the path
+   * that turns the draft in the editor into a saved version.
+   */
+  RESCORE_LIMIT: 'Daily re-score limit reached. Try again tomorrow — [Download .docx] still works.',
+  /**
+   * 409 for a second generate while the first is still running (Block D #5).
+   *
+   * It names WAITING as the remedy, because that is the true one: the first run
+   * is still going and will save its version. Offering "try again" would invite
+   * the duplicate spend the lock exists to refuse.
+   */
+  ALREADY_RUNNING:
+    'A tailored resume is already being generated for this application — wait for it to finish.',
   VACANCY_LENGTH,
   /**
    * The 502 body for any step (SPEC v2.10). Deliberately NOT `SCAN.aiUnavailable`,

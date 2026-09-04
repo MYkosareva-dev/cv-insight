@@ -83,3 +83,60 @@
     @apply bg-background text-foreground;
   }
 }
+
+/**
+ * The busy indicator on the generate button (SPEC v2.17).
+ *
+ * Owner testing: [Generate tailored resume] dims and reads "Generating" for the
+ * better part of a minute with nothing moving, so there is no way to tell the
+ * app from a hung one. A disabled button and a changed label are both STATES;
+ * neither is a sign of life, and a minute is long enough that the difference
+ * matters.
+ *
+ * Three dots, pulsing in sequence. Deliberately not a spinner — the button is
+ * short and already carries an icon, and a second rotating thing beside it reads
+ * as decoration. CSS only: no dependency, and nothing outside the button.
+ *
+ * REDUCED MOTION GETS A STATIC FALLBACK, not nothing. `animation: none` alone
+ * would leave the dots at their animated starting opacity, which is a row of
+ * barely-visible smudges; the fallback paints all three at full opacity, so the
+ * label still reads "Generating..." and the state is still legible to someone
+ * who has asked the machine to stop moving.
+ */
+@keyframes cv-dot-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+.cv-dots {
+  display: inline-flex;
+  gap: 0.15em;
+  /* Reserves its own width so the label does not shift as the dots pulse. */
+  margin-inline-start: 0.1em;
+}
+
+.cv-dots > span {
+  animation: cv-dot-pulse 1.4s ease-in-out infinite;
+  opacity: 0.25;
+}
+
+.cv-dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.cv-dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv-dots > span {
+    animation: none;
+    opacity: 1;
+  }
+}

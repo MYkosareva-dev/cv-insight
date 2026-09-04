@@ -4,8 +4,8 @@ import { NextResponse } from 'next/server';
 
 import { requireApiUser } from '@/lib/auth/requireApiUser';
 import { runChatJson } from '@/lib/chat';
-import { titleOf } from '@/lib/chunking';
 import { ERROR_MESSAGES, FILE_TOO_LARGE, MAX_PDF_BYTES, NOT_PDF, SCAN } from '@/lib/copy';
+import { careerBaseCorpus, scoreAgainstCorpus } from '@/lib/coverage';
 import { listCareerItems } from '@/lib/db/careerItems';
 import {
   getApplication,
@@ -13,7 +13,7 @@ import {
   updateApplication,
 } from '@/lib/db/applications';
 import { getVacancy, insertVacancy, setVacancyParsed } from '@/lib/db/vacancies';
-import type { Application, CoverageEntry, KeywordRow, ParsedVacancy } from '@/lib/db/types';
+import type { Application, ParsedVacancy } from '@/lib/db/types';
 import {
   AiUnavailableError,
   FileTooLargeError,
@@ -24,13 +24,6 @@ import {
 } from '@/lib/errors';
 import { extractPdfText } from '@/lib/pdf';
 import { P1_PARSE_VACANCY, fillPrompt } from '@/lib/prompts';
-import {
-  coverageStatusFor,
-  keywordCount,
-  literalKeywords,
-  matchScore as computeMatchScore,
-} from '@/lib/scoring';
-import { matchDocumentsForTexts, type SearchedOutcome } from '@/lib/retrieval';
 import {
   isPdfUpload,
   isRescanBody,
@@ -172,55 +165,32 @@ async function parseAndScore(plan: ScanPlan) {
     await setVacancyParsed(plan.vacancyId, vacancy);
 
     /**
-     * Rule B1a's literal-span guard (SPEC v2.13), applied AFTER Zod and BEFORE
-     * anything counts or renders. A keyword the vacancy does not contain would
-     * render an "In vacancy" count of 0 — the app measuring the absence of a
-     * term it says it found — and would drag K down for a requirement the
-     * posting never made. The drop is recorded, not silent: `keywordsDropped`
-     * rides along in the coverage map, so a parser that starts generalizing is
-     * visible in the data rather than only in the owner's reading of a table.
+     * RULE B1, THROUGH THE SHARED MODULE. The keyword guard, the lexical gate,
+     * the three statuses and the 60/40 weighting all live in `lib/coverage.ts`
+     * from v2.16, because `/api/applications/[id]/rescore` computes the same map
+     * against a different corpus. Two copies of a CALIBRATED rule would be two
+     * things free to drift a hundredth apart while
+     * `docs/eval/coverage-thresholds.md` described only one of them.
+     *
+     * The corpus here is the CAREER BASE — the body of text the retrieval
+     * searched, and therefore the one rule B1's lexical gate reads (SPEC v2.15).
+     * `sourceIsBase` decides whether US-3's hidden-match status can exist at all.
      */
-    const { kept: vacancyKeywords, dropped } = literalKeywords(
-      plan.vacancyText,
-      vacancy.keywords,
-    );
-    if (dropped.length > 0) {
-      // Metadata only: the count, and the step it came from. Never the vacancy
-      // text, and never the dropped spans — they are fragments of the posting.
-      console.warn('[scan] dropped non-literal keywords from the parse', {
-        step: 'parse_vacancy',
-        dropped: dropped.length,
-        kept: vacancyKeywords.length,
-      });
-    }
-
-    const keywords: KeywordRow[] = vacancyKeywords.map((keyword) => ({
-      keyword,
-      inResume: keywordCount(plan.sourceText, keyword),
-      inVacancy: keywordCount(plan.vacancyText, keyword),
-    }));
-
-    const { entries, termsDropped } = await coverageFor(vacancy, plan);
-
-    const matchScore = computeMatchScore({
-      // The TOTAL from the parse, not the number of MUST requirements: a
-      // nice-only posting scores round(100 × K) rather than "—" (rule B1).
-      requirementCount: vacancy.requirements.length,
-      mustBestSimilarities: entries
-        .filter((entry) => entry.kind === 'must')
-        .map((entry) => entry.similarity),
-      resumeText: plan.sourceText,
-      // K is counted over the KEPT keywords: a phantom keyword is not a
-      // requirement the resume failed to meet.
-      keywords: vacancyKeywords,
+    const { matchScore, coverage } = await scoreAgainstCorpus({
+      vacancy,
+      vacancyText: plan.vacancyText,
+      sourceText: plan.sourceText,
+      corpus: careerBaseCorpus({
+        baseText: plan.baseText,
+        corpusIsSource: plan.sourceIsBase,
+        applicationId: plan.applicationId,
+      }),
+      // This endpoint's own message: the draft row already exists, which is what
+      // makes "Your vacancy was saved — retry from Applications." a true
+      // sentence here and a lie on an endpoint that saves nothing.
+      aiUnavailableMessage: SCAN.aiUnavailable,
     });
 
-    const coverage = {
-      entries,
-      keywords,
-      keywordsDropped: dropped.length,
-      termsDropped,
-    };
     const committed = await updateApplication(plan.applicationId, { matchScore, coverage });
     if (!committed) {
       // The row was inserted moments ago under this same session, so a miss here
@@ -231,129 +201,12 @@ async function parseAndScore(plan: ScanPlan) {
     return { vacancy, matchScore, coverage };
   } catch (err) {
     /**
-     * The draft row already exists, which is what makes the Block E toast
-     * ("Your vacancy was saved — retry from Applications.") a true sentence
-     * here. `ERROR_MESSAGES.AI_UNAVAILABLE` is the message for endpoints where
-     * nothing was saved, so it is replaced rather than passed through.
+     * The parse's own AI failures still get the endpoint's message. The coverage
+     * module already raises with it, so this covers the chat half.
      */
     if (err instanceof AiUnavailableError) throw new AiUnavailableError(SCAN.aiUnavailable);
     throw err;
   }
-}
-
-/**
- * One coverage entry per requirement (edge cases D4, D7).
- *
- * The career item is DENORMALIZED on write — its title, taken from the chunk's
- * own first line, and its id. The result page never joins live, so deleting an
- * item later leaves the historical coverage intact (D4). Chunk TEXT never leaves
- * this function: retrieved chunks are data for a model call, never echoed to the
- * client (CLAUDE.md, Retrieval).
- */
-async function coverageFor(
-  vacancy: ParsedVacancy,
-  plan: ScanPlan,
-): Promise<{ entries: CoverageEntry[]; termsDropped: number }> {
-  // N4: nothing to search for, so nothing is embedded and nothing is spent. The
-  // empty map is a MEASURED result — "we parsed the posting and it stated no
-  // requirements" — which the result screen renders with its own notice, and
-  // which is a different thing from `coverage: null` ("the analysis never ran").
-  if (vacancy.requirements.length === 0) return { entries: [], termsDropped: 0 };
-
-  const outcome = await matchDocumentsForTexts(vacancy.requirements.map((r) => r.text));
-  if (outcome.status === 'could_not_search') {
-    // The third outcome. Never rendered as gaps — the scan fails and the row
-    // stays a draft the user can re-run.
-    console.error('[scan] match run failed', { error: outcome.error });
-    throw new AiUnavailableError(SCAN.aiUnavailable);
-  }
-
-  let termsDropped = 0;
-
-  const entries = vacancy.requirements.map((requirement, index) => {
-    const best = bestChunk(outcome.outcomes[index]);
-
-    /**
-     * RULE B1a APPLIED TO `terms`, not only to `keywords` (architect finding on
-     * the v2.15 diff). P1 is told to copy terms verbatim and a prompt is not a
-     * guarantee — v2.13 exists because it returned "Quality assurance" for a
-     * posting saying "quality checks". A generalized term is worse here than it
-     * was there: an incoherent keywords row only misinformed, while a term the
-     * posting never used FLIPS a coverage status, and it flips it toward the
-     * false gap this round was built to remove.
-     *
-     * Same guard, same boundary rule, same conservative direction: a term the
-     * VACANCY does not contain is dropped, and a requirement left with no terms
-     * withholds the gate entirely rather than refusing on an empty search.
-     */
-    const { kept: literalTerms, dropped } = literalKeywords(
-      plan.vacancyText,
-      requirement.terms ?? [],
-    );
-    termsDropped += dropped.length;
-    const similarity = best?.similarity ?? 0;
-    const { status, missingTerm } = coverageStatusFor({
-      bestSimilarity: similarity,
-      keyword: requirement.keyword,
-      sourceText: plan.sourceText,
-      sourceIsBase: plan.sourceIsBase,
-      // v2.15: what would prove this requirement, and the corpus that decides —
-      // the BASE, not the scored source. A vacancy parsed before v2.15 carries
-      // neither field and reads as `general`, i.e. the pre-gate behaviour.
-      evidence: requirement.evidence,
-      terms: literalTerms,
-      baseText: plan.baseText,
-    });
-    // A gap keeps the similarity it measured but names no item: the best chunk
-    // did NOT cover the requirement, and printing its title beside a gap would
-    // suggest it did (SPEC Block D's own example does the same). That holds for
-    // a lexical gap too — the chunk was topically close and still did not prove
-    // the requirement, so naming it would be the same overclaim.
-    const attributed = status === 'gap' ? null : best;
-    return {
-      requirement: requirement.text,
-      kind: requirement.kind,
-      status,
-      careerItemId: attributed?.careerItemId ?? null,
-      careerItemTitle: attributed ? titleOf(attributed.content) : null,
-      similarity,
-      missingTerm,
-    };
-  });
-
-  if (termsDropped > 0) {
-    // Metadata only: counts, never the dropped spans — they are fragments of
-    // the posting.
-    console.warn('[scan] dropped non-literal requirement terms from the parse', {
-      step: 'parse_vacancy',
-      dropped: termsDropped,
-    });
-  }
-
-  return { entries, termsDropped };
-}
-
-/**
- * The highest-scoring chunk of a searched outcome, or null when the search found
- * nothing.
- *
- * `match_documents` already orders by distance, so this is a re-assertion rather
- * than a fix — cheap, and it means the "best match" column cannot silently
- * become "first row the RPC happened to return" if that ordering ever changes.
- */
-function bestChunk(outcome: SearchedOutcome | undefined) {
-  /**
-   * A MISSING outcome is not "found nothing". The gate guarantees one outcome
-   * per query and refuses the whole run otherwise, so this cannot happen — and
-   * if it ever does, returning null here would turn a requirement nobody
-   * searched into a measured zero and a gap, which is the exact hole the
-   * run-level outcome type exists to close.
-   */
-  if (!outcome) throw new ServerError();
-  if (outcome.status === 'found_nothing') return null;
-  return outcome.chunks.reduce((best, chunk) =>
-    chunk.similarity > best.similarity ? chunk : best,
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -545,7 +398,7 @@ async function resolveSource(
   if (resumeSource === 'career_base') {
     const items = await listCareerItems();
     if (items.length === 0) throw new ValidationError(SCAN.emptyBase);
-    const base = careerBaseCorpus(items);
+    const base = careerBaseText(items);
     // One query: for this source the scored text IS the base corpus.
     return { text: base, isBase: true, baseText: base };
   }
@@ -566,18 +419,18 @@ async function resolveSource(
   return {
     text: sourceResumeText,
     isBase: false,
-    baseText: careerBaseCorpus(await listCareerItems()),
+    baseText: careerBaseText(await listCareerItems()),
   };
 }
 
 /**
- * The career base as one searchable body of text: every item's title and
- * content, in the order the DAL returns them.
+ * The career base as one body of text: every item's title and content, in the
+ * order the DAL returns them.
  *
  * One definition, used for both jobs it has — the text a career-base scan is
  * scored against, and the corpus rule B1's lexical gate searches. Two spellings
  * of "the base as text" would be two things to keep in step.
  */
-function careerBaseCorpus(items: { title: string; content: string }[]): string {
+function careerBaseText(items: { title: string; content: string }[]): string {
   return items.map((item) => `${item.title}\n${item.content}`).join('\n\n');
 }

@@ -7,7 +7,8 @@ job posting the app: parses the vacancy into structured requirements, computes a
 ATS-style semantic match score against the career base (pgvector), shows keyword
 gaps and hidden matches from the base, generates a tailored resume grounded ONLY
 in the user's real experience, and evaluates every generated resume with a
-rubric-based LLM judge before showing it.
+rubric-based LLM judge before showing it, or says plainly that the check did
+not run.
 
 ## Why the app is pointless without AI
 Remove the LLM and embeddings and all that remains is a notepad of resume text.
@@ -135,7 +136,7 @@ SPEC.md, then anything else.
 - **One DAL per table, and DALs are the only files allowed to call `.from()`.**
   `lib/db/careerItems.ts`, `lib/db/documents.ts`, `lib/db/vacancies.ts`,
   `lib/db/applications.ts`, `lib/db/resumeVersions.ts`, `lib/db/llmCalls.ts`,
-  `lib/db/imports.ts`.
+  `lib/db/imports.ts`, `lib/db/profiles.ts`.
   `scripts/check.mjs` is driven by that list: `.from(` in any file that is not a
   listed DAL is a FAIL. Adding a table means adding a DAL and a line there.
 - **RLS is least-privilege: absent policies are deliberate.** Policy matrix
@@ -143,9 +144,12 @@ SPEC.md, then anything else.
   career_items S/I/U/D · documents S/I/D (no UPDATE — see Embeddings) ·
   vacancies S/I/U · applications S/I/U · resume_versions S/I (append-only) ·
   llm_calls S/I (append-only audit log) · imports S/I/U (no DELETE — deleting a
-  source would strip provenance from every item pointing at it). Do not add a
-  missing policy without an owner amendment. FK `ON DELETE CASCADE` still cleans
-  children on account deletion — cascades are not blocked by RLS.
+  source would strip provenance from every item pointing at it) · profiles S/I/U
+  (no DELETE — the row dies with the account through the cascade from auth.users,
+  so a delete policy would only add a way to lose a profile without losing the
+  account). Do not add a missing policy without an owner amendment. FK
+  `ON DELETE CASCADE` still cleans children on account deletion — cascades are
+  not blocked by RLS.
 - `resume_versions` is append-only by design: an edit produces a NEW version,
   never mutates an old one. Do not add update or delete paths.
 - Every `llm_calls` row is written fire-and-forget: a log-write failure must

@@ -1,6 +1,24 @@
 import 'server-only';
 
-/** Row shapes for the seven owned tables: `001_init.sql` plus `imports` from `003_imports.sql`. */
+/**
+ * Row shapes for the eight owned tables: `001_init.sql`, plus `imports` from
+ * `003_imports.sql` and `profiles` from `004_profiles.sql`.
+ */
+
+/**
+ * The user's own display name (SPEC v2.17, migration 004).
+ *
+ * One row per account, keyed BY the account. `display_name` is NULLABLE and the
+ * app is built for that: a name is personal data, so it is asked for and never
+ * required, and every reader treats "not set" as a normal state rather than as
+ * a missing value to substitute around.
+ */
+export type Profile = {
+  user_id: string;
+  display_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 export type CareerItemType =
   | 'role'
@@ -115,6 +133,30 @@ export type CoverageEntry = {
    * another.
    */
   missingTerm?: string | null;
+  /**
+   * The line of the SCORED TEXT that matched, for a coverage map whose corpus is
+   * not the career base (SPEC v2.16).
+   *
+   * `/api/applications/[id]/rescore` measures the requirements against the
+   * resume in the editor, so there is no career item to name and
+   * `careerItemTitle` is null — but the "Best match" cell still has to answer
+   * "matched against what?", and leaving it blank would render as a gap beside a
+   * status that says Covered. This carries the answer for that path: the user's
+   * own edited line, echoed back to the browser it came from in the same
+   * request.
+   *
+   * NEVER A CAREER-BASE CHUNK: retrieved chunks are data for a model call and
+   * are never echoed to the client (CLAUDE.md, Retrieval), so on the scan path
+   * this is always `null`.
+   *
+   * It IS written to the database — the scan builds every entry through the same
+   * function and `updateApplication` stores the map — with a null on every row.
+   * That is worth stating precisely rather than as "it never reaches the
+   * database", which was the earlier and wrong version of this note: what makes
+   * the field safe is that the only path that ever fills it is the re-score, and
+   * the re-score stores nothing.
+   */
+  matchedText?: string | null;
 };
 
 /**

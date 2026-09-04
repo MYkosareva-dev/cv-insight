@@ -23,7 +23,15 @@ const COPY = {
   emailTaken: 'An account with this email already exists.',
   accountDeleted: 'Your account and the data you created were deleted.',
   deleteAccount: 'Delete account and data',
+  // SPEC v2.17, the display-name field on this same screen.
+  displayNameLabel: 'Your name',
+  displayNameSave: 'Save name',
+  displayNameSaved: 'Name saved.',
+  displayNameFailed: 'Could not save your name — try again.',
 } as const;
+
+/** The fictional persona's own name (SPEC Block B). Synthetic data only. */
+const DISPLAY_NAME = 'Mira Steinberg';
 
 const password = 'phase-1-e2e-password';
 
@@ -300,6 +308,42 @@ test.describe('auth', () => {
     await signUp(page, email);
 
     await page.goto('/settings');
+
+    /**
+     * SAVE A DISPLAY NAME FIRST, so the deletion has a `profiles` row to remove
+     * (SPEC v2.17).
+     *
+     * /privacy promises the display name "is deleted along with everything else
+     * when you delete your account", and CLAUDE.md's erasure rule says the claim
+     * is verified by test. Deleting an account that never wrote a profile row
+     * proves the cascade for seven tables and says nothing about the eighth.
+     *
+     * Behind the same probe as the display-name spec: without migration 004 there
+     * is no table to write to, and the name is skipped rather than failing —
+     * which leaves the rest of this test doing exactly what it did before.
+     */
+    const nameField = page.getByLabel(COPY.displayNameLabel);
+    if (await nameField.isVisible().catch(() => false)) {
+      await nameField.fill(DISPLAY_NAME);
+      await page.getByRole('button', { name: COPY.displayNameSave }).click();
+      /**
+       * WAITED FOR, NOT SAMPLED. `isVisible()` does not auto-wait and ignores the
+       * timeout handed to it, so this read false the instant the click dispatched
+       * and then demanded the failure copy of a save that had succeeded — which
+       * is what applying migration 004 turned red, four lines before this test
+       * reaches the delete it exists to prove.
+       *
+       * One of the two outcomes must be on screen. Anything else — a hang, a
+       * crash, a silently-wrong success — is a defect and must not be swallowed
+       * by a test that is only passing through. Either way the delete below runs:
+       * with the migration it proves the cascade for eight tables, without it for
+       * seven.
+       */
+      await expect(
+        page.getByText(COPY.displayNameSaved).or(page.getByText(COPY.displayNameFailed)),
+      ).toBeVisible({ timeout: 15_000 });
+    }
+
     await page.getByRole('button', { name: COPY.deleteAccount }).click();
 
     const dialog = page.getByRole('dialog');

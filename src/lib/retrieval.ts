@@ -10,9 +10,13 @@ import {
   matchDocuments as matchDocumentsRpc,
   type NewDocument,
 } from '@/lib/db/documents';
-import { logLlmCall } from '@/lib/db/llmCalls';
+import {
+  DAILY_RESCORE_LIMIT,
+  countRescoreCallsInLast24h,
+  logLlmCall,
+} from '@/lib/db/llmCalls';
 import { ERROR_MESSAGES } from '@/lib/copy';
-import { AiUnavailableError, UnauthorizedError } from '@/lib/errors';
+import { AiUnavailableError, DailyLimitError, UnauthorizedError } from '@/lib/errors';
 import { getUser } from '@/lib/supabase/server';
 import {
   EMBEDDING_BATCH_SIZE,
@@ -127,13 +131,26 @@ function logEmbedCall(
   userId: string,
   step: EmbedStep,
   result: ConnectionResult<number[][]> | null,
-  err?: unknown,
+  err: unknown,
+  applicationId: string | null,
 ): void {
   logLlmCall({
     user_id: userId,
-    // Indexing is not tied to an application; a re-score is, and passes it via
-    // the caller in a later phase.
-    application_id: null,
+    /**
+     * The run this embedding belongs to, when there is one (SPEC v2.16, closing
+     * backlog `p3-8`). Indexing a career item belongs to no application and
+     * passes null; a scan, a generate and a re-score all pass theirs, so a
+     * pipeline run's EMBEDDING spend is attributable to it and DoD item 7's
+     * "one full pipeline run" is one set of linked rows rather than one linked
+     * row plus orphans.
+     *
+     * An application id is not a user id, so this does not weaken the rule at
+     * the top of this file: the identity still comes only from the session, and
+     * `llm_calls`' insert policy still refuses a row for anyone else. A wrong
+     * application id here mislabels a log line; it cannot reach another
+     * account's data, because the FK and RLS both scope it to the caller.
+     */
+    application_id: applicationId,
     step,
     model: result?.model ?? (err instanceof OpenRouterError ? err.attemptedModel : 'unknown'),
     fallback_used: false,
@@ -147,6 +164,33 @@ function logEmbedCall(
 }
 
 /**
+ * Rule B7a — the re-score ceiling, checked ONCE per re-score run, in the GATE.
+ *
+ * The same shape as rule B7's check at the head of `lib/chat.ts`: read the
+ * COMMITTED rows, refuse before the first request goes out, and let a run that
+ * has started finish. It lives here and not in the route handler for the reason
+ * this whole module exists — a fence a caller has to remember is a fence the
+ * next caller does not have.
+ *
+ * DECLARED OVERSHOOT, the same bound rule B7 carries: `logLlmCall` writes through
+ * `after()`, so a run's own batches are invisible to its own check and a run that
+ * starts under the cap may finish over it by at most its batch count minus one —
+ * 6 rows on the largest permitted input. Re-checking mid-run would refuse a
+ * re-score whose first batch was already billed, which buys a half-measured score
+ * for money already spent.
+ *
+ * `embed` is deliberately NOT capped: indexing must never be able to fail a save
+ * (CLAUDE.md, Embeddings), and it is already bounded by rule B9 and by the
+ * skip-when-unchanged rule. A ceiling on it would be a new way for a saved item
+ * to lose its index, which is the failure those two rules exist to prevent.
+ */
+async function assertUnderRescoreCap(): Promise<void> {
+  if ((await countRescoreCallsInLast24h()) >= DAILY_RESCORE_LIMIT) {
+    throw new DailyLimitError(ERROR_MESSAGES.RESCORE_LIMIT);
+  }
+}
+
+/**
  * Embed texts for the verified user. Batched at EMBEDDING_BATCH_SIZE.
  *
  * Throws AiUnavailableError on failure — `OpenRouterError` never escapes this
@@ -156,22 +200,30 @@ function logEmbedCall(
 export async function embedTexts(
   texts: string[],
   step: EmbedStep = 'embed',
+  applicationId: string | null = null,
 ): Promise<number[][]> {
   const user = await requireUser();
-  return embedFor(user.id, texts, step);
+  // Rule B7a. The one step here whose spend is a repeatable user action.
+  if (step === 'rescore') await assertUnderRescoreCap();
+  return embedFor(user.id, texts, step, applicationId);
 }
 
 /** The batching core, for callers inside this module that already have the user. */
-async function embedFor(userId: string, texts: string[], step: EmbedStep): Promise<number[][]> {
+async function embedFor(
+  userId: string,
+  texts: string[],
+  step: EmbedStep,
+  applicationId: string | null = null,
+): Promise<number[][]> {
   const vectors: number[][] = [];
   for (let i = 0; i < texts.length; i += EMBEDDING_BATCH_SIZE) {
     const batch = texts.slice(i, i + EMBEDDING_BATCH_SIZE);
     try {
       const result = await createEmbeddings({ step, inputs: batch });
-      logEmbedCall(userId, step, result);
+      logEmbedCall(userId, step, result, null, applicationId);
       vectors.push(...result.data);
     } catch (err) {
-      logEmbedCall(userId, step, null, err);
+      logEmbedCall(userId, step, null, err, applicationId);
       throw new AiUnavailableError(ERROR_MESSAGES.AI_UNAVAILABLE);
     }
   }
@@ -560,12 +612,13 @@ export async function matchDocuments(
   queryText: string,
   matchCount = 5,
   step: EmbedStep = 'embed',
+  applicationId: string | null = null,
 ): Promise<MatchOutcome> {
   const user = await requireUser();
 
   let rows;
   try {
-    const [queryEmbedding] = await embedFor(user.id, [queryText], step);
+    const [queryEmbedding] = await embedFor(user.id, [queryText], step, applicationId);
     if (!queryEmbedding) return { status: 'could_not_search', error: 'query was not embedded' };
     rows = await matchDocumentsRpc(queryEmbedding, matchCount);
   } catch (err) {
@@ -610,12 +663,13 @@ export async function matchDocumentsForTexts(
   queryTexts: string[],
   matchCount = 5,
   step: EmbedStep = 'embed',
+  applicationId: string | null = null,
 ): Promise<BatchMatchOutcome> {
   const user = await requireUser();
   if (queryTexts.length === 0) return { status: 'searched', outcomes: [] };
 
   try {
-    const vectors = await embedFor(user.id, queryTexts, step);
+    const vectors = await embedFor(user.id, queryTexts, step, applicationId);
     if (vectors.length !== queryTexts.length) {
       // Fewer vectors than queries would silently mis-align the results with the
       // requirements they belong to, which is worse than not searching.
