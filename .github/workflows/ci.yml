@@ -44,6 +44,13 @@ jobs:
     # anything by construction. The URL is well-formed because `createServerClient`
     # parses it with `new URL`; the key only has to be a non-empty string.
     #
+    # MEASURED, not assumed: this build currently passes with NEITHER of them
+    # set — every read of the pair happens inside a function that runs only on a
+    # request, and no static page constructs a Supabase client. They are set
+    # anyway, so that the first page or component to read one at build time meets
+    # a well-formed placeholder instead of `undefined`, and so that no step here
+    # ever has a reason to reach for the real values.
+    #
     # The OpenRouter API key and the Supabase service-role key are deliberately
     # ABSENT. Nothing a build or a unit test does reads either — both are read
     # inside functions that run only on a request — and a CI environment holding
