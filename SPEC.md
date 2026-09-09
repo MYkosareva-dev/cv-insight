@@ -630,7 +630,7 @@ end;
 $$;
 ```
 > **Block C gained this section in v2.26**, closing the half of backlog `p4-27` that the PR review added (`docs/reviews/phase-4.md` M-2): the eighth table's shape was written down only in its own migration file, so a reader following the spec's set-up script built seven tables and the app's profile reads answered `PGRST204` against a table nobody had told them about. The condensed comments above are this file's own, kept to the reasoning a reader of the schema needs; `supabase/migrations/004_profiles.sql` carries the rest. It is numbered and run after 003 so the sequence reads top to bottom; it depends on nothing but `auth.users`, which is why the file's own header says 001 and 002 are enough.
-> Why the table exists at all is above, under the reversed no-`profiles` decision. Its own touch function rather than `moddatetime`: 004 was written that way while `p4-27` was open, and it stays that way because it is the stricter form — an empty `search_path` and a name owned by one migration. The two forms sitting side by side in one schema is a cost paid for nothing, so if `006` ever lands, unifying them belongs in it.
+> Why the table exists at all is above, under the reversed no-`profiles` decision. Its own touch function rather than `moddatetime`: 004 was written that way while `p4-27` was open, and it stays that way because it is the stricter form — an empty `search_path` and a name owned by one migration. What the schema pays for that is two touch mechanisms where a reader expects one, which is worth removing but not worth a migration of its own: if `006` ever lands, bringing 001's two triggers up to this form belongs in it.
 
 ### Migration `supabase/migrations/005_profile_contacts.sql` (v2.20; run in SQL editor after 004)
 ```sql
