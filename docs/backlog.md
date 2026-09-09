@@ -102,8 +102,13 @@ brand-new project, and the closure is in the table below.
      deliberately.
 
    Until those exist, a green suite is something the owner arranges rather than
-   something a change gets for free. Phase 6, owner triage; answered in part by
-   the Phase-7 fresh-clone run.
+   something a change gets for free — and **CI now makes that split explicit
+   rather than accidental**: `.github/workflows/ci.yml` runs the thirteen rules,
+   the typecheck, the lint, the unit suite and the build on every pull request,
+   so the static half is automatic and the browser half is the deliberate manual
+   run described here. A green badge is a claim about the first half only.
+   Phase 6, owner triage; answered in part by the Phase-7 fresh-clone run, and
+   scoped by the Phase-7 CI round.
 
 7. **Two one-line owner actions gate sharing the link.** `IMPRESSUM_FILLED` is
    still `false`, so `/impressum` correctly states the operator is not published —
@@ -692,3 +697,45 @@ verdicts and the classification.
 
 - **MAJOR p7-1 — P3's grounding criterion answers the COVERAGE question, and rule B2 then makes that answer uncompensatable.** Grounding asks whether a claim is supported by the career base; coverage asks whether a claim satisfies the posting. On the Vinterlys run all three violations are the second question: the reviewer refusing sentences the base *does* contain — "infrastructure-as-code modules", "streaming ingestion from the checkout event topics" — because they do not name Terraform or Kafka, which the posting names. Three structural tells, none needing a second run: (1) the `claim` field holds VACANCY REQUIREMENT strings verbatim, though P3 defines it as "every factual claim in the resume"; (2) P3 opens "Evaluate the RESUME against the VACANCY REQUIREMENTS and the CAREER ITEMS" and criterion 1 never re-scopes away from the requirements that framing introduces, which also sit in the context as `VACANCY REQUIREMENTS`; (3) `groundingFailed()` in `src/lib/judge.ts` returns true on ANY non-empty violations array, so an entry whose own text says "this is not a grounding violation—it is a coverage gap" still becomes a hard rule-B2 failure. `feedbackForGenerator` then carries it back into P2 as "add Terraform experience to a career item (if true) or remove the claim", plus four entries labelled COVERAGE GAP — so the generator is penalised for not claiming a tool and then instructed to fix it. **The proposed narrowing, NOT made here:** scope criterion 1's enumeration to sentences of the resume, and say in the prompt that a requirement the resume does not claim is not a grounding violation, because coverage is what the coverage map is for. It is not made because every rubric number this project holds was taken against the current criterion, including the six versions in `docs/eval/generation-model-comparison.md`, and re-baselining them is not affordable now. Do it in a round that can re-run both fixtures, and keep the old numbers labelled as pre-narrowing.
 - **MINOR p7-2 — a judge verdict's TEXT survives only as long as the account that produced it, so 8 of 10 first-draft violations are permanently unclassifiable.** The three Hiredbuddy runs each used a fresh throwaway account and every one was deleted; `docs/eval/generation-model-comparison.md` recorded violation COUNTS (3, 2, 3) and no violation text, which is exactly the field `p7-1` turned out to need. The Vinterlys verdicts were recoverable only because that account still exists, and only by reading the server-rendered payload of the app's own page — there is no `GET /api/applications/[id]`, `tests/` may not touch a DAL (R1) and may not hold the service-role key (R10). Two candidate fixes, neither built: have `scripts/demo-seed.mjs` write the full judge JSON into the run's evidence file beside the counts, or add a dev-only read for one application's versions the way `src/app/api/dev/coverage-probe/route.ts` does for coverage. The first is smaller and adds no route. Until one exists, an eval that records only counts is recording the half that cannot answer a follow-up question.
+
+## Phase 7 — from adding CI (2026-09-09)
+
+`.github/workflows/ci.yml` is new: on every pull request targeting `main` and
+every push to `main`, `npm ci` then `node scripts/check.mjs`, `tsc --noEmit`,
+`eslint`, `npm test` and `npm run build`, each its own named step. Node is pinned
+to 22.x, the track `engines` and the Vercel project both name. The build step
+re-runs the rules and the tests through `prebuild` on purpose: the step is there
+to run the command Vercel runs, and `prebuild` is what stops a build skipping its
+own gates.
+
+This was the one recommendation carried over from the previous project's review
+that this repository had not met. What it closes is narrow and worth stating
+narrowly: every gate in it was already runnable and every one of them depended on
+somebody remembering to run it.
+
+- **The e2e half is deliberately manual, and CI is why that is now a stated
+  boundary rather than an omission.** The suite needs a Supabase project with
+  sign-ups open — all four specs register through the `/signup` form, and the
+  deployment's own project has registration closed as its only gate — and it
+  makes real, paid OpenRouter calls, which is precisely what makes it evidence
+  rather than a mock. On a pull request that means paying for model calls to
+  prove a typo, or faking the calls and keeping none of the value. The runs stay
+  in `docs/eval/`, and README's "What CI covers, and what it cannot" says so
+  where a reader will look.
+  **What would close it**, in the order it has to happen: (1) the test project
+  from *Read these first* item 6 becomes a named fixture rather than a leftover;
+  (2) the suite stops selecting its project by a hand-edit of `.env.local` — a
+  `.env.test`, or an env pair passed through `webServer.env` in
+  `playwright.config.ts`; (3) its URL and anon key become repository secrets, and
+  an `OPENROUTER_API_KEY` with a spend cap becomes one too, which is a decision
+  about money and therefore the owner's; (4) the job runs on a schedule or a
+  label — **not** on every pull request, because a metered suite on every push is
+  a bill that grows with typo frequency. Steps 1 and 2 are worth doing whether or
+  not 3 and 4 ever are: they are what make the suite runnable twice.
+- **NIT — the badge points at one remote.** This repository has two, `origin`
+  (`MYkosareva-dev/cv-insight`, where pull requests are reviewed and where the
+  workflow runs) and `submission`. The badge URL names the first, so read from a
+  mirror it reports the first repository's status rather than the mirror's. That
+  is the correct behaviour for a status badge about this project's CI, and it is
+  written down here because a badge that looks local and is not would otherwise
+  be discovered by someone debugging it.

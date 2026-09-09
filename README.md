@@ -1,5 +1,7 @@
 # CV Insight
 
+[![CI](https://github.com/MYkosareva-dev/cv-insight/actions/workflows/ci.yml/badge.svg)](https://github.com/MYkosareva-dev/cv-insight/actions/workflows/ci.yml)
+
 An AI resume-tailoring assistant. You keep a **career base** — every role,
 project and achievement you have, written once as small atomic items — and then,
 for each job posting you are interested in, you paste the posting and get back an
@@ -504,6 +506,43 @@ checklist.
 
 ---
 
+## What CI covers, and what it cannot
+
+`.github/workflows/ci.yml` runs on every pull request targeting `main` and on
+every push to `main`: `npm ci` on the committed lockfile, then the thirteen
+boundary rules, `tsc --noEmit`, `eslint`, the unit suite, and `npm run build` —
+each as its own named step, so a red check says which gate broke without anyone
+opening a log. Node is pinned to 22.x, the same track as `engines` and the Vercel
+project. The build step re-runs the rules and the tests through `prebuild`, and
+that duplication is deliberate: the step exists to run the command Vercel runs,
+and `prebuild` is the mechanism that stops a build skipping its own gates.
+
+The two `NEXT_PUBLIC_` variables are set to obvious placeholders in the workflow.
+Nothing in CI reaches Supabase or OpenRouter, and the OpenRouter key and the
+service-role key are absent rather than faked — no build step or unit test reads
+either, and a fake value would let a step that starts needing one pass anyway.
+
+**The Playwright suite is not in CI, and this is a decision rather than an
+omission.** It needs a Supabase project with sign-ups open, because all four
+specs create a throwaway account through the `/signup` form — and the deployment's
+own project has registration closed, which is the only thing keeping strangers
+out of it. It also makes real, paid OpenRouter calls: `scan.spec.ts` and
+`generate.spec.ts` drive genuine parses, embeddings, generations and rubric
+judgements, which is exactly what makes them evidence rather than a mock, and it
+is also a bill on every run. Putting it on every pull request would mean paying
+for model calls to prove a typo, or replacing the calls with fakes and keeping
+none of the value.
+
+So it stays a deliberate, recorded run. The runs live in `docs/eval/` — one file
+per round, `docs/eval/phase-6-e2e-run.txt` and
+`docs/eval/fresh-clone-verification.md` being the two most recent — and
+`docs/backlog.md` carries the entry that would make it routine: a named test
+project the suite can select without hand-editing `.env.local`. Until that
+exists, a green CI badge means the static half is sound and says nothing about
+the browser half.
+
+---
+
 ## Optional scope taken on
 
 Beyond the core pipeline, and each one built rather than sketched:
@@ -628,6 +667,7 @@ known and open, grouped by what would reopen it.
 ```
 SPEC.md                  the specification — single source of truth for build details
 CLAUDE.md                the rule book constraining how the code may be built
+.github/workflows/ci.yml CI: the thirteen rules, typecheck, lint, unit tests, build
 scripts/check.mjs        the thirteen boundary rules, wired as prebuild
 src/middleware.ts        route protection; refreshed session cookies on every branch
 src/app/api/             route handlers (Block D)
