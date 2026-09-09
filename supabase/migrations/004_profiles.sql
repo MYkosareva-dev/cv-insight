@@ -89,11 +89,13 @@ begin
 end;
 $$;
 
--- `public.touch_updated_at()` is deliberately NOT dropped here. This file cannot know
--- whether anything else in the live database still executes it -- 001 installs
--- `moddatetime` for the career_items and applications touch triggers, and backlog
--- `p4-27` records that the extension is not available on this project, so how those two
--- triggers are actually wired is the open question that item exists to answer. A
--- `drop function` here would either fail on a dependency (breaking re-runnability) or
--- succeed by cascading a trigger this migration never created. Dropping it is a
--- decision for whoever closes p4-27.
+-- `public.touch_updated_at()` is deliberately NOT dropped here, and the reason is now
+-- smaller than it was. A fresh project never has that function at all: 001 installs
+-- `moddatetime` and both its touch triggers use it, which the 2026-09-09 fresh-clone run
+-- verified from empty (`docs/eval/fresh-clone-verification.md`), and this file has
+-- created `m004_touch_profiles_updated_at` since v2.19. The generic name survives only on
+-- the project this app was first built against, where an earlier version of this file
+-- created it. Dropping it there is the owner's call on that one database and not
+-- something a committed migration should do blind -- a `drop function` here would either
+-- fail on a dependency (breaking re-runnability) or succeed by cascading a trigger this
+-- migration never created.
