@@ -1,0 +1,96 @@
+# CI — the static half of this project's evidence, on every pull request.
+#
+# Every gate below is a command someone could run locally and forget to. Running
+# them here makes "the tree is green" a fact about the branch rather than a
+# recollection about somebody's terminal.
+#
+# WHAT IS DELIBERATELY NOT HERE: the Playwright suite. It needs a Supabase
+# project with sign-ups open, and it makes real, paid OpenRouter calls by design
+# — that is what makes it evidence rather than a mock. So it stays a deliberate
+# manual run with its output recorded in docs/eval/. README's "What CI covers,
+# and what it cannot" carries the full reasoning, and docs/backlog.md carries the
+# entry that would change it.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Read-only. Nothing here comments, pushes, publishes or deploys.
+permissions:
+  contents: read
+
+# A second push to the same branch makes the first run's answer stale, so it is
+# cancelled rather than left to finish and report on code nobody has any more.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: check · typecheck · lint · test · build
+    runs-on: ubuntu-latest
+
+    # PLACEHOLDERS, and deliberately obvious ones. Nothing in this workflow
+    # connects to Supabase or OpenRouter: no step here signs in, embeds,
+    # generates or judges, so no real value has any work to do in this file and
+    # none belongs in it.
+    #
+    # These two are also the only variables this app is ever allowed to expose
+    # to a browser (scripts/check.mjs R4), so a placeholder for them cannot leak
+    # anything by construction. The URL is well-formed because `createServerClient`
+    # parses it with `new URL`; the key only has to be a non-empty string.
+    #
+    # The OpenRouter API key and the Supabase service-role key are deliberately
+    # ABSENT. Nothing a build or a unit test does reads either — both are read
+    # inside functions that run only on a request — and a CI environment holding
+    # a fake value for a secret is an environment where a step that starts
+    # needing one passes anyway. Absent, such a step fails and names what it
+    # wanted. Neither is spelled as a variable name anywhere in this file, so it
+    # stays clean of R10 even though scripts/check.mjs does not read YAML today.
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key-not-a-real-key
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # Node 22, stated rather than inherited: a runner image's default Node
+          # moves across majors on GitHub's schedule, not this project's.
+          # `package.json` engines requires >=22.18 and the Vercel project is set
+          # to 22.x, so this tracks the deployment deliberately. An exact patch
+          # would be the tighter pin and the wrong one — it would make CI test a
+          # Node the deployment does not run, and go stale silently.
+          node-version: '22.x'
+          cache: npm
+
+      - name: Install (npm ci — the committed lockfile, not a fresh resolve)
+        run: npm ci
+
+      # Each gate is its own named step so a red X in the checks list says what
+      # broke, instead of making someone open a log to find out.
+      - name: Boundary rules (the thirteen, scripts/check.mjs)
+        run: node scripts/check.mjs
+
+      - name: Typecheck (tsc --noEmit)
+        run: npx tsc --noEmit
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      - name: Unit tests (node:test)
+        run: npm test
+
+      # This step re-runs check.mjs and the unit tests, because `prebuild` does.
+      # The duplication is kept ON PURPOSE: the point of this step is to run the
+      # command Vercel runs, unchanged. Calling `next build` directly to save a
+      # minute would make CI green on a command nothing else in this project
+      # uses, and prebuild is exactly the mechanism that stops a build skipping
+      # its own gates — testing around it would be testing the wrong thing.
+      - name: Build (next build — prebuild re-runs check and the tests, on purpose)
+        run: npm run build
