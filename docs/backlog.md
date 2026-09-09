@@ -29,10 +29,12 @@ it is in the rounds below, waiting on nothing but a decision to do it.
 
 ## Read these first
 
-Eight, chosen for consequence rather than for severity label — three product
-findings about the pipeline, two open code defects, one migration risk, one gap
-in the evidence, and one entry holding the two owner actions that gate sharing
-the link.
+Seven, chosen for consequence rather than for severity label — three product
+findings about the pipeline, two open code defects, one evidence gap that a
+single run has answered but not settled, and one entry holding the two owner
+actions that gate sharing the link. The migration
+risk that used to sit sixth is gone: `p4-27` closed on 2026-09-09 against a
+brand-new project, and the closure is in the table below.
 
 1. **`p7-1` — the grounding criterion is answering the coverage question, so
    the 4-of-4 figure does not mean what it looked like it meant.** Read this
@@ -72,23 +74,38 @@ the link.
    open: the handler has no item count in front of the model call. It is the one
    open item that costs money every time it fires. Phase 2.
 
-6. **`p4-27` — the committed migrations may not run on a fresh project.**
-   `001_init.sql` installs and uses `moddatetime`, which was not available on the
-   project this app actually runs against; `004_profiles.sql` was rewritten to
-   match reality and the other three were not re-read. SPEC Block C reproduces
-   `001_init.sql` verbatim, so the canonical set-up script carries the same
-   assumption, and Block C never gained `profiles` at all. This is what a reader
-   following the README's local-setup steps would hit first. Phase 4.
+6. **The Playwright suite has a project to run on again — once, not routinely.**
+   Registration is closed on the deployment's own Supabase project and that
+   setting is its only gate, so the four specs cannot sign up there. The durable
+   answer named at the end of `docs/eval/phase-6-e2e-run.txt` — option 1, a second
+   Supabase project with registration open and `001`–`005` applied — **now exists
+   and has been demonstrated**: the fresh-clone run of 2026-09-09 ran the suite on
+   exactly such a project, **33 passed, 1 skipped, 0 failed**
+   (`docs/eval/fresh-clone-verification.md`). What is missing is everything that
+   turns that into a habit rather than an occasion, and none of it is a dashboard
+   action:
+   - **The project has to be a fixture, not a leftover.** It was created for one
+     verification. Nothing in this repository names it, and a project nobody has
+     written down is one somebody deletes.
+   - **Credential selection has to stop being a hand-edit.** `playwright.config.ts`
+     starts `npm run dev`, which reads `.env.local` and nothing else, so "run the
+     suite" today means pointing the app's own credentials at the test project and
+     remembering to point them back. A `.env.test`, or an env pair passed through
+     `webServer.env`, is the change — and it is a change to this repository.
+   - **Every future migration lands in two places.** A `006` applied to one project
+     and not the other is a suite asserting a schema the app does not have.
+   - **`Confirm email` stays off there**, which is now a README step, and it is the
+     setting the whole fixture depends on.
+   - **A routine run spends real money.** `scan.spec.ts` and `generate.spec.ts`
+     make genuine OpenRouter calls, by design — that is what makes them evidence —
+     so "run it on every change" is a metered habit and should be entered
+     deliberately.
 
-7. **The Playwright suite can no longer create accounts on this project.**
-   Registration is closed in Supabase and that setting is the deployment's only
-   gate, so all four specs now fail at their fixture. The next change to a tested
-   path has no green suite behind it until a second Supabase project exists or the
-   specs sign in to pre-created accounts. Recorded at the end of
-   `docs/eval/phase-6-e2e-run.txt` with the three options and their costs.
-   Phase 6, owner triage.
+   Until those exist, a green suite is something the owner arranges rather than
+   something a change gets for free. Phase 6, owner triage; answered in part by
+   the Phase-7 fresh-clone run.
 
-8. **Two one-line owner actions gate sharing the link.** `IMPRESSUM_FILLED` is
+7. **Two one-line owner actions gate sharing the link.** `IMPRESSUM_FILLED` is
    still `false`, so `/impressum` correctly states the operator is not published —
    accurate, and not a substitute for filling it in. And **Speed Insights must be
    off** in the Vercel dashboard: it beacons per-visit data to a third party, and
@@ -116,6 +133,16 @@ here so that when the condition arrives the work is already identified.
 
 Every evidence gap below is blocked on the same fixture problem, not on anyone
 being unwilling to write the test.
+
+**The condition has arrived once.** The fresh-clone run of 2026-09-09 stood a
+second Supabase project up with registration open and ran the whole suite on it —
+33 passed, 1 skipped, 0 failed (`docs/eval/fresh-clone-verification.md`) — which
+is the durable option this group was waiting for, demonstrated rather than
+argued. It is not yet the standing arrangement these entries need: the project is
+unnamed in this repository and the suite still reads whatever `.env.local` holds.
+*Read these first* item 6 lists what closes that gap. Each entry below is now
+waiting on someone's time rather than on a precondition, and they move out of this
+group the moment the fixture is written down.
 
 - **`e-1`, `e-2`, `e-3`, `e-4`** — the Phase-2 evidence gaps: the dedup bound, the
   Edit-save request count, `CAREER.truncated` reaching a screen, the target-role
@@ -247,6 +274,7 @@ only one place is a closure the next reader argues with.
 | `vs-1`, `vs-4`, `vs-5`, `vs-6`, `ns-2`, `eu-2`, `eu-5`, `eu-6`, `eu-7`, `eu-10` | Phase 6, SPEC v2.25 | the owner triage round — its own section below says what each one was |
 | `p3-13`, `p3-17`, `p4-19`, `p3-8`, `m-4` (budget half only) | Phases 3–4 | already marked beside their entries |
 | `eu-12` | Phase 7 | `README.md` now points at `docs/openrouter-processing.md` for the provider retention decision, which is what the finding asked for |
+| `p4-27` | Phase 7, SPEC v2.26 | `docs/eval/fresh-clone-verification.md` — `001`–`005` applied in order to a brand-new project, RLS and the policy count read back on all eight tables; and SPEC Block C now carries `004_profiles.sql` |
 
 Two things this table deliberately does not say. `p3-22` is not a closure — it
 **moved**, from a backlog item to a pre-deploy gate, and its entry says so.
@@ -391,7 +419,9 @@ the defect. The report is `docs/reviews/phase-4-owner-round.md`. What is left:
 - **MINOR p4-24** — `JudgeReport.keywordCoverage.missingHonest` still crosses the wire in both route bodies and in `versions[].judge`, so the type system closes the render site that exists (`JudgeCard`'s required `terms` prop) and not the SHAPE. A future component could read the raw list. SPEC v2.17 note 4 now says so rather than claiming more; the fix, if one is wanted, is a client-facing report type with the field stripped — which means a second shape and a mapping, so it is worth doing only when a second consumer appears.
 - **NIT p4-25** — `result-workspace.tsx` re-syncs `versions` from `initialVersions` on prop-identity change but deliberately does NOT re-sync `review.terms` from `initialJudgeTerms`: for a report the client just fetched, its own partition is the fresher answer. Correct, and now that all three sites use the same corpus the two can no longer disagree about a term — but the docblock does not say the two halves of one refresh are treated differently on purpose.
 - **NIT p4-26** — the display-name gate strips `<` and `>` so `<candidate_name>` cannot be closed early, which is the containment `n-6` accepts NOT having for `<resume>` and `<items>`: a resume legitimately contains angle brackets, so there the tagged block plus output validation is the declared answer. Two policies for two values, each right for its own value — but if `n-6` is ever revisited, this is the precedent for what a full fix looks like.
-- **MAJOR p4-27** — `004_profiles.sql` was rewritten to match what actually ran on the live project, because `moddatetime` is not available there and the committed version assumed it; re-read `001_init.sql`, `002_audit_retention.sql` and `003_imports.sql` for the same assumption (001 installs the extension and uses it for the `career_items` and `applications` touch triggers), since a migration that only runs on this project is not a migration — the committed file has to be runnable as-is on a fresh one, or the repo's schema and production's are two different things nobody is comparing. **WIDENED by the PR review (`docs/reviews/phase-4.md` M-2):** the three `.sql` files are not the whole scope. SPEC Block C reproduces `001_init.sql` VERBATIM, `create extension if not exists moddatetime;` included, so the spec's canonical set-up script fails on its second line against the project it describes, and a reader following it on a fresh project gets no touch trigger on `career_items` or `applications` — `updated_at` silently stops advancing and nothing in the app notices. Block C also never gained `profiles` at all, so the eighth table's shape is written down only in the migration file, which is the file that just changed. Re-read Block C alongside the three migrations.
+> **p4-27 is CLOSED by the owner's fresh-clone run (2026-09-09, SPEC v2.26): `docs/eval/fresh-clone-verification.md`.** The repository was cloned into an empty folder, README was followed literally, and `001`–`005` were applied in order to a brand-new Supabase project. All five succeeded, `002` returned `schedule = 1`, and RLS came back enabled on all eight tables with a policy count per table matching the least-privilege matrix exactly. **The item had the direction of the error backwards, and that is the part worth keeping.** It read one project's trigger failure as an absent extension and concluded the committed migrations were suspect; the migrations were fine and it was the conclusion that spread — into a README caveat warning a reader against this repository's own schema, into an *Honest limitations* entry, and into this list as risk #6. The failure was schema resolution on the project this app was first built against. A doubt recorded as a fact outlives every check that would have settled it, and only running the thing settles it. The other half of the item WAS a real gap and is fixed rather than argued away: SPEC Block C now reproduces `004_profiles.sql`, so all eight tables are described where the set-up script is. Struck rather than deleted, entry text unchanged:
+>
+> ~~**MAJOR p4-27** — `004_profiles.sql` was rewritten to match what actually ran on the live project, because `moddatetime` is not available there and the committed version assumed it; re-read `001_init.sql`, `002_audit_retention.sql` and `003_imports.sql` for the same assumption (001 installs the extension and uses it for the `career_items` and `applications` touch triggers), since a migration that only runs on this project is not a migration — the committed file has to be runnable as-is on a fresh one, or the repo's schema and production's are two different things nobody is comparing. **WIDENED by the PR review (`docs/reviews/phase-4.md` M-2):** the three `.sql` files are not the whole scope. SPEC Block C reproduces `001_init.sql` VERBATIM, `create extension if not exists moddatetime;` included, so the spec's canonical set-up script fails on its second line against the project it describes, and a reader following it on a fresh project gets no touch trigger on `career_items` or `applications` — `updated_at` silently stops advancing and nothing in the app notices. Block C also never gained `profiles` at all, so the eighth table's shape is written down only in the migration file, which is the file that just changed. Re-read Block C alongside the three migrations.~~
 
 ## Phase 4 — from the ai-architect DIFF review (2026-09-03)
 
@@ -644,6 +674,8 @@ round and `docs/deploy.md` is the ordered procedure.
 - **CARRIED by owner decision — `eu-8`, granular erasure.** Only career items are individually deletable; job postings, scans, generated versions, import records and `llm_calls` rows go with the account. The reasoning for carrying it: with registration closed, the store holds only the owner's own data, and account deletion already removes all of it — so the Art. 17 exposure the finding describes has no third-party data to attach to. `/privacy` states the limitation plainly rather than implying the erasure story is complete. **This reopens the moment a second real person holds an account**, which is exactly when the deployment stops being a single-user demo — revisit it then, and note that adding the missing DELETE policies needs an owner amendment to CLAUDE.md's RLS matrix, which is deliberate and should stay deliberate.
 - **CLOSED — `eu-9`, `0 owned rows` after deletion is now witnessed.** Owner-run on 2026-09-04 against the live project and recorded in `docs/eval/erasure-evidence.md`: a throwaway account populated until all eight owner-scoped tables held rows, deleted through the app's own [Delete account and data] control rather than by SQL, with per-user counts taken before and after — all eight to zero, and the `auth.users` row gone. It closed the way the finding recommended, with a SQL-level check recorded in `docs/eval/` rather than an R10 carve-out, so `SUPABASE_SERVICE_ROLE_KEY` is still read in exactly one module and the thirteen rules are still frozen. SPEC Block H item 3 carries the same conclusion.
 - **MINOR — the Playwright suite cannot create accounts once registration is closed.** All four specs sign up through the `/signup` form against the same Supabase project the deployment uses. `docs/deploy.md` step 1 handles it by ordering (run the suite before closing registration), which is correct once and useless the second time. A durable fix is a second Supabase project for tests, or pre-created accounts the suite signs into instead of registering. Needed before the suite can be run again after deploy.
+> **ANSWERED ONCE, on 2026-09-09, and not yet routine.** The entry named three options and called the second Supabase project the durable one; that project now exists and the suite ran green on it — 33 passed, 1 skipped, 0 failed, in `docs/eval/fresh-clone-verification.md`. Not struck, because what the entry asks for is a suite that can be run, not a suite that was run: the project is named nowhere in this repository and `playwright.config.ts` starts `npm run dev`, which reads `.env.local` and nothing else, so choosing the test project is still a hand-edit of the app's own credentials. *Read these first* item 6 carries the list of what would make it standing. The entry above stays open.
+
 - **NIT — `IMPRESSUM_FILLED` is still `false`.** The page correctly says the operator's details are not published rather than rendering placeholder tokens, and `docs/deploy.md` step 20 makes filling it a condition of sharing the link. It is a one-line edit with two real values and is nobody's work but the owner's.
 
 ## Phase 6 — from the first production deployment (2026-09-04)

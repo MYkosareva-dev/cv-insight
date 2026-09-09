@@ -454,27 +454,44 @@ supabase/migrations/004_profiles.sql
 supabase/migrations/005_profile_contacts.sql
 ```
 
-**Known caveat before you run them.** `001_init.sql` installs and uses the
-`moddatetime` extension for the `updated_at` touch triggers, and that extension
-was *not* available on the project this app actually runs against —
-`004_profiles.sql` was rewritten to work without it and the other three were not
-re-read. So the committed set is not confirmed to apply cleanly to a fresh
-project, and if `001` fails on its second line that is this, not you. It is
-tracked as `p4-27` in `docs/backlog.md`, and SPEC Block C reproduces the same
-file verbatim, so the specification carries the assumption too.
+All five have been applied in that order to a brand-new project, with RLS and the
+policy count checked on all eight tables afterwards:
+`docs/eval/fresh-clone-verification.md` is the run.
+
+**Turn `Confirm email` off before you sign up.** Supabase dashboard →
+**Authentication → Providers**, the *User Signups* card at the top of that page →
+**Confirm email** → off. A new project ships with it ON, and this app sends no mail
+of its own: with it on, a sign-up creates an account with no session and answers
+"Check your email to confirm your account.", a sign-in answers "Confirm your email
+before signing in.", and nothing behind the login is reachable. The Playwright
+specs create their accounts through the same form, so they need the same setting.
 
 Then:
 
 ```bash
-npm run dev          # http://localhost:3000
-npm run check        # the thirteen boundary rules
-npm test             # node:test unit suite
-npm run build        # runs check + test first, via prebuild
-npm run test:e2e     # Playwright — see the caveat below
+npm run dev              # http://localhost:3000
+npm run check            # the thirteen boundary rules
+npm test                 # node:test unit suite
+npm run build            # runs check + test first, via prebuild
+npx playwright install   # once per machine — the suite needs the browsers
+npm run test:e2e         # Playwright — see the caveat below
 ```
 
-Sign up at `/signup` (available in development), add a few career items or import
-a resume PDF at `/career`, then paste a posting at `/scan`.
+**The first run, in the order that makes each step possible:**
+
+1. **Sign up** at `/signup` — the form is development-only — and sign in.
+2. **Settings.** Save `Your name` and the contact details. The name line of a
+   generated resume and the header of an exported `.docx` both come from here;
+   with no name saved, the resume carries a visible `[YOUR NAME]` placeholder.
+3. **Career base → Import resume.** Upload a PDF or paste the text, review the
+   items the split produced, then save — nothing is written until you confirm.
+   Saving is also what indexes them, and coverage is always decided against this
+   base, never against a resume you paste into a scan.
+4. **New scan.** Paste the job posting and press **Analyze**, for the match score,
+   the requirement-by-requirement coverage table and the keyword gaps.
+5. **Generate tailored resume**, on the result screen: the draft, the rubric
+   judge's card beside it, and one automatic revision if the judge asked for one.
+   Then **Download .docx** — and **Quality**, for what the run actually cost.
 
 **The Playwright suite needs a project with registration open.** All four specs
 create a throwaway account through the `/signup` form, so they cannot run against
@@ -567,11 +584,6 @@ account. `/privacy` states this rather than implying the erasure story is
 complete. It is carried deliberately — with registration closed the store holds
 one person's own data — and it reopens the moment a second real person holds an
 account.
-
-**The committed migrations are not confirmed against a fresh project.** See the
-caveat under *Running it locally* and `p4-27` in `docs/backlog.md`. The schema
-this app runs on and the schema in `supabase/migrations/` agree on everything the
-app reads; what is unverified is whether the files apply cleanly from empty.
 
 **The operator is not yet named on the deployment.** `IMPRESSUM_FILLED` is
 `false`, so `/impressum` states that the operator's details are not published —

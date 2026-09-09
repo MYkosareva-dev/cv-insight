@@ -1,5 +1,6 @@
 # CV Insight — Technical Specification
-> Version: 2.25 | Date: 2026-09-04 | Status: Production-ready
+> Version: 2.26 | Date: 2026-09-09 | Status: Production-ready
+> v2.26: THE FRESH-CLONE VERIFICATION, and the four documentation defects it found. The owner cloned this repository into an empty folder, followed README literally, and ran it against a brand-new Supabase project: `001`–`005` all applied in order, `002` returned `schedule = 1`, RLS came back enabled on all eight tables with a policy count per table that matches Block C's least-privilege matrix exactly, and the whole flow ran through to a `.docx` and `/quality`. The run is `docs/eval/fresh-clone-verification.md`. **BACKLOG `p4-27` IS CLOSED, AND IT WAS WRONG IN THE DIRECTION NOBODY CHECKS**: the migrations were fine and the caveat written around them was not. `001` installs and uses `moddatetime` correctly on an empty project — the trigger failure on the project this app was first built against was schema resolution, not an absent extension — so README carried a warning against its own committed schema, and *Honest limitations* carried an unverified claim that was already false. Both are replaced by one sentence citing the run. **BLOCK C GAINED `004_profiles.sql`**, which is the other half of `p4-27`: the eighth table's shape existed only in its own migration file, so a reader following the spec's set-up script built seven tables and no `profiles`. **README GAINED THE TWO STEPS A FRESH PROJECT CANNOT BE USED WITHOUT** — `Confirm email` off in the Supabase dashboard (with it on, a sign-up creates a session-less account and nothing behind the login is reachable, which is the app being unusable rather than a rough edge) and `npx playwright install` before `npm run test:e2e` — **and a first-run walkthrough**, Settings → Career base → New scan → Generate, because the file described the pipeline in depth and never said what to click first. No new enforcement rules — the 13 stay frozen. No migration, and no schema change: `004` is reproduced here as it has been on disk since v2.19.
 > v2.25: OWNER TRIAGE OF THE THREE PHASE-6 GATES. **THE GATING MECHANISM CHANGED, and everything here is built against the new one.** Vercel Password Protection is Pro-only, so there is no password wall: the deployment is REACHABLE and what keeps strangers out is **registration disabled in the Supabase dashboard**, with accounts created by hand for named people. That setting lives outside this repository and nothing here can enforce it — so the app stops pretending otherwise. **`/signup` keeps its route and EXPLAINS** (`vs-1`): with registration closed `signUpAction` cannot succeed, and a form that submits into a guaranteed refusal is the app claiming a capability it does not have. `/login` stops offering "No account? Create one" for the same reason. Both are fenced on `NODE_ENV`, the discriminator this codebase already uses for "this is a deployment", so the Playwright suite still has its form in development. **A DEMONSTRATION NOTICE NOW SITS ON THE AUTHENTICATED SHELL** (`eu-2`): SPEC has said "synthetic data only" since the processing record was written, and until now that constraint was legible only to someone reading SPEC — not to the person at the keyboard, who is the only one who can breach it. **SECURITY HEADERS SHIP, AND THE CSP WAS MEASURED RATHER THAN ASSUMED** (`ns-2`/`vs-5`): the strict policy was tried first and broke every page — inline script blocked, React error #412, hydration dead on all five including the two static public ones — so `script-src 'unsafe-inline'` is a recorded cost with a named alternative rejected for a named reason, and `docs/eval/csp-verification.md` carries the transcript of both runs. **FUNCTIONS ARE PINNED TO `fra1` IN `vercel.json`** (`vs-6`/`eu-10`), because the platform default is `iad1` and /privacy named Frankfurt twice while every request would have been processed in the United States. **THE UPLOAD CEILING DROPS TO 4 MB** (`vs-7`/`ns-5`, closing `p3-1` and `m-3`): the platform refuses a body over 4.5 MB with its own 413 before this app runs, so the app was promising a size it could not accept. **`/privacy` NAMES PROVIDERS AND NOT MODEL SLUGS** — owner instruction reversing v2.24: Art. 13 asks for recipients, the recipients are Anthropic, OpenAI and Google via OpenRouter, and a version string both fails to be a recipient and rots. **`docs/openrouter-processing.md` STOPS OVER-DECLARING** (`eu-6`): it claimed the target-role label reaches a model; the prompt slot inventory has no slot for it. `eu-8` (granular erasure) is carried to the backlog by owner decision — with registration closed the store holds only the owner's own data, which account deletion already removes in full. **`eu-9` IS CLOSED by owner-run evidence** — an account populated across all eight owner-scoped tables, deleted through the product's own control, counted before and after, all eight to zero: `docs/eval/erasure-evidence.md`, and Block H item 3. It closed with a SQL-level check recorded in `docs/eval/` rather than an R10 carve-out, so the service-role key is still read in exactly one module. `docs/deploy.md` is new and is the ordered procedure for the first deployment. No new enforcement rules — the 13 stay frozen. No migration.
 > v2.24: PHASE 6, FIRST HALF — the three security and compliance gates that had never run, and the two deferred items they depend on. **Nothing is deployed in this round.** `nextjs-security`, `vercel-security` and `eu-compliance-reviewer` each ran once, scoped, and each report is in `docs/reviews/` VERBATIM, saved before any finding was acted on. Between them: 7 blockers, 13 majors. **THE MOST IMPORTANT FINDING CONTRADICTS AN OWNER DECISION THIS ROUND WAS BUILT ON.** The deployment was to be password-protected via Vercel Deployment Protection, and Password Protection is a PAID feature — not available on Hobby. Meanwhile `/signup` is public and `supabase.auth.signUp` accepts anyone, so on Hobby the first deploy would be publicly reachable AND openly registrable: the exact inverse of the premise. The compliance analysis was therefore written in TWO WORLDS, and every conclusion it lightens is labelled as contingent. The free fix is not in this repository — it is closing registration in the Supabase dashboard and inviting the named people — so it is the owner's to make, and it must happen BEFORE the first deploy because there is no window in which the URL is live and ungated. **`p3-2` IS RESOLVED, AND ITS PREMISE WAS STALE**: `maxDuration = 120` does not exceed the Hobby ceiling. Vercel's current limit is 300 s default AND maximum on Hobby *with Fluid compute*, which is on by default for new projects, and 60 s without it — so the numbers this app declares are legal, and what they actually depend on is a project setting nobody had written down. Declared in Block D #8 with the consequence of an overrun traced end to end. **`p3-22` IS CLOSED WITH EVIDENCE, NOT ARGUMENT** (Block H item 9): built, started under `NODE_ENV=production`, both `/api/dev/*` routes requested, both answer 404 — with two controls proving the 404 is the environment fence and not the auth check, and not an absent route. **`/impressum` ships** (Block E), public and matcher-anchored like `/privacy`, with the operator's name and email as VISIBLE placeholders behind `IMPRESSUM_FILLED` — the agent does not invent an identity and does not read one out of `git config`. **`/privacy` gets the completeness pass** SPEC made a hard gate before any shared deployment: it was accurate and missing most of Art. 13, and it said "EU (Frankfurt)" twice while never mentioning that every model call goes to the United States. No new enforcement rules — the 13 stay frozen. No migration.
 > v2.23: **THE GENERATION MODEL CHANGES, because the configured one is unreachable and cannot be made reachable.** The guardrail blocking `anthropic/claude-sonnet-4.6` is on an OpenRouter workspace the owner has no access to — the key belongs to another party — so the primary had to become a model this key can serve, and the fallback had to go back to being a fallback instead of the model writing every resume. **MEASURED, NOT PREFERRED**: 23 candidate slugs were requested ALONE on this key (no `models` array, so each answer is that model's own). **Five serve** — `openai/gpt-5.4`, `openai/gpt-5.2`, `openai/gpt-5-mini`, `anthropic/claude-haiku-4.5`, `google/gemini-2.5-flash` — and the other eighteen all answer the identical HTTP 404 `model-ignored-by-guardrail`, including every Anthropic Sonnet and Opus, Gemini 2.5 Pro, Grok, DeepSeek, Mistral Large and the rest of the GPT-5 family. The guardrail is an ALLOW-LIST of five, not a price or vendor rule: it admits gpt-5.4 at $2.50/$15.00 and refuses `openai/gpt-5` and `openai/gpt-4.1`. **P2's primary is `openai/gpt-5.4`** — the strongest of the five, in the band Sonnet 4.6 occupied — verified against THIS APP'S REQUEST SHAPE and not merely a ping, because `temperature` is absent from its supported parameters and `reasoning` is present: the app's own body returned `finish_reason: stop`, 149 completion tokens and ZERO reasoning tokens. **The fallback stays `google/gemini-2.5-flash`**, now genuine: a different vendor from the OpenAI primary here and from the Anthropic primary on the other three steps. **The judge stays `anthropic/claude-haiku-4.5` by owner decision** — it serves, its verdicts are the project's only rubric baseline, and it is now a different VENDOR from the generator as well as a different model. **AND THE MEASUREMENT IS THE UNCOMFORTABLE HALF.** Three runs on the calibration fixture, six judged versions: **grounding fails on the first draft in 3 of 3 runs on BOTH models**, so Phase 4's grounding conclusion was not an artefact of the wrong model — it is about P2 and/or a deliberately under-covered career base. What DID change is the rewrite: under the fallback it made grounding worse (3 → 5 violations, refused), under gpt-5.4 it converged completely once (2 → 0, the project's first `approve`) and not at all once. Keyword coverage is 3/5 with `missingHonest = 5` in all six versions, which is a fact about the corpus rather than the writer. `docs/eval/generation-model-comparison.md` carries the probe table and the comparison, and names its sample size as an observation rather than a benchmark. `lib/pricing.ts` gains the new slug and KEEPS the old one, because `llm_calls` is append-only and rows written before this change still name it. **THE CLAUDE.md AMENDMENT WAS TAKEN BY THE OWNER, same day.** Its "AI model calls" list named `anthropic/claude-sonnet-4.6`, and CLAUDE.md wins on conflict, so the rule book was naming a model the code does not use and this key cannot reach; the agent does not edit that file, so the deviation was declared here and the amendment was dictated. The list now names `openai/gpt-5.4` for generation, names the embeddings model for the first time, and carries a NEW RULE that outranks this spec: a model named there must be one verified to serve on the configured key, and the verification belongs in `docs/openrouter-processing.md` — because a rule book naming an unreachable model sends every call to the fallback in silence, which is how four phases of resumes came to be written by a model nobody chose. No new enforcement rules — the 13 stay frozen. No migration.
@@ -93,7 +94,10 @@ cv-insight/
 │                              # coverage-thresholds.md (v2.13/2.14/2.15 — the three
 │                              # measured rounds of the coverage decision) + its two
 │                              # seeded case fixtures; dev-routes-production-evidence.md
-│                              # (Block H item 9, owner-run, still a template)
+│                              # (Block H item 9, owner-run: the 2026-09-04 run, not a
+│                              # template since v2.24); fresh-clone-verification.md
+│                              # (v2.26, owner-run: the migrations and the whole flow,
+│                              # from an empty folder against a new Supabase project)
 ├── .claude/agents/            # ai-architect, ai-code-reviewer, supabase-security,
 │                              # nextjs-security, vercel-security, eu-compliance-reviewer
 ├── supabase/migrations/001_init.sql
@@ -502,6 +506,8 @@ language sql stable as $$
 $$;
 ```
 
+> **THIS SCRIPT RUNS ON AN EMPTY PROJECT, AND THAT IS NOW MEASURED RATHER THAN ASSUMED (2026-09-09).** `001`–`005` were applied in order, by the owner, to a brand-new Supabase project from a fresh clone of this repository; all five succeeded, `002` returned `schedule = 1` for the pg_cron job, and RLS was then read back on all eight tables — enabled on every one, with a policy count per table that matches the least-privilege matrix above exactly. The run is `docs/eval/fresh-clone-verification.md`. **`create extension if not exists moddatetime;` on line 2 is correct**, and so are the two `moddatetime(updated_at)` triggers it exists for: backlog `p4-27` read the trigger failure on the project this app was first built against as an ABSENT extension and it was a schema-resolution problem, so the file the spec reproduces was right and the caveat written around it was wrong. `p4-27` is closed. What that item was defending is still true, and is why the run was worth doing: a migration that only applies to one project is not a migration.
+
 ### Migration `supabase/migrations/002_audit_retention.sql` (Phase 1; run in SQL editor after 001)
 ```sql
 -- Retention for Supabase Auth's audit trail, which lives in THIS database (we are the controller).
@@ -554,6 +560,77 @@ create index career_items_import_idx on career_items(user_id, import_id);
 > Decision (`source_kind` NOT NULL): the app always sets it, so a null could only mean a row that bypassed the import flow. The database forbids that outright rather than leaving it to a convention every future writer has to remember. (Specified without NOT NULL in the first draft and tightened by the owner before 003 was applied — there is no migrated data to reconcile.)
 > Consequence: the Supabase-linter hardening deferred in v2.2 moves from a future `003` to a future `004`.
 > **Renumbered again in v2.20**: `004` became `004_profiles.sql` (v2.17) and `005` became `005_profile_contacts.sql` (v2.20), so the deferred hardening now lands in a future **`006`**. It has been renumbered twice by migrations that overtook it, which is what a deferral costs when it is named by slot rather than by subject; the slot is stated here and in the 001 comment above, and both move together.
+
+### Migration `supabase/migrations/004_profiles.sql` (v2.17; run in SQL editor after 003)
+```sql
+-- One row per account, `user_id` as the primary key, `display_name` nullable and
+-- length-checked. RLS owner-scoped select / insert / update with `with check` on both
+-- writes, and NO delete policy: clearing a name is an update to null, and the row dies
+-- with the account through `on delete cascade`.
+-- RE-RUNNABLE in full rather than in part: CREATE POLICY has no IF NOT EXISTS form at
+-- any Postgres version, so the three policies are guarded one at a time by a
+-- `pg_policies` lookup -- half-idempotent is worse than plainly non-idempotent, because
+-- these files are pasted into the SQL editor and an error from a file whose first three
+-- statements just succeeded tells the operator nothing about which run created what.
+-- The touch function is named for the migration that owns it, with `set search_path = ''`
+-- and NOT `security definer`: a generic `create or replace` function in `public` is one
+-- careless later migration away from changing what this trigger does, and `check.mjs`
+-- fails the build on `security definer` anywhere under `supabase/`.
+create or replace function public.m004_touch_profiles_updated_at()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+create table if not exists profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  display_name text check (char_length(display_name) between 1 and 120),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists profiles_touch on profiles;
+create trigger profiles_touch before update on profiles
+  for each row execute function public.m004_touch_profiles_updated_at();
+
+alter table profiles enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'profiles'
+      and policyname = 'profiles_select_own'
+  ) then
+    create policy "profiles_select_own" on profiles for select using (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'profiles'
+      and policyname = 'profiles_insert_own'
+  ) then
+    create policy "profiles_insert_own" on profiles for insert with check (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'profiles'
+      and policyname = 'profiles_update_own'
+  ) then
+    create policy "profiles_update_own" on profiles for update
+      using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  end if;
+end;
+$$;
+```
+> **Block C gained this section in v2.26**, closing the half of backlog `p4-27` that the PR review added (`docs/reviews/phase-4.md` M-2): the eighth table's shape was written down only in its own migration file, so a reader following the spec's set-up script built seven tables and the app's profile reads answered `PGRST204` against a table nobody had told them about. The condensed comments above are this file's own, kept to the reasoning a reader of the schema needs; `supabase/migrations/004_profiles.sql` carries the rest. It is numbered and run after 003 so the sequence reads top to bottom; it depends on nothing but `auth.users`, which is why the file's own header says 001 and 002 are enough.
+> Why the table exists at all is above, under the reversed no-`profiles` decision. Its own touch function rather than `moddatetime`: 004 was written that way while `p4-27` was open, and it stays that way because it is the stricter form — an empty `search_path` and a name owned by one migration. What the schema pays for that is two touch mechanisms where a reader expects one, which is worth removing but not worth a migration of its own: if `006` ever lands, bringing 001's two triggers up to this form belongs in it.
 
 ### Migration `supabase/migrations/005_profile_contacts.sql` (v2.20; run in SQL editor after 004)
 ```sql
