@@ -30,8 +30,9 @@ it is in the rounds below, waiting on nothing but a decision to do it.
 ## Read these first
 
 Seven, chosen for consequence rather than for severity label — three product
-findings about the pipeline, two open code defects, one gap in the evidence, and
-one entry holding the two owner actions that gate sharing the link. The migration
+findings about the pipeline, two open code defects, one evidence gap that a
+single run has answered but not settled, and one entry holding the two owner
+actions that gate sharing the link. The migration
 risk that used to sit sixth is gone: `p4-27` closed on 2026-09-09 against a
 brand-new project, and the closure is in the table below.
 
@@ -73,13 +74,36 @@ brand-new project, and the closure is in the table below.
    open: the handler has no item count in front of the model call. It is the one
    open item that costs money every time it fires. Phase 2.
 
-6. **The Playwright suite can no longer create accounts on this project.**
-   Registration is closed in Supabase and that setting is the deployment's only
-   gate, so all four specs now fail at their fixture. The next change to a tested
-   path has no green suite behind it until a second Supabase project exists or the
-   specs sign in to pre-created accounts. Recorded at the end of
-   `docs/eval/phase-6-e2e-run.txt` with the three options and their costs.
-   Phase 6, owner triage.
+6. **The Playwright suite has a project to run on again — once, not routinely.**
+   Registration is closed on the deployment's own Supabase project and that
+   setting is its only gate, so the four specs cannot sign up there. The durable
+   answer named at the end of `docs/eval/phase-6-e2e-run.txt` — option 1, a second
+   Supabase project with registration open and `001`–`005` applied — **now exists
+   and has been demonstrated**: the fresh-clone run of 2026-09-09 ran the suite on
+   exactly such a project, **33 passed, 1 skipped, 0 failed**
+   (`docs/eval/fresh-clone-verification.md`). What is missing is everything that
+   turns that into a habit rather than an occasion, and none of it is a dashboard
+   action:
+   - **The project has to be a fixture, not a leftover.** It was created for one
+     verification. Nothing in this repository names it, and a project nobody has
+     written down is one somebody deletes.
+   - **Credential selection has to stop being a hand-edit.** `playwright.config.ts`
+     starts `npm run dev`, which reads `.env.local` and nothing else, so "run the
+     suite" today means pointing the app's own credentials at the test project and
+     remembering to point them back. A `.env.test`, or an env pair passed through
+     `webServer.env`, is the change — and it is a change to this repository.
+   - **Every future migration lands in two places.** A `006` applied to one project
+     and not the other is a suite asserting a schema the app does not have.
+   - **`Confirm email` stays off there**, which is now a README step, and it is the
+     setting the whole fixture depends on.
+   - **A routine run spends real money.** `scan.spec.ts` and `generate.spec.ts`
+     make genuine OpenRouter calls, by design — that is what makes them evidence —
+     so "run it on every change" is a metered habit and should be entered
+     deliberately.
+
+   Until those exist, a green suite is something the owner arranges rather than
+   something a change gets for free. Phase 6, owner triage; answered in part by
+   the Phase-7 fresh-clone run.
 
 7. **Two one-line owner actions gate sharing the link.** `IMPRESSUM_FILLED` is
    still `false`, so `/impressum` correctly states the operator is not published —
@@ -109,6 +133,16 @@ here so that when the condition arrives the work is already identified.
 
 Every evidence gap below is blocked on the same fixture problem, not on anyone
 being unwilling to write the test.
+
+**The condition has arrived once.** The fresh-clone run of 2026-09-09 stood a
+second Supabase project up with registration open and ran the whole suite on it —
+33 passed, 1 skipped, 0 failed (`docs/eval/fresh-clone-verification.md`) — which
+is the durable option this group was waiting for, demonstrated rather than
+argued. It is not yet the standing arrangement these entries need: the project is
+unnamed in this repository and the suite still reads whatever `.env.local` holds.
+*Read these first* item 6 lists what closes that gap. Each entry below is now
+waiting on someone's time rather than on a precondition, and they move out of this
+group the moment the fixture is written down.
 
 - **`e-1`, `e-2`, `e-3`, `e-4`** — the Phase-2 evidence gaps: the dedup bound, the
   Edit-save request count, `CAREER.truncated` reaching a screen, the target-role
@@ -640,6 +674,8 @@ round and `docs/deploy.md` is the ordered procedure.
 - **CARRIED by owner decision — `eu-8`, granular erasure.** Only career items are individually deletable; job postings, scans, generated versions, import records and `llm_calls` rows go with the account. The reasoning for carrying it: with registration closed, the store holds only the owner's own data, and account deletion already removes all of it — so the Art. 17 exposure the finding describes has no third-party data to attach to. `/privacy` states the limitation plainly rather than implying the erasure story is complete. **This reopens the moment a second real person holds an account**, which is exactly when the deployment stops being a single-user demo — revisit it then, and note that adding the missing DELETE policies needs an owner amendment to CLAUDE.md's RLS matrix, which is deliberate and should stay deliberate.
 - **CLOSED — `eu-9`, `0 owned rows` after deletion is now witnessed.** Owner-run on 2026-09-04 against the live project and recorded in `docs/eval/erasure-evidence.md`: a throwaway account populated until all eight owner-scoped tables held rows, deleted through the app's own [Delete account and data] control rather than by SQL, with per-user counts taken before and after — all eight to zero, and the `auth.users` row gone. It closed the way the finding recommended, with a SQL-level check recorded in `docs/eval/` rather than an R10 carve-out, so `SUPABASE_SERVICE_ROLE_KEY` is still read in exactly one module and the thirteen rules are still frozen. SPEC Block H item 3 carries the same conclusion.
 - **MINOR — the Playwright suite cannot create accounts once registration is closed.** All four specs sign up through the `/signup` form against the same Supabase project the deployment uses. `docs/deploy.md` step 1 handles it by ordering (run the suite before closing registration), which is correct once and useless the second time. A durable fix is a second Supabase project for tests, or pre-created accounts the suite signs into instead of registering. Needed before the suite can be run again after deploy.
+> **ANSWERED ONCE, on 2026-09-09, and not yet routine.** The entry named three options and called the second Supabase project the durable one; that project now exists and the suite ran green on it — 33 passed, 1 skipped, 0 failed, in `docs/eval/fresh-clone-verification.md`. Not struck, because what the entry asks for is a suite that can be run, not a suite that was run: the project is named nowhere in this repository and `playwright.config.ts` starts `npm run dev`, which reads `.env.local` and nothing else, so choosing the test project is still a hand-edit of the app's own credentials. *Read these first* item 6 carries the list of what would make it standing. The entry above stays open.
+
 - **NIT — `IMPRESSUM_FILLED` is still `false`.** The page correctly says the operator's details are not published rather than rendering placeholder tokens, and `docs/deploy.md` step 20 makes filling it a condition of sharing the link. It is a one-line edit with two real values and is nobody's work but the owner's.
 
 ## Phase 6 — from the first production deployment (2026-09-04)

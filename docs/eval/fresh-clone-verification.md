@@ -155,8 +155,10 @@ first draft was refused — see `p5-16`, and `p7-1` for what that number is a nu
 about. This run is an observation and not part of that measurement: the violation
 text was not captured, so it cannot be classified the way `p7-1` classified the
 runs whose text survives, and "the revision passed" is the second convergence this
-project has seen rather than a rate. Nothing here should move the 4-of-4 figure
-without the owner deciding that an unclassified run belongs in it.
+project has seen rather than a rate. **Owner ruling, 2026-09-09: it stays a
+recorded observation and does not move the 4-of-4 figure** — a run whose
+violations cannot be classified cannot be counted alongside runs that were, which
+is the whole lesson of `p7-1`.
 
 **Does not prove: anything about the deployment.** This is a local run against a
 new database. The deployed project still has registration closed, which is the
