@@ -17,7 +17,9 @@ a feature bolted onto a text editor.
 - **Live deployment:** running on Vercel in `fra1`, verified 2026-09-04 —
   `docs/deploy.md` records the run and the checks that passed. The URL is not
   committed to this repository: registration is closed and accounts are created by
-  hand, so the link is shared directly rather than published here.
+  hand, so the link is shared directly rather than published here. Access to the
+  running app — the URL and an account — is available on request:
+  kosareva.my@gmail.com
 - **Specification:** `SPEC.md` is the single source of truth for build details.
 - **Agent rule book:** `CLAUDE.md` constrains how the code is allowed to be
   built. On conflict, CLAUDE.md wins, then SPEC.md.
