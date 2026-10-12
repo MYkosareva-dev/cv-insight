@@ -570,7 +570,7 @@ ran; a stage with no report there did not run.
 | Command | Stage it runs at |
 |---|---|
 | `/team-review` | On a merged phase. It fans the review out to this project's own agents (`ai-code-reviewer`, `supabase-security`, `nextjs-security` and `ai-architect`, plus `eu-compliance-reviewer` when the diff touches personal data) and consolidates their findings. |
-| `/full-review` | Before a branch's pull request is opened, as the complete review pass. The command file is a generic template. Its `subagent_type` names (`code-reviewer`, `security-auditor`, `architect-reviewer` and others) are not agents defined in this repository. In practice the pass has been run with this project's own agents, three of the four `docs/reviews/full-review-*` reports name their agent in the header. |
+| `/full-review` | Before a branch's pull request is opened, as the complete review pass. The command file is a generic template. Its `subagent_type` names (`code-reviewer`, `security-auditor`, `architect-reviewer` and others) are not agents defined in this repository. In practice the pass has been run with this project's own agents; three of the four `docs/reviews/full-review-*` reports name their agent in the header. |
 
 ---
 

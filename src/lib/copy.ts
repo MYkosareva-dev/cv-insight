@@ -91,7 +91,7 @@ export const PRIVACY_UPDATED = '4 September 2026';
  * reason: a claim about the operator and the proof of it ship together, or the
  * page does not make the claim.
  *
- * TRUE FROM v3.0, WITH THE NAME FILLED AND THE EMAIL THE OWNER'S TO TYPE.
+ * TRUE FROM v3.0, WITH BOTH VALUES FILLED BY THE OWNER.
  * `tests/unit/impressum.test.mjs` fails while the switch is true and any value
  * below still carries a `[[...]]` token, so the page cannot ship rendering the
  * placeholder at a reader as a `mailto:` link.
