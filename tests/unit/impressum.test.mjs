@@ -23,6 +23,9 @@ describe('Impressum', () => {
       if (key === 'unfilled') continue; // rendered only while the switch is false
       assert.ok(!value.includes('[['), `IMPRESSUM.${key} still carries a placeholder`);
     }
+    // Not only `[[`: an empty, single-bracketed or malformed value is a mailto: to nobody.
+    assert.match(IMPRESSUM.email, /^[^\s@[\]]+@[^\s@[\]]+\.[^\s@[\]]+$/);
+    assert.ok(IMPRESSUM.operatorName.trim().length > 0 && !IMPRESSUM.operatorName.includes('['));
   });
 
   test('the address slot is a marked placeholder, never an invented street', () => {
