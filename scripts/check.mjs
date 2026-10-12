@@ -3,7 +3,8 @@
  * Repo invariants that a type-checker cannot see (SPEC v1.9 Block A, CLAUDE.md).
  * Runs as `npm run check`, and as `prebuild` so a build cannot skip it.
  *
- * Thirteen rules:
+ * Thirteen rules. Lettered sub-rules (R6b, R10b, R10c, R11a–d) tighten the rule
+ * they sit under and do not add to the count — the set stays at thirteen:
  *   R1  `.from(` outside lib/db — one DAL per table, and DALs are the only
  *       files allowed to reach the database. Non-database receivers such as
  *       `Array.from(` and `Buffer.from(` are excluded.
@@ -371,7 +372,8 @@ scanLines(
     ),
 );
 
-// R6b (SPEC v3.0, a sub-rule of R6 — the thirteen stay thirteen). The loop's
+// R6b (SPEC v3.0b, a sub-rule of R6 — the set stays at thirteen; CLAUDE.md,
+//     agentic guardrails, by owner amendment). The loop's
 //     control flow lives in a PURE module so a stub-model test can drive it
 //     (rule B12). Purity is what makes that safe: an import of anything that can
 //     reach the network, the database or a gate would let the loop spend on its
