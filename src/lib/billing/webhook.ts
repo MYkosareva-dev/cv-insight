@@ -94,6 +94,7 @@ const Subscription = z.object({
   customer: z.union([z.string().min(1), z.object({ id: z.string().min(1) })]),
   status: z.string().min(1),
   cancel_at_period_end: z.boolean(),
+  cancel_at: z.number().int().positive().nullish(),
   metadata: z.record(z.string(), z.string()).nullish(),
   items: z.object({
     data: z.array(z.object({ current_period_end: z.number().int().positive() })).min(1),
@@ -113,13 +114,25 @@ function snapshotOf(raw: unknown): Snapshot | null {
   const parsed = Subscription.safeParse(raw);
   if (!parsed.success) return null;
   const sub = parsed.data;
-  const end = Math.max(...sub.items.data.map((item) => item.current_period_end));
+  const periodEnd = Math.max(...sub.items.data.map((item) => item.current_period_end));
+  /**
+   * A SCHEDULED CANCELLATION IS CARRIED BY `cancel_at`, NOT BY THE FLAG. On the
+   * pinned API version (flexible billing mode), cancelling "at period end" in the
+   * Customer Portal sets `cancel_at` to a timestamp and leaves
+   * `cancel_at_period_end` false — witnessed in a local run, where both
+   * `updated` rows read "not cancelling" and Settings said "Renews" for a
+   * subscription Stripe showed as ending (docs/eval/billing-webhook-evidence.md).
+   * Either signal therefore means cancel-scheduled, and when `cancel_at` is set
+   * it IS the end: Pro lasts until then, and no later.
+   */
+  const cancelAt = sub.cancel_at ?? null;
+  const end = cancelAt ?? periodEnd;
   const metadataUserId = sub.metadata?.user_id;
   return {
     subscriptionId: sub.id,
     customerId: typeof sub.customer === 'string' ? sub.customer : sub.customer.id,
     status: sub.status,
-    cancelAtPeriodEnd: sub.cancel_at_period_end,
+    cancelAtPeriodEnd: sub.cancel_at_period_end || cancelAt !== null,
     currentPeriodEnd: new Date(end * 1000).toISOString(),
     metadataUserId: metadataUserId && Uuid.safeParse(metadataUserId).success ? metadataUserId : null,
   };

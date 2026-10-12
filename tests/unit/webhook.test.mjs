@@ -57,6 +57,7 @@ const subscription = (overrides = {}) => ({
   customer: CUSTOMER,
   status: 'active',
   cancel_at_period_end: false,
+  cancel_at: null,
   metadata: { user_id: USER },
   items: { object: 'list', data: [{ id: 'si_1', current_period_end: PERIOD_END_S }] },
   ...overrides,
@@ -129,6 +130,37 @@ describe('POST /api/stripe/webhook — three recorded deliveries', () => {
     assert.equal(rows[0].cancel_at_period_end, true);
     assert.equal(rows[0].status, 'active');
     assert.equal(rows[0].user_id, USER, 'attributed by subscription.metadata.user_id');
+  });
+
+  test('a Portal cancellation carried by `cancel_at` with the old flag FALSE reads as cancelling', async () => {
+    /**
+     * The shape a local run actually received (docs/eval/billing-webhook-evidence.md):
+     * on the pinned API version, "cancel at period end" in the Customer Portal
+     * sets `cancel_at` and leaves `cancel_at_period_end` false. Reading the flag
+     * alone stored "not cancelling", and Settings said "Renews" for a
+     * subscription Stripe showed as ending.
+     */
+    const scheduled = subscription({ cancel_at_period_end: false, cancel_at: PERIOD_END_S });
+    const { deps, rows } = harness({ current: scheduled });
+    const { payload, header } = signed(
+      subscriptionEvent('evt_portal_cancel', 'customer.subscription.updated', scheduled),
+    );
+    assert.equal((await handleStripeWebhook(payload, header, deps)).status, 200);
+    assert.equal(rows[0].cancel_at_period_end, true, 'cancel_at alone means cancel-scheduled');
+    assert.equal(rows[0].status, 'active', 'still Pro until the end');
+    assert.equal(rows[0].current_period_end, PERIOD_END_ISO);
+  });
+
+  test('when `cancel_at` is set it IS the end, even before the billing period would close', async () => {
+    const early = PERIOD_END_S - 5 * 24 * 60 * 60;
+    const scheduled = subscription({ cancel_at: early });
+    const { deps, rows } = harness({ current: scheduled });
+    const { payload, header } = signed(
+      subscriptionEvent('evt_cancel_early', 'customer.subscription.updated', scheduled),
+    );
+    await handleStripeWebhook(payload, header, deps);
+    assert.equal(rows[0].current_period_end, new Date(early * 1000).toISOString());
+    assert.equal(rows[0].cancel_at_period_end, true);
   });
 
   test('customer.subscription.deleted appends the final row', async () => {
