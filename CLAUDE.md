@@ -295,6 +295,9 @@ SPEC.md, then anything else.
   it, before acting on it. A report summarized from memory loses the parts nobody
   thought to keep — severity labels, exact quotes, the reasoning behind a verdict —
   and those are unrecoverable once the run ends.
+- A documentation-only PR (SPEC.md, CLAUDE.md, docs/) is reviewed by
+  ai-architect at the next phase gate, which reads it by definition, rather
+  than by ai-code-reviewer, which reads code.
 
 ## Git workflow
 - Two remotes. `capstone` is where branches are pushed and pull requests are
