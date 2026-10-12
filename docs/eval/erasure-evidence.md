@@ -118,3 +118,102 @@ no UPDATE policy at all).
   repository. Adding a table already means adding a DAL and a line in
   `scripts/check.mjs`'s list — the cascade belongs in that same habit, and this
   file should be re-run when one is added.
+
+---
+
+# v3.0 re-run — the billing ledger (2026-10-12)
+
+**Status: VERIFIED.** Migration `006_subscription_events.sql` adds a ninth
+owner-scoped table, `subscription_events`, with a `BEFORE UPDATE OR DELETE`
+trigger that refuses every edit and every delete that does not arrive through the
+`ON DELETE CASCADE` from `auth.users`. That exemption — `pg_trigger_depth() < 2`
+refuses, the referential-integrity cascade arrives at depth 2 — was a configured
+mechanism until this run. The owner performed it on the live Supabase project on
+**2026-10-12**, immediately after applying 006, and the output is below.
+
+This is SPEC Block H item 11. It closes the condition SPEC Block C attaches to
+the depth rule ("if the third fails, the trigger is narrowed to UPDATE-only"):
+the third did not fail, so the trigger stays as written.
+
+## How it was verified
+
+1. Migration 006 was applied in the SQL editor ("Success. No rows returned"),
+   and two post-apply reads confirmed the shape: RLS enabled on the table, and
+   exactly one policy on it — the owner SELECT.
+2. A throwaway account was created and **one ledger row was inserted for it** in
+   the SQL editor. The editor runs as the table owner, so RLS does not stop the
+   insert — the same position the webhook's service-role client is in, and the
+   one the trigger exists to bind.
+3. A direct `UPDATE` and a direct `DELETE` of that row were issued in the SQL
+   editor, as the role with the most power over the table that the app's own
+   rules contemplate.
+4. The account was then deleted **through the app's own [Delete account and
+   data] control** on the local dev server — the Settings dialog with its typed
+   confirmation, `DELETE /api/account`, the service-role client and the hard
+   delete — exactly as in the 2026-09-04 run, and for the same reason: the path
+   under test is the one a user takes.
+5. The ledger and the auth user were counted afterwards.
+
+## Run output
+
+```
+-- post-apply
+select tablename, rowsecurity from pg_tables where tablename = 'subscription_events'
+  ->  subscription_events | true
+select policyname from pg_policies where tablename = 'subscription_events'
+  ->  subscription_events_owner_select          (exactly one row)
+
+user id: 7fa5f1d4-5a5e-485b-a299-2bff7a5e297e
+
+1. insert into subscription_events (user_id, stripe_event_id, stripe_event_type, stripe_customer_id, status)
+   values ('7fa5f1d4-5a5e-485b-a299-2bff7a5e297e', 'evt_test_h11', 'checkout.session.completed', 'cus_test_h11', 'active')
+   ->  Success, 1 row
+
+2. update subscription_events set status = 'canceled' where stripe_event_id = 'evt_test_h11'
+   ->  ERROR: P0001: subscription_events is append-only
+       CONTEXT: PL/pgSQL function public.subscription_events_append_only() line 4 at RAISE
+
+3. delete from subscription_events where stripe_event_id = 'evt_test_h11'
+   ->  ERROR: P0001: subscription_events rows are removed only with the account
+       CONTEXT: PL/pgSQL function public.subscription_events_append_only() line 7 at RAISE
+
+4. Settings -> [Delete account and data], typed DELETE, confirmed
+   ->  redirected to /login with the deletion toast
+
+5. select count(*) from subscription_events where user_id = '7fa5f1d4-5a5e-485b-a299-2bff7a5e297e'  ->  0
+   select count(*) from auth.users where id = '7fa5f1d4-5a5e-485b-a299-2bff7a5e297e'               ->  0
+```
+
+## What this witnesses
+
+- **The ledger cannot be edited**, by the role that bypasses RLS: a direct
+  `UPDATE` is refused with the trigger's first message. A cancellation therefore
+  has to be a new row, which is what the webhook writes.
+- **The ledger cannot be deleted from directly**, by that same role: a direct
+  `DELETE` is refused with the trigger's second message.
+- **The cascade gets through.** Deleting the account through the product's own
+  control succeeded, and the ledger row it owned is gone with the auth user. This
+  is the half that mattered most: had the trigger refused the cascade,
+  `deleteUser` would have failed as a whole and rolled back, and every user who
+  ever upgraded would have been unable to delete their account. The erasure
+  promise on `/privacy` outranks the immutability promise, and both now hold.
+
+## What this does NOT witness
+
+- **A nine-table count in one run.** This run counted `subscription_events` and
+  `auth.users`. The other eight owner-scoped tables were counted to zero on
+  2026-09-04 (above), and 006 changes none of them; their cascade is unchanged.
+  SPEC's wording for item 11 asks for all nine in one run, and this file records
+  what was actually measured rather than that.
+- **A ledger row written by the webhook.** The row was inserted by hand in the
+  SQL editor. The webhook path — signature, attribution, the service-role insert
+  — is witnessed separately, in the billing webhook evidence (SPEC Block H item
+  12), once Stripe is configured.
+- **Stripe's side.** Deleting the account removes this app's ledger rows; the
+  Stripe customer and any subscription are not touched by this app, as `/privacy`
+  says. In test mode that has no consequence.
+- **A schema owner with DDL rights.** The trigger refuses a plain `UPDATE` or
+  `DELETE` from every role; someone who can `alter table … disable trigger` or
+  `drop trigger` is outside what a trigger can bind. It is a guard against
+  accident and against the API roles, not against the schema owner.
+- Everything listed under the 2026-09-04 run's "does NOT witness" still applies.

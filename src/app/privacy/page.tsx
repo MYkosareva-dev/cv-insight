@@ -197,8 +197,9 @@ export default function PrivacyPage() {
        * key, so no row can outlive the account it belongs to. And if the ledger's
        * append-only trigger ever refused the cascade, `deleteUser` would fail as a
        * whole and roll back — so the risk is a FAILED ERASURE for anyone who ever
-       * upgraded, never a surviving row. That is what the erasure evidence run
-       * (Block H item 11) has to witness before this branch is deployed.
+       * upgraded, never a surviving row. The erasure evidence run (Block H item
+       * 11, docs/eval/erasure-evidence.md, 2026-10-12) witnessed the cascade
+       * getting through with a ledger row present.
        */}
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium">Plans and payment</h2>

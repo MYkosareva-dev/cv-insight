@@ -26,9 +26,9 @@ import { createClient } from '@/lib/supabase/server';
  *   4. Owned rows in all NINE tables follow via FK ON DELETE CASCADE — the six
  *      in 001, `imports` from 003, `profiles` from 004 and `subscription_events`
  *      from 006. The ledger's append-only trigger lets a DELETE through only when
- *      it arrives by this cascade (`pg_trigger_depth() >= 2`). That exemption is a
- *      configured mechanism until docs/eval/erasure-evidence.md records a run
- *      with ledger rows present (SPEC Block H item 11). Every one of them
+ *      it arrives by this cascade (`pg_trigger_depth() >= 2`). That exemption is
+ *      witnessed with a ledger row present in docs/eval/erasure-evidence.md (v3.0
+ *      re-run, 2026-10-12; SPEC Block H item 11). Every one of them
  *      references `auth.users(id) on delete cascade`, so deleting that row is
  *      what removes them; there is no second delete to remember here, and adding
  *      one would be a way for the two to fall out of step.
