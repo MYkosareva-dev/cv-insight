@@ -743,8 +743,8 @@ export async function matchDocumentsForTexts(
  * is `could_not_search`, which the loop answers as "search unavailable" and logs
  * as `failed` — never as nothing found.
  *
- * The development log prints one line per search — the query, the chunk count
- * and the best score — on top of `matchDocuments`' per-chunk title lines. Chunk
+ * The development log prints one line per search — the query's LENGTH, the
+ * chunk count and the best score — on top of `matchDocuments`' per-chunk title lines. Chunk
  * TEXT is printed in neither, and nothing is printed outside development.
  */
 export async function searchCareerBase(
@@ -763,7 +763,7 @@ export async function searchCareerBase(
     outcome.chunks.length > 0 ? Math.max(...outcome.chunks.map((chunk) => chunk.similarity)) : null;
   if (process.env.NODE_ENV === 'development') {
     console.log(
-      `[retrieval] agentic search ${JSON.stringify(query)} → ${outcome.chunks.length} chunks, best ${
+      `[retrieval] agentic search (query ${query.length} chars) → ${outcome.chunks.length} chunks, best ${
         bestSimilarity === null ? '—' : bestSimilarity.toFixed(4)
       }`,
     );

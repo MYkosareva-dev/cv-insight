@@ -475,10 +475,10 @@ function Research({ log }: { log: RetrievalLogEntry[] | null }) {
                 <span className="text-muted-foreground">
                   {entry.refused
                     ? entry.reason === 'deadline'
-                      ? RESULT.researchRefusedDeadline
+                      ? RESULT.researchRefusedDeadline(entry.count ?? 1)
                       : entry.reason === 'invalid_arguments'
-                        ? RESULT.researchRefusedInvalid
-                        : RESULT.researchRefused
+                        ? RESULT.researchRefusedInvalid(entry.count ?? 1)
+                        : RESULT.researchRefused(entry.count ?? 1)
                     : entry.failed
                       ? RESULT.researchFailed
                       : RESULT.researchFound(entry.chunks ?? 0)}

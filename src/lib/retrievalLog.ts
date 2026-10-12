@@ -27,6 +27,12 @@ export type SearchLogEntry = {
   refused: boolean;
   reason: RefusalReason | null;
   failed: boolean;
+  /**
+   * On a refused entry: how many calls were refused for this reason in the run.
+   * One entry per reason, never one per call, so a flood of calls cannot grow
+   * the log past its 64 KB CHECK. Absent on an executed search.
+   */
+  count?: number;
 };
 
 /** The terminal entry of a run whose loop ended on an erroring round. */

@@ -31,7 +31,7 @@ import {
   MAX_TOOL_ROUNDS,
 } from '@/lib/budget';
 import { type GenerationItem, MAX_ITEMS_CHARS, itemChars } from '@/lib/generation';
-import type { RefusalReason, RetrievalLogEntry } from '@/lib/retrievalLog';
+import type { RefusalReason, RetrievalLogEntry, SearchLogEntry } from '@/lib/retrievalLog';
 
 // The log's shape lives in a dependency-free module so the browser can read it.
 export type { RefusalReason, RetrievalLogEntry, SearchLogEntry } from '@/lib/retrievalLog';
@@ -186,22 +186,41 @@ export async function runAgentLoop(args: AgentLoopArgs): Promise<AgentLoopOutcom
     searches,
   });
 
+  /**
+   * ONE ENTRY PER REFUSAL REASON PER RUN, carrying a count (security review,
+   * MAJOR). Nothing bounds how many tool calls a model puts in one round, and an
+   * instruction injected into a pasted posting can ask for hundreds. Logged one
+   * entry each, they could push `retrieval_log` past its 64 KB CHECK and fail the
+   * version insert after the whole run was paid for. Every call still gets its
+   * own refused `tool` message — the transcript stays well-formed — but the LOG
+   * grows by at most three refusal entries, and none of them stores a query.
+   */
+  const refusalEntries = new Map<RefusalReason, SearchLogEntry>();
+
   /** Answer ONE tool call: execute it or refuse it, log it, return the tool message. */
   const answer = async (call: ToolCall, round: number): Promise<string> => {
     const query = queryOf(call);
     const refuse = (reason: RefusalReason, body: object): string => {
-      log.push({
-        round,
-        // Unparseable arguments are never stored: the raw string is model output
-        // of unknown shape, and the log promises queries, not transcripts.
-        query: query ?? '',
-        chunks: null,
-        bestSimilarity: null,
-        itemTitles: [],
-        refused: true,
-        reason,
-        failed: false,
-      });
+      const existing = refusalEntries.get(reason);
+      if (existing) {
+        existing.count = (existing.count ?? 1) + 1;
+      } else {
+        const entry: SearchLogEntry = {
+          round,
+          // No query on a refusal: an unparseable argument is model output of
+          // unknown shape, and the count is what the screen needs.
+          query: '',
+          chunks: null,
+          bestSimilarity: null,
+          itemTitles: [],
+          refused: true,
+          reason,
+          failed: false,
+          count: 1,
+        };
+        refusalEntries.set(reason, entry);
+        log.push(entry);
+      }
       return JSON.stringify(body);
     };
 
@@ -212,7 +231,16 @@ export async function runAgentLoop(args: AgentLoopArgs): Promise<AgentLoopOutcom
     // Counted BEFORE the search runs: a search that could not complete was still
     // executed, and the budget counts executions.
     searches += 1;
-    const result = await args.search(query);
+    let result: SearchResult;
+    try {
+      result = await args.search(query);
+    } catch {
+      // A search that THROWS — a transient auth or plan read, an embeddings
+      // error the effect did not convert — is a search that could not run (code
+      // review M1). The run has already spent; it continues on the evidence it
+      // holds, and the failure is the third retrieval outcome, never "0 found".
+      result = { status: 'could_not_search' };
+    }
 
     if (result.status === 'could_not_search') {
       log.push({

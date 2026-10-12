@@ -122,6 +122,25 @@ export const AGENTIC_LOOP_DEADLINE_MS = 120_000;
  * reachable total is 10; the ceiling is 12 because a round that errors after
  * three good ones still buys a single-shot writer.
  */
+/**
+ * Must this chat step pass rule B7's overall ceiling before it starts?
+ *
+ * Yes, with ONE exception (security review, minor): the single-shot writer an
+ * agentic run falls through to when a round errors. That writer is not a new
+ * piece of work — it is the first draft of a run `authorizeGenerate()` already
+ * admitted, and by then the loop's rounds are paid for. Refusing it on the cap
+ * would turn those paid rounds into a 429 with nothing saved, which is the
+ * outcome "the cap decides whether a step may start, not whether it may finish"
+ * exists to prevent. It is still capped at MAX_CHAT_REQUESTS_PER_STEP and still
+ * counted on the ledger, so the run's ceiling of 12 holds.
+ *
+ * The revision and the judges after it are NOT covered: they re-check as
+ * before, and a refusal there saves the draft with an honest card.
+ */
+export function totalCapApplies(step: string, coveredFallThrough: boolean): boolean {
+  return !(step === 'generate' && coveredFallThrough);
+}
+
 export const MAX_CHAT_REQUESTS_PER_GENERATE_BY_PATH = {
   single: MAX_CHAT_REQUESTS_PER_GENERATE,
   agentic: MAX_TOOL_ROUNDS + GENERATE_CHAT_STEPS * MAX_CHAT_REQUESTS_PER_STEP,

@@ -1010,9 +1010,22 @@ export const RESULT = {
   researchQuery: (query: string) => `Searched for “${query}”`,
   researchFound: (n: number) =>
     n === 0 ? 'Nothing in your career base matched.' : `${n} matching ${n === 1 ? 'passage' : 'passages'}, from:`,
-  researchRefused: 'Search budget reached — this search was not run.',
-  researchRefusedDeadline: 'Time budget reached — this search was not run.',
-  researchRefusedInvalid: 'The search request was malformed — it was not run.',
+  /**
+   * One row per refusal REASON, with the count (security review: one entry per
+   * call let a flood of calls outgrow the log's 64 KB bound).
+   */
+  researchRefused: (n: number) =>
+    n === 1
+      ? 'Search budget reached — 1 further search was not run.'
+      : `Search budget reached — ${n} further searches were not run.`,
+  researchRefusedDeadline: (n: number) =>
+    n === 1
+      ? 'Time budget reached — 1 further search was not run.'
+      : `Time budget reached — ${n} further searches were not run.`,
+  researchRefusedInvalid: (n: number) =>
+    n === 1
+      ? '1 search request was malformed and was not run.'
+      : `${n} search requests were malformed and were not run.`,
   researchFailed: 'This search could not run, so nothing was checked for it.',
   researchInterrupted:
     'The research stopped on an error, so this draft was written from the initial retrieval alone.',

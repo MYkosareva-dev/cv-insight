@@ -9,6 +9,7 @@ import {
   MAX_CHAT_REQUESTS_PER_STEP,
   MAX_SEARCH_CALLS,
   MAX_TOOL_ROUNDS,
+  totalCapApplies,
   dailyCallLimit,
   dailyRescoreLimit,
   hasStepCap,
@@ -18,6 +19,7 @@ import {
   withinBudget,
 } from '../../src/lib/budget.ts';
 import { PLAN_LIMITS } from '../../src/lib/plan.ts';
+import { readFileSync } from 'node:fs';
 
 /**
  * The metered-request budget is the arithmetic that decides how much money one
@@ -235,5 +237,33 @@ describe('the per-path generate ceiling (SPEC v3.0 §5 item 4, ruled 12)', () =>
   test('the agentic search and per-search budgets are the SPEC numbers', () => {
     assert.equal(MAX_SEARCH_CALLS, 6);
     assert.equal(AGENTIC_SEARCH_LIMIT, 6);
+  });
+});
+
+describe('the fall-through writer of an admitted agentic run (security review, minor)', () => {
+  test('is not re-checked against the daily ceiling — its run was admitted and its rounds are paid', () => {
+    assert.equal(totalCapApplies('generate', true), false);
+  });
+
+  test('every other step still is: an ordinary generate, the judge, and the agentic rounds', () => {
+    assert.equal(totalCapApplies('generate', false), true);
+    assert.equal(totalCapApplies('judge', false), true);
+    assert.equal(totalCapApplies('judge', true), true, 'the exemption is for the writer only');
+    assert.equal(totalCapApplies('generate_agentic', true), true);
+  });
+
+  test('the gate marks the exemption only on round_error and consumes it once', () => {
+    // lib/chat.ts is server-only and cannot be loaded by a test; this pins its source.
+    const source = readFileSync(new URL('../../src/lib/chat.ts', import.meta.url), 'utf8');
+    const count = (needle) => source.split(needle).length - 1;
+    assert.equal(count('const coveredFallThroughs = new WeakSet<CallLedger>();'), 1);
+    assert.equal(count('export const coveredFallThroughs'), 0, 'the mark must stay module-private');
+    assert.equal(
+      count("if (outcome.kind === 'round_error') coveredFallThroughs.add(args.ledger);"),
+      1,
+      'marked only on round_error',
+    );
+    assert.equal(count('coveredFallThroughs.add('), 1, 'marked in exactly one place');
+    assert.equal(count('coveredFallThroughs.delete(ledger)'), 1, 'one use, then the revision is checked again');
   });
 });

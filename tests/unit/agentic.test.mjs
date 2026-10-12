@@ -164,13 +164,11 @@ describe('runAgentLoop — rule B12 against a stub model', () => {
     assert.equal(refusedMessages.length, 2);
     assert.equal(JSON.stringify(REFUSED_BUDGET), '{"refused":"search budget exhausted"}');
 
+    // ONE refusal entry for the reason, carrying the count, and no query.
     const refusedLog = outcome.log.filter((e) => e.refused);
     assert.deepEqual(
-      refusedLog.map((e) => [e.query, e.reason, e.chunks]),
-      [
-        ['q7', 'budget', null],
-        ['q8', 'budget', null],
-      ],
+      refusedLog.map((e) => [e.query, e.reason, e.chunks, e.count]),
+      [['', 'budget', null, 2]],
     );
     assert.equal(outcome.searches, 6);
     assert.equal(executedSearches(outcome.log), 6);
@@ -187,11 +185,10 @@ describe('runAgentLoop — rule B12 against a stub model', () => {
     assert.deepEqual(stub.queries, ['a1', 'a2', 'a3', 'a4', 'a5', 'b1']);
     const round2 = outcome.log.filter((e) => e.round === 2);
     assert.deepEqual(
-      round2.map((e) => [e.query, e.refused]),
+      round2.map((e) => [e.query, e.refused, e.count]),
       [
-        ['b1', false],
-        ['b2', true],
-        ['b3', true],
+        ['b1', false, undefined],
+        ['', true, 2],
       ],
     );
   });
@@ -252,7 +249,8 @@ describe('runAgentLoop — rule B12 against a stub model', () => {
     assert.deepEqual(stub.queries, ['real']);
     assert.equal(outcome.searches, 1);
     const invalid = outcome.log.filter((e) => e.reason === 'invalid_arguments');
-    assert.equal(invalid.length, 3);
+    assert.equal(invalid.length, 1, 'one entry for the reason, not one per call');
+    assert.equal(invalid[0].count, 3);
     assert.ok(invalid.every((e) => e.query === '' && e.refused));
     const transcript = model.requests.at(-1).messages;
     assertEveryCallAnswered(transcript);
@@ -298,7 +296,7 @@ describe('runAgentLoop — rule B12 against a stub model', () => {
       outcome.log.map((e) => [e.query, e.refused, e.reason]),
       [
         ['early', false, null],
-        ['late', true, 'deadline'],
+        ['', true, 'deadline'],
       ],
     );
     assert.deepEqual(
@@ -370,6 +368,58 @@ describe('runAgentLoop — rule B12 against a stub model', () => {
     assert.deepEqual(entry.itemTitles, ['Visible title']);
     assert.equal(entry.bestSimilarity, 0.7);
     assert.doesNotMatch(JSON.stringify(outcome.log), new RegExp(secret));
+  });
+
+  test('50 refused calls add ONE log entry, and the log stays far under the 64 KB CHECK', async () => {
+    const long = 'x'.repeat(2_000); // cut to MAX_SEARCH_QUERY_CHARS, and never stored on a refusal
+    const flood = Array.from({ length: 50 }, (_, i) => call(`${long}${i}`));
+    const model = stubModel([
+      tools(call('s1'), call('s2'), call('s3'), call('s4'), call('s5'), call('s6'), ...flood),
+      write(),
+    ]);
+    const outcome = await runAgentLoop({ firstPrompt: 'P2', seed: SEED, ...model, ...stubSearch() });
+    const refused = outcome.log.filter((e) => e.refused);
+    assert.equal(refused.length, 1);
+    assert.equal(refused[0].count, 50);
+    assert.equal(refused[0].query, '');
+    // Every one of the 56 calls still got its own tool message.
+    assertEveryCallAnswered(model.requests.at(-1).messages);
+    const bytes = new TextEncoder().encode(JSON.stringify(outcome.log)).length;
+    assert.ok(bytes < 64 * 1024 / 8, `log is ${bytes} bytes`);
+  });
+
+  test('a flood of malformed calls across rounds is still ONE entry per reason', async () => {
+    const junk = (n) => Array.from({ length: n }, () => rawCall('{}'));
+    const model = stubModel([tools(...junk(300)), tools(...junk(300)), tools(...junk(300)), write()]);
+    const outcome = await runAgentLoop({ firstPrompt: 'P2', seed: SEED, ...model, ...stubSearch() });
+    assert.equal(outcome.log.length, 1);
+    assert.equal(outcome.log[0].count, 900);
+    assert.ok(new TextEncoder().encode(JSON.stringify(outcome.log)).length < 1_000);
+  });
+
+  test('a search that THROWS is a failed search: the run continues and nothing escapes (code review M1)', async () => {
+    const model = stubModel([tools(call('flaky'), call('fine')), write('resume')]);
+    const stub = stubSearch();
+    const search = async (query) => {
+      if (query === 'flaky') {
+        const err = new Error('plan read failed');
+        err.name = 'PlanRequiredError';
+        throw err;
+      }
+      return stub.search(query);
+    };
+    const outcome = await runAgentLoop({ firstPrompt: 'P2', seed: SEED, ...model, search });
+    assert.equal(outcome.kind, 'written');
+    assert.deepEqual(
+      outcome.log.map((e) => [e.query, e.failed, e.chunks]),
+      [
+        ['flaky', true, null],
+        ['fine', false, 3],
+      ],
+    );
+    assert.equal(outcome.searches, 2, 'a search that could not run was still executed');
+    const toolMessages = model.requests.at(-1).messages.filter((m) => m.role === 'tool');
+    assert.equal(toolMessages[0].content, JSON.stringify(SEARCH_UNAVAILABLE));
   });
 
   test('the loop itself writes nothing to the console — no query, no content, no transcript', async () => {

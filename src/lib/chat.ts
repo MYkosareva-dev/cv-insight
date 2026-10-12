@@ -14,6 +14,7 @@ import {
   MAX_CHAT_REQUESTS_PER_STEP,
   MAX_TOOL_ROUNDS,
   hasStepCap,
+  totalCapApplies,
   underDailyCallCap,
   underStepCap,
 } from '@/lib/budget';
@@ -293,8 +294,20 @@ async function assertStepAllowed(
   } else {
     await assertUnderStepCap(plan, step);
   }
-  await assertUnderTotalCap(plan, ledger);
+  // The fall-through writer of an admitted agentic run is covered by that
+  // admission, once (`totalCapApplies`). `delete` consumes the mark, so the
+  // revision that may follow is checked as usual.
+  const coveredFallThrough =
+    step === 'generate' && ledger !== undefined && coveredFallThroughs.delete(ledger);
+  if (totalCapApplies(step, coveredFallThrough)) await assertUnderTotalCap(plan, ledger);
 }
+
+/**
+ * Ledgers whose next `generate` step is the fall-through writer of an agentic
+ * run this module admitted. MODULE-PRIVATE, so only `runAgenticGenerate` can
+ * mark one — a caller cannot exempt its own step from rule B7.
+ */
+const coveredFallThroughs = new WeakSet<CallLedger>();
 
 /** One shared budget for the whole step. Both exceptions draw from it. */
 type Budget = { spent: number };
@@ -599,8 +612,28 @@ export async function runAgenticGenerate(args: {
     seed: args.seed,
     requestRound: (messages, toolChoice) =>
       issueToolRound(user.id, args.applicationId, messages, toolChoice, budget, args.ledger),
-    search: (query) => searchCareerBase(query, args.applicationId),
+    /**
+     * A search NEVER THROWS OUT OF THE RUN (code review M1). By the time it runs
+     * the run has spent; a transient auth or plan read inside the gate, or an
+     * embeddings error, returns to the loop as a search that could not run — the
+     * third retrieval outcome, logged `failed`. Metadata only: the error's
+     * name, never the query.
+     */
+    search: async (query) => {
+      try {
+        return await searchCareerBase(query, args.applicationId);
+      } catch (err) {
+        console.error('[chat] an agentic search could not run', {
+          name: err instanceof Error ? err.name : typeof err,
+        });
+        return { status: 'could_not_search' as const };
+      }
+    },
   });
+
+  // The single-shot writer this run now falls through to is part of the run
+  // that was admitted, not a new one (`totalCapApplies`).
+  if (outcome.kind === 'round_error') coveredFallThroughs.add(args.ledger);
 
   if (outcome.kind !== 'written') {
     console.warn('[chat] generate_agentic fell back to the single-shot path', {
