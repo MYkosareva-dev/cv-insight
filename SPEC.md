@@ -739,7 +739,7 @@ create index if not exists subscription_events_user_recent
   on subscription_events (user_id, received_at desc);
 alter table subscription_events enable row level security;
 do $$ begin
-  if not exists (select 1 from pg_policies where tablename = 'subscription_events' and policyname = 'subscription_events_owner_select') then
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'subscription_events' and policyname = 'subscription_events_owner_select') then
     create policy subscription_events_owner_select on subscription_events
       for select using (auth.uid() = user_id);
   end if;
@@ -766,11 +766,22 @@ create trigger subscription_events_append_only
   before update or delete on subscription_events
   for each row execute function subscription_events_append_only();
 
+-- TRUNCATE fires no row trigger and is not filtered by RLS, so the append-only guarantee
+-- above would not hold against it. No REST or RPC path issues TRUNCATE today; this keeps
+-- the two API roles from ever holding the privilege.
+revoke truncate on subscription_events from anon, authenticated;
+
 -- Per-version provenance. Both nullable, both set on insert; the table stays append-only.
 alter table resume_versions add column if not exists model text
   check (model is null or char_length(model) between 3 and 120);
-alter table resume_versions add column if not exists retrieval_log jsonb;
+-- retrieval_log is bounded because resume_versions keeps its owner INSERT policy: any
+-- signed-in user can write their own row through the REST endpoint, so an unbounded jsonb
+-- is unbounded storage. 64 KB is far above the largest log the agentic loop can write
+-- (at most 6 searches of query, counts and item titles).
+alter table resume_versions add column if not exists retrieval_log jsonb
+  check (retrieval_log is null or octet_length(retrieval_log::text) <= 65536);
 ```
+> **v3.0a — three hardenings from the migration review, by owner amendment** (`docs/reviews/billing-supabase-security-006.md`, MINOR-2, MINOR-3, NOTE-2): `revoke truncate` from `anon` and `authenticated`, because TRUNCATE skips both the row trigger and RLS; a 64 KB bound on `resume_versions.retrieval_log`, because that table keeps its owner INSERT policy and an unbounded jsonb would be unbounded storage writable through the REST endpoint; and `schemaname = 'public'` in the policy guard, as `004_profiles.sql` already has. The block above is the as-built file.
 > **The depth rule is a configured mechanism until a run witnesses it** (CLAUDE.md, "A configured mechanism is not a working one"). Block H item 11 re-runs `docs/eval/erasure-evidence.md` with ledger rows present and must show three things: a direct `UPDATE` refused with the first message, a direct `DELETE` refused with the second, and account deletion through the app's own control succeeding with the ledger rows gone. **If the third fails, the trigger is narrowed to UPDATE-only in the same branch and the narrowing is written here** — never dropped in silence, because the erasure promise on `/privacy` outranks the immutability promise on `/pricing`.
 > Decision (no `plan` column anywhere, enforced by review): `profiles` is the obvious place and the wrong one, for the reason given under the diagram. A reviewer who finds a `plan`, `tier` or `is_pro` column on any table with a user-role write policy has found a defect, whatever the UI does with it.
 > Decision (`status` is Stripe's string, verbatim): `active`, `trialing`, `past_due`, `canceled`, `unpaid`, `incomplete`, `incomplete_expired`, `paused`. The app interprets exactly two of them as Pro and names them in `currentPlan()`; the rest are stored as received so a later reader can see what Stripe actually said rather than this app's summary of it.

@@ -21,7 +21,7 @@ create index if not exists subscription_events_user_recent
   on subscription_events (user_id, received_at desc);
 alter table subscription_events enable row level security;
 do $$ begin
-  if not exists (select 1 from pg_policies where tablename = 'subscription_events' and policyname = 'subscription_events_owner_select') then
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'subscription_events' and policyname = 'subscription_events_owner_select') then
     create policy subscription_events_owner_select on subscription_events
       for select using (auth.uid() = user_id);
   end if;
@@ -48,7 +48,17 @@ create trigger subscription_events_append_only
   before update or delete on subscription_events
   for each row execute function subscription_events_append_only();
 
+-- TRUNCATE fires no row trigger and is not filtered by RLS, so the append-only guarantee
+-- above would not hold against it. No REST or RPC path issues TRUNCATE today; this keeps
+-- the two API roles from ever holding the privilege.
+revoke truncate on subscription_events from anon, authenticated;
+
 -- Per-version provenance. Both nullable, both set on insert; the table stays append-only.
 alter table resume_versions add column if not exists model text
   check (model is null or char_length(model) between 3 and 120);
-alter table resume_versions add column if not exists retrieval_log jsonb;
+-- retrieval_log is bounded because resume_versions keeps its owner INSERT policy: any
+-- signed-in user can write their own row through the REST endpoint, so an unbounded jsonb
+-- is unbounded storage. 64 KB is far above the largest log the agentic loop can write
+-- (at most 6 searches of query, counts and item titles).
+alter table resume_versions add column if not exists retrieval_log jsonb
+  check (retrieval_log is null or octet_length(retrieval_log::text) <= 65536);
