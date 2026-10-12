@@ -114,7 +114,7 @@ export const IMPRESSUM = {
   /** Angaben gemäß § 5 DDG. */
   legalBasisLine: 'Angaben gemäß § 5 DDG',
   operatorName: 'Margarita Kosareva',
-  email: '[[OPERATOR CONTACT EMAIL — owner to fill]]',
+  email: 'kosareva.my@gmail.com',
   unfilled:
     'The operator’s name and contact address are not yet published here. They are filled in before this deployment is shared with anyone, and until then this page makes no claim about who operates the app.',
   responsibleLabel: 'Responsible for the content',
