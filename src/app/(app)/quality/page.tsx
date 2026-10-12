@@ -18,6 +18,7 @@ import {
   type Share,
   SMALL_SAMPLE,
   formatUsdFromMicro,
+  pathSummary,
   rubricDistribution,
   rubricOutcomes,
   summariseCalls,
@@ -95,6 +96,7 @@ export default async function QualityPage() {
 
   const summary = summariseCalls(calls);
   const outcomes = rubricOutcomes(versions);
+  const paths = pathSummary(versions, calls);
   const distribution = rubricDistribution(versions);
   const windowFull = calls.length >= QUALITY_CALL_WINDOW;
   /**
@@ -198,6 +200,28 @@ export default async function QualityPage() {
           label={QUALITY.tileTokens}
           value={`${formatCount(summary.tokensIn)} / ${formatCount(summary.tokensOut)}`}
           source={QUALITY.tileTokensSource}
+        />
+        {/* SPEC v3.0: the two generation paths, side by side. */}
+        <Tile
+          label={QUALITY.tileAgentic}
+          value={
+            paths.agentic.runs === 0
+              ? QUALITY.nothingMeasured
+              : QUALITY.tileAgenticValue(paths.agentic.runs, paths.agentic.meanSearchesPerRun)
+          }
+          source={QUALITY.tileAgenticSource(paths.agentic.searches)}
+        />
+        <Tile
+          label={QUALITY.tileCostByPath}
+          value={QUALITY.tileCostByPathValue(
+            paths.single.costPerRunMicro === null
+              ? QUALITY.nothingMeasured
+              : formatUsdFromMicro(paths.single.costPerRunMicro),
+            paths.agentic.costPerRunMicro === null
+              ? QUALITY.nothingMeasured
+              : formatUsdFromMicro(paths.agentic.costPerRunMicro),
+          )}
+          source={QUALITY.tileCostByPathSource}
         />
       </div>
       <p className="text-muted-foreground text-xs">

@@ -24,6 +24,8 @@
  */
 
 /** The rows this module reads, structurally — never the `server-only` types. */
+import { type RetrievalLogEntry, executedSearches } from '@/lib/retrievalLog';
+
 export type CallRow = {
   step: string;
   model: string;
@@ -49,6 +51,11 @@ export type VersionRow = {
     atsFormat: { score: number };
     verdict: 'approve' | 'revise';
   } | null;
+  /**
+   * v3.0: null on every single-shot version, an array on an agentic one (even an
+   * empty one). Optional so the rubric functions' callers need not supply it.
+   */
+  retrieval_log?: readonly RetrievalLogEntry[] | null;
   created_at: string;
 };
 
@@ -533,6 +540,13 @@ export type GenerationProvenance = {
   allFallback: boolean;
   /** Distinct serving models, newest first. */
   models: string[];
+  /**
+   * Models that served a generation here ONLY as the fallback (v3.0). The
+   * per-version line reads `resume_versions.model`, which carries no fallback
+   * flag, so this is how it can still say "the FALLBACK model" — a page cannot
+   * import the connection's model table to compare against.
+   */
+  fallbackModels: string[];
 };
 
 export const NO_GENERATION: GenerationProvenance = {
@@ -541,11 +555,15 @@ export const NO_GENERATION: GenerationProvenance = {
   newestFallback: false,
   allFallback: false,
   models: [],
+  fallbackModels: [],
 };
 
-/** Newest-first `generate` rows for one application. */
+/** The writer steps — the single-shot `generate` and, from v3.0, the agentic loop's rounds. */
+export const WRITER_STEPS: readonly string[] = ['generate', 'generate_agentic'];
+
+/** Newest-first writer rows for one application. */
 export function generationProvenance(rows: readonly CallRow[]): GenerationProvenance {
-  const generates = rows.filter((row) => row.step === 'generate');
+  const generates = rows.filter((row) => WRITER_STEPS.includes(row.step));
   if (generates.length === 0) return NO_GENERATION;
 
   const newest = generates[0]!;
@@ -559,5 +577,126 @@ export function generationProvenance(rows: readonly CallRow[]): GenerationProven
     // `every` over a non-empty list, so this cannot be vacuously true.
     allFallback: generates.every((row) => row.fallback_used),
     models,
+    fallbackModels: models.filter(
+      (model) =>
+        generates.some((row) => row.model === model && row.fallback_used) &&
+        !generates.some((row) => row.model === model && !row.fallback_used),
+    ),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The two generation paths (SPEC v3.0, Block H item 14)
+// ---------------------------------------------------------------------------
+
+/** The steps a generate run spends on. `rescore` and `parse_vacancy` are not a run's. */
+export const RUN_STEPS: readonly string[] = ['generate', 'generate_agentic', 'judge', 'embed'];
+
+export type PathFigures = {
+  /** `ai` rows on this path — one per run, revisions not counted again. */
+  runs: number;
+  /** Sum of the attributed rows' cost; rows of unknown price are counted below, not in it. */
+  costMicro: number;
+  /** `costMicro / runs`, or null with no runs. */
+  costPerRunMicro: number | null;
+  /** Attributed rows whose serving model had no price entry. */
+  unknownPricing: number;
+};
+
+export type PathSummary = {
+  single: PathFigures;
+  agentic: PathFigures & {
+    /** Searches that EXECUTED across those runs — refusals excluded, failed searches included. */
+    searches: number;
+    /** `searches / runs`, one decimal, or null with no runs. */
+    meanSearchesPerRun: number | null;
+  };
+};
+
+/**
+ * Generations, searches and cost per run, SPLIT BY PATH, so the Pro price of a
+ * resume is a number rather than a feeling (SPEC v3.0 §5 item 9).
+ *
+ * A RUN IS AN `ai` ROW, as in `classifyRuns`, and its PATH is its log: a
+ * non-null `retrieval_log` means the agentic loop ran — including a run whose
+ * loop fell through to the single-shot writer, which spent agentic money.
+ * Searches are counted from the `ai` row only; the revision carries the same log
+ * and would count them twice.
+ *
+ * COST IS ATTRIBUTED BY APPLICATION AND TIME, and that is load-bearing on one
+ * fact: `logLlmCall` writes through `after()`, so a run's `llm_calls` rows land
+ * AFTER the `resume_versions` rows the same request inserted. A run's window
+ * therefore opens at its `ai` row and closes at the next `ai` or `user` row of
+ * the same application — not at its own `ai_revision`, and a `user` row closes
+ * it because an on-demand quality check writes its version first and its judge
+ * row after. Only `RUN_STEPS` rows count.
+ *
+ * DECLARED IMPRECISIONS, each named on the tile: a re-scan's `embed` rows
+ * between two runs land in the preceding run's window; a run that FAILED wrote
+ * no version, so its rows fall into the previous run's window, or are dropped
+ * when there is none. No run id exists in `llm_calls` to do better without a
+ * migration.
+ */
+export function pathSummary(
+  versions: readonly VersionRow[],
+  calls: readonly CallRow[],
+): PathSummary {
+  const byApplication = new Map<string, VersionRow[]>();
+  for (const version of versions) {
+    const list = byApplication.get(version.application_id) ?? [];
+    list.push(version);
+    byApplication.set(version.application_id, list);
+  }
+  const callsByApplication = new Map<string, CallRow[]>();
+  for (const call of calls) {
+    if (!call.application_id || !RUN_STEPS.includes(call.step)) continue;
+    const list = callsByApplication.get(call.application_id) ?? [];
+    list.push(call);
+    callsByApplication.set(call.application_id, list);
+  }
+
+  const acc = {
+    single: { runs: 0, cost: 0, unknown: 0 },
+    agentic: { runs: 0, cost: 0, unknown: 0, searches: 0 },
+  };
+
+  for (const [applicationId, list] of byApplication) {
+    const ordered = [...list].sort(
+      (a, b) => a.created_at.localeCompare(b.created_at) || SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source],
+    );
+    const appCalls = callsByApplication.get(applicationId) ?? [];
+    ordered.forEach((version, index) => {
+      if (version.source !== 'ai') return;
+      const closer = ordered.slice(index + 1).find((next) => next.source !== 'ai_revision');
+      const opens = version.created_at;
+      const closes = closer?.created_at ?? null;
+      const agentic = version.retrieval_log !== null && version.retrieval_log !== undefined;
+      const bucket = agentic ? acc.agentic : acc.single;
+      bucket.runs += 1;
+      if (agentic) acc.agentic.searches += executedSearches(version.retrieval_log ?? null);
+      for (const call of appCalls) {
+        if (call.created_at < opens) continue;
+        if (closes !== null && call.created_at >= closes) continue;
+        if (call.cost_known) bucket.cost += call.cost_usd_micro;
+        else bucket.unknown += 1;
+      }
+    });
+  }
+
+  const figures = (b: { runs: number; cost: number; unknown: number }): PathFigures => ({
+    runs: b.runs,
+    costMicro: b.cost,
+    costPerRunMicro: b.runs > 0 ? Math.round(b.cost / b.runs) : null,
+    unknownPricing: b.unknown,
+  });
+
+  return {
+    single: figures(acc.single),
+    agentic: {
+      ...figures(acc.agentic),
+      searches: acc.agentic.searches,
+      meanSearchesPerRun:
+        acc.agentic.runs > 0 ? Math.round((acc.agentic.searches / acc.agentic.runs) * 10) / 10 : null,
+    },
   };
 }

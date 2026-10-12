@@ -53,6 +53,7 @@ export type LlmStep =
   | 'import_resume'
   | 'parse_vacancy'
   | 'generate'
+  | 'generate_agentic'
   | 'judge'
   | 'embed'
   | 'rescore';
@@ -68,7 +69,10 @@ export type LlmStep =
  * quietly stopped being the thing it exists to be. Total maps make the next
  * omission a BUILD failure instead of a silent inheritance.
  */
-export type ChatStep = Extract<LlmStep, 'import_resume' | 'parse_vacancy' | 'generate' | 'judge'>;
+export type ChatStep = Extract<
+  LlmStep,
+  'import_resume' | 'parse_vacancy' | 'generate' | 'generate_agentic' | 'judge'
+>;
 
 /** Primary model per step; the fallback is always FALLBACK_MODEL. */
 /**
@@ -112,6 +116,14 @@ export const MODEL_BY_STEP = {
   parse_vacancy: 'anthropic/claude-haiku-4.5',
   judge: 'anthropic/claude-haiku-4.5',
   generate: 'openai/gpt-5.4',
+  /**
+   * SPEC v3.0 — the Pro writer, which searches the career base through one tool.
+   * PROBED, NOT ASSUMED: `docs/eval/tool-calling-probe.md` records all five slugs
+   * on this key answering a declared tool with a `tool_calls` finish. The same
+   * writer as `generate`, so `docs/eval/agentic-vs-single-shot.md` compares
+   * retrieval rather than models.
+   */
+  generate_agentic: 'openai/gpt-5.4',
 } as const satisfies Record<ChatStep, string>;
 
 /**
@@ -151,6 +163,12 @@ export const MAX_TOKENS_BY_STEP = {
    */
   judge: 3000,
   generate: 2500,
+  /**
+   * The same ceiling as `generate`, because the writing round of the loop IS a
+   * resume. A searching round returns a few short tool calls and uses a fraction
+   * of it.
+   */
+  generate_agentic: 2500,
 } as const satisfies Record<ChatStep, number>;
 
 /**
@@ -165,6 +183,33 @@ export const MAX_TOKENS_BY_STEP = {
 export { PRICE_USD_PER_MTOK, costUsdMicro, normalizeModelId } from '@/lib/pricing';
 
 export type ChatMessage = { role: 'system' | 'user'; content: string };
+
+/** One tool call as the model returned it. `arguments` is the model's JSON string. */
+export type ToolCall = {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+};
+
+/**
+ * The transcript of the agentic step (SPEC v3.0). Wider than `ChatMessage`
+ * because a tool round carries the model's own `assistant` turn and one `tool`
+ * answer per call; the four single-request steps never need either, so their
+ * type stays narrow.
+ */
+export type ToolChatMessage =
+  | ChatMessage
+  | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
+  | { role: 'tool'; tool_call_id: string; content: string };
+
+/** A server-built tool declaration. Never client-supplied. */
+export type ToolDeclaration = {
+  type: 'function';
+  function: { name: string; description: string; parameters: Record<string, unknown> };
+};
+
+/** What one round of the agentic loop got back. */
+export type ToolRoundData = { content: string | null; toolCalls: ToolCall[] };
 
 export type ConnectionResult<T> = {
   data: T;
@@ -319,7 +364,7 @@ function asRetryable(err: unknown, attemptedModel: string, latencyMs: number): O
 
 type ChatResponse = {
   model?: string;
-  choices?: { message?: { content?: string | null } }[];
+  choices?: { message?: { content?: string | null; tool_calls?: ToolCall[] } }[];
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 };
 
@@ -413,6 +458,127 @@ export async function chatCompletion(args: {
 
   return {
     data: content,
+    model: served,
+    fallbackUsed: isFallback(served, primaryModel),
+    tokensIn,
+    tokensOut,
+    costUsdMicro: cost,
+    costKnown,
+    latencyMs,
+  };
+}
+
+/**
+ * POST /chat/completions with `tools` declared — the agentic step only (SPEC
+ * v3.0, Block F "tool calling").
+ *
+ * A SEPARATE EXPORT rather than a flag on `chatCompletion`, because the success
+ * condition differs: a searching round answers with `tool_calls` and NO content,
+ * which `chatCompletion` rightly treats as a billed empty response. Here only "no
+ * content AND no tool calls" is that error.
+ *
+ * Same `models: [primary, FALLBACK_MODEL]` routing — the probe recorded the
+ * fallback honouring `tools` too, so a fallback round can still search.
+ * `temperature` is 0.4, the single-shot writer's, so the comparison between the
+ * two paths is about retrieval. No `response_format`: the writing round is text.
+ */
+export async function chatCompletionWithTools(args: {
+  step: Extract<ChatStep, 'generate_agentic'>;
+  primaryModel: string;
+  messages: ToolChatMessage[];
+  tools: ToolDeclaration[];
+  toolChoice: 'auto' | 'none';
+}): Promise<ConnectionResult<ToolRoundData>> {
+  const { step, primaryModel, messages, tools, toolChoice } = args;
+  const startedAt = Date.now();
+
+  const body = {
+    models: [primaryModel, FALLBACK_MODEL],
+    messages,
+    tools,
+    // On the closing round `tools` stays declared and the choice is `none`: a
+    // transcript holding tool messages with no declaration behind them is one
+    // some providers refuse.
+    tool_choice: toolChoice,
+    max_tokens: MAX_TOKENS_BY_STEP[step],
+    temperature: 0.4,
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(CHAT_ENDPOINT, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw asRetryable(err, primaryModel, Date.now() - startedAt);
+  }
+
+  const latencyMs = Date.now() - startedAt;
+
+  // Body unread on a non-2xx, for the reason given in `chatCompletion`: it echoes
+  // the request, and the request holds career items.
+  if (!res.ok) {
+    throw new OpenRouterError({
+      message: `chat completions responded ${res.status}`,
+      attemptedModel: primaryModel,
+      latencyMs,
+      retryable: false,
+      status: res.status,
+    });
+  }
+
+  let json: ChatResponse;
+  try {
+    json = (await res.json()) as ChatResponse;
+  } catch {
+    throw new OpenRouterError({
+      message: 'chat completions returned a body that is not JSON',
+      attemptedModel: primaryModel,
+      latencyMs,
+      retryable: false,
+      status: res.status,
+    });
+  }
+
+  const served = json.model ?? primaryModel;
+  const tokensIn = json.usage?.prompt_tokens ?? 0;
+  const tokensOut = json.usage?.completion_tokens ?? 0;
+  const message = json.choices?.[0]?.message;
+  const content =
+    typeof message?.content === 'string' && message.content.trim() !== ''
+      ? message.content
+      : null;
+  const toolCalls = Array.isArray(message?.tool_calls)
+    ? message.tool_calls.filter(
+        (call): call is ToolCall =>
+          typeof call?.id === 'string' &&
+          typeof call.function?.name === 'string' &&
+          typeof call.function?.arguments === 'string',
+      )
+    : [];
+
+  if (content === null && toolCalls.length === 0) {
+    throw new OpenRouterUsageError({
+      message: 'chat completions returned neither content nor tool calls',
+      attemptedModel: served,
+      latencyMs,
+      status: res.status,
+      usage: {
+        model: served,
+        fallbackUsed: isFallback(served, primaryModel),
+        tokensIn,
+        tokensOut,
+      },
+    });
+  }
+
+  const { costUsdMicro: cost, costKnown } = costUsdMicro(served, tokensIn, tokensOut);
+
+  return {
+    data: { content, toolCalls },
     model: served,
     fallbackUsed: isFallback(served, primaryModel),
     tokensIn,

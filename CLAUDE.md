@@ -324,7 +324,10 @@ SPEC.md, then anything else.
   the loop), not prompt instructions; every tool call gets a `tool` message
   back, including refused ones; close the budget with `tool_choice: "none"`
   while keeping `tools` declared.
-- The loop is a `while` in `lib/chat.ts`. No agent framework — the stack table
+- The loop's control flow is a bounded `while` in the pure `lib/agentic.ts`;
+  `lib/chat.ts` is its only caller and supplies both effects (the model request
+  and the search). R6b fails the build if that module imports anything that can
+  spend, or if anything else calls the loop. No agent framework — the stack table
   prohibits them, and a bounded loop with one tool does not need one.
 - The agent's first message carries the single-shot retrieval result as its
   seed; the tool can only add evidence, never replace the baseline. The lexical

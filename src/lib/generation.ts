@@ -108,6 +108,15 @@ export function distinctItemIds(chunks: { careerItemId: string }[], limit: numbe
 }
 
 /**
+ * What one item costs against `MAX_ITEMS_CHARS`. One definition, because the
+ * agentic loop (`lib/agentic.ts`) appends to a set built by `itemsPayload` and
+ * must measure it the same way.
+ */
+export function itemChars(item: Pick<GenerationItem, 'title' | 'content' | 'period'>): number {
+  return item.title.length + item.content.length + (item.period?.length ?? 0);
+}
+
+/**
  * The `<items>` block's payload, bounded by `MAX_ITEMS_CHARS`.
  *
  * Serialised as JSON because the model has to be able to tell one item's period
@@ -121,7 +130,7 @@ export function itemsPayload(
   const payload: GenerationItem[] = [];
   let used = 0;
   for (const item of items) {
-    const size = item.title.length + item.content.length + (item.period?.length ?? 0);
+    const size = itemChars(item);
     // The first item is kept unconditionally: an empty corpus makes every claim
     // in the resume ungrounded by construction, which is not a smaller failure.
     if (payload.length > 0 && used + size > maxChars) break;

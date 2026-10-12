@@ -469,3 +469,34 @@ describe('scripts/check.mjs — the gate the other gates rest on', () => {
     assert.match(stderr, /R11/);
   });
 });
+
+/**
+ * R6b (SPEC v3.0, a sub-rule of R6). The agentic loop's control flow is pure so a
+ * stub-model test can drive it; these cases are what keep it pure, and keep the
+ * chat gate its only caller. The loop's name is ASSEMBLED, because this file is
+ * itself in the rule's scan.
+ */
+describe('scripts/check.mjs — R6b, the agentic loop stays pure', () => {
+  const LOOP = ['run', 'Agent', 'Loop'].join('');
+
+  test('R6b FAILS when lib/agentic.ts imports a gate', () => {
+    const dir = sandbox();
+    const file = 'src/lib/agentic.ts';
+    write(dir, file, `import { searchCareerBase } from '@/lib/retrieval';\nvoid searchCareerBase;\n${read(dir, file)}`);
+    const { status, stderr } = run(dir);
+    assert.equal(status, 1, 'an impure import in the loop module must fail the build');
+    assert.match(stderr, /R6 lib\/agentic\.ts imports/);
+  });
+
+  test('R6b FAILS when a route calls the loop directly', () => {
+    const dir = sandbox();
+    write(dir, 'src/app/api/sneaky/route.ts', `import { ${LOOP} } from '@/lib/agentic';\nvoid ${LOOP};\n`);
+    const { status, stderr } = run(dir);
+    assert.equal(status, 1, 'a second caller of the loop must fail the build');
+    assert.match(stderr, /R6 runAgentLoop referenced outside lib\/chat\.ts/);
+  });
+
+  test('R6b allows the shipped tree', () => {
+    assert.equal(run(sandbox()).status, 0);
+  });
+});

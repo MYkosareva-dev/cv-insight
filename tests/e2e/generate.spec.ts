@@ -519,8 +519,12 @@ test.describe('generate', () => {
      * demanded Sonnet would go red the moment the account was fixed OR stay red
      * while it was broken. What must always hold is that the app SAYS which one
      * it was.
+     *
+     * From 006 (SPEC v3.0) every AI version records its own writer, so a fresh
+     * run renders the PER-VERSION line; the application-level wording remains
+     * only for versions written before the column existed.
      */
-    const writtenBy = page.getByText(/^Most recent draft written by /);
+    const writtenBy = page.getByText(/^This version was written by /);
     await expect(writtenBy).toBeVisible();
     console.log('[phase-5] generation provenance:', (await writtenBy.innerText()).trim());
 

@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { requireApiUser } from '@/lib/auth/requireApiUser';
-import { MAX_CHAT_REQUESTS_PER_GENERATE, withinBudget } from '@/lib/budget';
+import { MAX_CHAT_REQUESTS_PER_GENERATE_BY_PATH, withinBudget } from '@/lib/budget';
 import { authorizeGenerate, newCallLedger } from '@/lib/chat';
 import { ERROR_MESSAGES, NAME_PLACEHOLDER, RESULT } from '@/lib/copy';
 import { getApplication } from '@/lib/db/applications';
@@ -28,21 +28,24 @@ import { type Draft, generateWithJudge, retrieveItemsFor } from '@/lib/tailoring
 /**
  * POST /api/applications/[id]/generate — SPEC Block D #5, US-4.
  *
- * Retrieve the career items → generate (P2, Sonnet) → judge (P3, Haiku) → at
+ * Retrieve the career items → generate (P2, gpt-5.4) → judge (P3, Haiku) → at
  * most ONE revision fed the judge's specific findings → append the versions.
  * The request body is `{ "mode"?: "single" | "agentic" }` (SPEC v3.0) and
  * nothing else: every input lives server-side, so a caller cannot substitute a
- * vacancy, a resume or a corpus between the auth check and the spend. In this
- * build both modes run the single-shot path; `agentic` is refused for Free and
- * admitted for Pro, and the agentic loop itself lands in its own branch.
+ * vacancy, a resume or a corpus between the auth check and the spend. `agentic`
+ * is refused for Free in the gate; for Pro the grant says `agentic` and the
+ * first draft is written by the bounded search loop (`lib/agentic.ts`, driven
+ * from `lib/chat.ts`), seeded with the same retrieval the single-shot path uses.
  *
  * THE DECLARED COST OF ONE RUN, which is what the ledger is here to make true:
  *
- *     2 `llm_calls` chat rows   the judge approves the first draft
- *     4                         approved after rule B3's one revision
- *     8                         worst case — each of the four steps spends its
- *                               single owner-approved retry
- *   + 1 embeddings row (`embed` step), excluded from rule B7 by its definition
+ *   single   2 chat rows when the judge approves, 4 after one revision, 8 worst
+ *            case (each of four steps spends its single retry)
+ *            + 1 embeddings row
+ *   agentic  up to 4 loop rows (`generate_agentic`), then judge / revision /
+ *            judge as above: 10 reachable on the normal path, 12 worst case when
+ *            a round errors and the single-shot writer is bought on the seed
+ *            + 1 seed embeddings row + up to 6 search rows (`embed`)
  *
  * ONE `CallLedger` is created here and passed to every chat call, because rule
  * B7 is otherwise blind to its own request: `countCallsInLast24h` reads
@@ -54,7 +57,17 @@ import { type Draft, generateWithJudge, retrieveItemsFor } from '@/lib/tailoring
  * the number in the hand-over and the number the code can reach have diverged.
  */
 
-/** Two 60 s attempts plus a 2 s retry wait, four times over, is ~248 s. */
+/**
+ * 300 s — the deployment plan's ceiling (Block D v2.24), not a derivation.
+ *
+ * DECLARED: it does not cover the theoretical worst case. Four single-shot steps
+ * of two 60 s attempts plus a 2 s wait is 4 × 122 = 488 s, and the agentic path
+ * adds up to four rounds and six searches before that. What keeps a real run
+ * inside 300 s is typical latency, plus the agentic loop's own wall-clock budget
+ * (`AGENTIC_LOOP_DEADLINE_MS`), which can only end the loop earlier. If the
+ * platform kills the function anyway, no version is saved and `after()`-written
+ * `llm_calls` rows may be lost with it.
+ */
 export const maxDuration = 300;
 
 /**
@@ -202,15 +215,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       ledger,
       candidateName: displayName ?? NAME_PLACEHOLDER,
       contacts,
+      // The gate's decision, carried on the grant — never re-derived here.
+      path: grant.path,
     });
 
-    if (!withinBudget(ledger, MAX_CHAT_REQUESTS_PER_GENERATE)) {
+    const ceiling = MAX_CHAT_REQUESTS_PER_GENERATE_BY_PATH[grant.path];
+    if (!withinBudget(ledger, ceiling)) {
       // Unreachable: the chat gate refuses a third request within a step. If it
       // ever fires, a step was added without the ceiling being updated, and the
       // declared cost is no longer the true one.
       console.error('[generate] the run exceeded its declared chat budget', {
         requests: ledger.chat,
-        ceiling: MAX_CHAT_REQUESTS_PER_GENERATE,
+        ceiling,
+        path: grant.path,
       });
       throw new ServerError();
     }
@@ -245,6 +262,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       revisionNotBetter: revision !== null && shown.id === original.id,
       /** True when a rewrite was earned and the reviewer gave nothing to act on. */
       revisionWithheld: outcome.revisionWithheld,
+      /** Which writer path ran (SPEC v3.0), and how an agentic one fell back, if it did. */
+      path: grant.path,
+      agenticFallback: outcome.agenticFallback,
       content: shown.content,
       judge: shown.judge,
       /**
@@ -291,5 +311,7 @@ function save(
     content: draft.content,
     source,
     judge: draft.judge,
+    model: draft.model,
+    retrievalLog: draft.retrievalLog,
   });
 }

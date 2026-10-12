@@ -6,6 +6,9 @@
  * No secrets, no resume/vacancy content — this module is safe on the client.
  */
 
+// Type-only, and erased at build: the step vocabulary keys LLM_STEP_LABEL below.
+import type { LlmCall } from '@/lib/db/types';
+
 export const APP_NAME = 'CV Insight';
 
 /**
@@ -717,9 +720,10 @@ export const RESULT = {
   /**
    * 429 DAILY_LIMIT for Free's second tailored resume in a rolling 24 h (SPEC
    * v3.0, edge case L6). SPEC's draft said Pro "removes the daily limits" and
-   * "researches your career base step by step"; neither is true of this build —
-   * Pro raises the limits and the agentic path is not built yet — so the copy
-   * says what is.
+   * "researches your career base step by step". The second is true from the
+   * agentic-retrieval branch on; the first is not (Pro raises the limits), and
+   * the link goes to Settings until /pricing exists — so the copy keeps saying
+   * only what holds.
    */
   dailyLimitFree:
     'Your Free plan allows 1 tailored resume per day. Try again tomorrow, or upgrade to Pro in Settings for higher daily limits.',
@@ -842,6 +846,16 @@ export const RESULT = {
    */
   writtenByFallbackAlways:
     'This has happened on every generation for this scan. Quality has the per-step counts.',
+  /**
+   * PER VERSION, from 006 onward (SPEC v3.0): `resume_versions.model` records the
+   * writer of each AI version, so where it is set the line can speak about THIS
+   * text. The two application-level lines above stay for versions written
+   * before the column existed — one component, two truths, each stated only
+   * where the data supports it.
+   */
+  writtenByVersion: (model: string) => `This version was written by ${model}.`,
+  writtenByVersionFallback: (model: string) =>
+    `This version was written by ${model} — the FALLBACK model, not the one this app asks for.`,
 
   versionsHeading: 'Versions',
   versionLabel: { ai: 'AI draft', ai_revision: 'AI revision', user: 'Your edit' },
@@ -929,6 +943,15 @@ export const RESULT = {
     'This writes a new resume from your career base and has the reviewer check it. Your current version is kept — every version stays in the history below.',
   regenerateDialogCost:
     'It costs two AI calls, or four if the reviewer asks for a rewrite.',
+  /**
+   * The cost of the path that will ACTUALLY run, on Pro (SPEC v3.0, Block E).
+   * The agentic run spends more than the single-shot one, and a cost line that
+   * stayed at "two calls" would be the app under-stating a bill. The figures
+   * are §5 item 9 as amended: up to four research calls and up to six searches,
+   * then the reviewer, then a rewrite and a second review if one is earned.
+   */
+  regenerateDialogCostAgentic:
+    'On Pro the writer researches your career base first: up to four AI calls and up to six searches, then one for the reviewer, and two more if the reviewer asks for a rewrite.',
   regenerateConfirm: 'Write another',
   regenerateCancel: 'Cancel',
 
@@ -951,6 +974,9 @@ export const RESULT = {
    */
   generateHelp:
     'Writes a resume from your career base and has the reviewer check it. Costs two AI calls, or four with a rewrite.',
+  /** Pro's generate line: the agentic path's cost, stated before the click (v3.0). */
+  generateHelpAgentic:
+    'Researches your career base step by step, writes a resume and has the reviewer check it. Up to four AI calls and six searches for the research, then one for the reviewer, two more with a rewrite.',
   /**
    * ITS OWN LINE, not `generateHelp` reused. The two actions cost the same and do
    * the same thing to the same corpus, but only one of them is happening to a
@@ -960,6 +986,50 @@ export const RESULT = {
    */
   regenerateHelp:
     'Writes another resume from your career base and has it checked. Your current version is kept. Costs two AI calls, or four with a rewrite.',
+  regenerateHelpAgentic:
+    'Researches your career base again, writes another resume and has it checked. Your current version is kept. Up to four AI calls and six searches, then the review.',
+
+  // --- the plan and the research (SPEC v3.0, Block E "/applications/[id]") ---
+  /** The rail line under the ring: which plan, and which retrieval path it buys. */
+  planSingle: 'Free · one retrieval pass',
+  planAgentic: 'Pro · agentic retrieval',
+  /**
+   * "HOW THIS DRAFT WAS RESEARCHED" — rendered from the version's
+   * `retrieval_log`, never from chunks, so nothing here is chunk text: a query
+   * the agent wrote, a count, and career-item titles.
+   *
+   * FOUR KINDS OF ROW, and each says only what happened (architect findings 5,
+   * 6 and 9): a search that ran; one refused for the budget, the clock or a
+   * malformed request — each named for its own reason, never all as "budget";
+   * one that could not run, which is NOT "nothing found" (three retrieval
+   * outcomes, never two); and the terminal row of a loop that stopped on an
+   * error, so that fallback is visible after a reload and never reads as an
+   * agent that chose not to search.
+   */
+  researchHeading: 'How this draft was researched',
+  researchQuery: (query: string) => `Searched for “${query}”`,
+  researchFound: (n: number) =>
+    n === 0 ? 'Nothing in your career base matched.' : `${n} matching ${n === 1 ? 'passage' : 'passages'}, from:`,
+  /**
+   * One row per refusal REASON, with the count (security review: one entry per
+   * call let a flood of calls outgrow the log's 64 KB bound).
+   */
+  researchRefused: (n: number) =>
+    n === 1
+      ? 'Search budget reached — 1 further search was not run.'
+      : `Search budget reached — ${n} further searches were not run.`,
+  researchRefusedDeadline: (n: number) =>
+    n === 1
+      ? 'Time budget reached — 1 further search was not run.'
+      : `Time budget reached — ${n} further searches were not run.`,
+  researchRefusedInvalid: (n: number) =>
+    n === 1
+      ? '1 search request was malformed and was not run.'
+      : `${n} search requests were malformed and were not run.`,
+  researchFailed: 'This search could not run, so nothing was checked for it.',
+  researchInterrupted:
+    'The research stopped on an error, so this draft was written from the initial retrieval alone.',
+  researchNone: 'The agent used the initial retrieval and ran no extra searches.',
   /**
    * IT IS NOT "ONE AI CALL", and the first version of this line said so — which
    * is the exact sentence the paragraph above forbids, shipped by the copy it
@@ -1180,6 +1250,23 @@ export const QUALITY = {
   tileTokens: 'Tokens in / out',
   tileTokensSource: 'Sums of tokens_in and tokens_out over the same rows.',
 
+  /**
+   * THE TWO GENERATION PATHS (SPEC v3.0, Block H item 14). Agentic runs cost
+   * more, and this is where that is a number. Every figure names its rows, and
+   * the attribution method's two known errors are said on the tile itself.
+   */
+  tileAgentic: 'Agentic generations',
+  tileAgenticValue: (runs: number, meanSearches: number | null) =>
+    meanSearches === null
+      ? `${runs} runs`
+      : `${runs} ${runs === 1 ? 'run' : 'runs'} · ${meanSearches} searches per run`,
+  tileAgenticSource: (searches: number) =>
+    `AI drafts with a research log (Pro). ${searches} searches ran in total; refused calls are not counted, searches that could not run are.`,
+  tileCostByPath: 'Cost per run, by path',
+  tileCostByPathValue: (single: string, agentic: string) => `Single ${single} · Agentic ${agentic}`,
+  tileCostByPathSource:
+    'Generate, agentic, judge and embed rows of the same application, from each AI draft until the next draft or your own version. A re-scan between two runs counts toward the earlier one; a run that failed before saving a draft counts toward the run before it.',
+
   /** The rubric outcome of each AI run. */
   rubricHeading: 'What the reviewer said about each AI run',
   rubricLead:
@@ -1263,9 +1350,12 @@ export const LLM_STEP_LABEL = {
   parse_vacancy: 'Parse vacancy',
   embed: 'Embed',
   generate: 'Generate',
+  generate_agentic: 'Generate (agentic)',
   judge: 'Quality check',
   rescore: 'Re-score',
-} as const;
+  // TOTAL over the step vocabulary, so the next step is a build error rather than a
+  // raw identifier on /quality.
+} as const satisfies Record<LlmCall['step'], string>;
 
 export const SETTINGS = {
   title: 'Settings',

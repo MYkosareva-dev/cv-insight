@@ -686,10 +686,15 @@ fallback really fails grounding more often.
 **Not built, deliberately:** i18n, realtime, notifications, analytics, an admin
 panel. `SPEC.md`'s module checklist gives the reason for each.
 
-**Specified in SPEC v3.0 and not yet built:** Free and Pro plans with Stripe
-test-mode billing, and agentic retrieval as the Pro generation path. Until they
-are, the deployment has neither, and `/privacy` and `/impressum` do not describe
-them.
+**Plans and billing are built:** Free and Pro, with the plan derived from the
+`subscription_events` ledger and enforced inside the two gates, and Stripe in
+test mode on hosted pages, which `/privacy` names as the second processor.
+
+**Agentic retrieval is built as the Pro generation path:** the writer may search
+the career base through one tool, `search_career_base`, inside a bounded loop
+(4 model requests, 6 searches), seeded with the single-shot retrieval and judged
+exactly like it. The full Pro-path walkthrough for this README is deferred to
+go-public (SPEC DoD 16).
 
 There is no application
 cron either, but that is not the same as none: the 90-day purge of the

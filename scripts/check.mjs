@@ -3,7 +3,8 @@
  * Repo invariants that a type-checker cannot see (SPEC v1.9 Block A, CLAUDE.md).
  * Runs as `npm run check`, and as `prebuild` so a build cannot skip it.
  *
- * Thirteen rules:
+ * Thirteen rules. Lettered sub-rules (R6b, R10b, R10c, R11a–d) tighten the rule
+ * they sit under and do not add to the count — the set stays at thirteen:
  *   R1  `.from(` outside lib/db — one DAL per table, and DALs are the only
  *       files allowed to reach the database. Non-database receivers such as
  *       `Array.from(` and `Buffer.from(` are excluded.
@@ -16,7 +17,11 @@
  *       literal in order to warn about it.
  *   R5  an openrouter.ai URL outside the connection module — no hand-rolled
  *       model call can skip the gates.
- *   R6  importing the connection module from outside the two gates.
+ *   R6  importing the connection module from outside the two gates. From
+ *       v3.0, R6b: the agentic loop's control flow (`lib/agentic.ts`) imports
+ *       only pure modules, and `runAgentLoop` is referenced only by
+ *       `lib/chat.ts` (and unit tests driving it with stubs) — so the loop can
+ *       spend only through the two effects the chat gate hands it.
  *   R7  reading a secret from process.env without `import 'server-only'`.
  *   R8  a secret anywhere in next.config.* — that file is the one place a
  *       server secret can reach the client bundle with no NEXT_PUBLIC_ prefix
@@ -365,6 +370,33 @@ scanLines(
     /(?:from|import|require)\s*\(?\s*['"](?:@\/lib\/openrouter[^'"]*|[^'"]*\/openrouter\/server)['"]/.test(
       line,
     ),
+);
+
+// R6b (SPEC v3.0b, a sub-rule of R6 — the set stays at thirteen; CLAUDE.md,
+//     agentic guardrails, by owner amendment). The loop's
+//     control flow lives in a PURE module so a stub-model test can drive it
+//     (rule B12). Purity is what makes that safe: an import of anything that can
+//     reach the network, the database or a gate would let the loop spend on its
+//     own, outside `lib/chat.ts`'s user → plan → grant sequence.
+const AGENTIC_FILE = 'src/lib/agentic.ts';
+const AGENTIC_PURE_IMPORTS = ['@/lib/budget', '@/lib/generation', '@/lib/retrievalLog'];
+scanLines(
+  'R6 lib/agentic.ts imports a module outside its pure allow-list — the loop must not be able to spend on its own',
+  (abs) => rel(abs) === AGENTIC_FILE,
+  (line) => {
+    for (const m of line.matchAll(/(?:\bfrom|\bimport|\brequire)\s*\(?\s*['"]([^'"]+)['"]/g)) {
+      if (!AGENTIC_PURE_IMPORTS.includes(m[1] ?? '')) return true;
+    }
+    return false;
+  },
+);
+scanLines(
+  'R6 runAgentLoop referenced outside lib/chat.ts — the chat gate is the loop’s only caller',
+  (abs) => {
+    const r = rel(abs);
+    return isCode(abs) && r !== AGENTIC_FILE && r !== 'src/lib/chat.ts' && !r.startsWith('tests/unit/');
+  },
+  (line) => /\brunAgentLoop\b/.test(line),
 );
 
 /**

@@ -1,5 +1,7 @@
 import 'server-only';
 
+import type { RetrievalLogEntry } from '@/lib/retrievalLog';
+
 /**
  * Row shapes for the nine owned tables: `001_init.sql`, plus `imports` from
  * `003_imports.sql`, `profiles` from `004_profiles.sql` and `subscription_events`
@@ -288,6 +290,17 @@ export type ResumeVersion = {
   content: string;
   source: 'ai' | 'ai_revision' | 'user';
   judge: JudgeReport | null;
+  /**
+   * The model that wrote this version (006, v3.0). Null on a user edit, on every
+   * version written before 006, and on a quality-check row. Set on insert only.
+   */
+  model: string | null;
+  /**
+   * What the agent searched for (006, v3.0): null on every non-agentic version,
+   * `[]` when the agent ran and never searched. Queries, counts, scores and item
+   * TITLES — never chunk text. Set on insert only.
+   */
+  retrieval_log: RetrievalLogEntry[] | null;
   created_at: string;
 };
 
@@ -313,7 +326,14 @@ export type LlmCall = {
   id: string;
   user_id: string;
   application_id: string | null;
-  step: 'import_resume' | 'parse_vacancy' | 'generate' | 'judge' | 'embed' | 'rescore';
+  step:
+    | 'import_resume'
+    | 'parse_vacancy'
+    | 'generate'
+    | 'generate_agentic'
+    | 'judge'
+    | 'embed'
+    | 'rescore';
   model: string;
   fallback_used: boolean;
   ok: boolean;

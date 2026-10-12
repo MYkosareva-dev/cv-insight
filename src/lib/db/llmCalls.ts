@@ -24,7 +24,16 @@ import type { LlmCall } from '@/lib/db/types';
  * already the home of the metered-request arithmetic; a query needs a database
  * client and stays.
  */
-const CHAT_STEPS = ['import_resume', 'parse_vacancy', 'generate', 'judge'] as const;
+const CHAT_STEPS = [
+  'import_resume',
+  'parse_vacancy',
+  'generate',
+  // SPEC v3.0: every request of the agentic loop is a chat call and rule B7 counts it.
+  // Left out of this list, a Pro run would be invisible to its own daily cap by up to
+  // MAX_TOOL_ROUNDS rows.
+  'generate_agentic',
+  'judge',
+] as const;
 
 const RESCORE_STEPS = ['rescore'] as const;
 
@@ -107,7 +116,8 @@ export async function listGenerateCallsForApplication(
     .from('llm_calls')
     .select('*')
     .eq('application_id', applicationId)
-    .eq('step', 'generate')
+    // Both writers (SPEC v3.0): the agentic loop's rounds are generations too.
+    .in('step', ['generate', 'generate_agentic'])
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw error;
@@ -176,6 +186,12 @@ export type NewLlmCall = Omit<LlmCall, 'id' | 'created_at'>;
  * script, a worker, a test harness). Left uncaught, that would propagate into
  * the caller and a log-write failure would fail the user's request — which B8
  * forbids unconditionally, not merely on the paths that exist today.
+ *
+ * THE `after()` ORDERING IS LOAD-BEARING FOR /quality (SPEC v3.0). A run's rows are
+ * therefore written AFTER the `resume_versions` rows the same request inserted,
+ * and `runCosts` in `lib/quality.ts` attributes rows to a run by exactly that
+ * ordering. Logging inline instead would move a run's rows in front of its own
+ * versions and into the previous run's cost.
  */
 export function logLlmCall(row: NewLlmCall): void {
   // Metadata only — never log resume or vacancy content.
