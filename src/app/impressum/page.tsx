@@ -8,10 +8,9 @@ export const metadata = { title: 'Impressum — CV Insight' };
  * Public route (SPEC v2.24, Block E). Static content only — no session, no data,
  * no trackers, exactly like /privacy beside it.
  *
- * It is PUBLIC in both deployment worlds. Even behind Vercel Deployment
- * Protection, /impressum and /privacy are the two pages whose whole purpose is
+ * It is PUBLIC: /impressum and /privacy are the two pages whose whole purpose is
  * to be readable by someone who has not signed in, so whatever goes here is
- * world-readable from the first deploy. That is the reason the two values below
+ * world-readable from the first deploy. That is the reason the operator's values
  * are the owner's to fill and not the agent's to invent.
  *
  * The operator's identity lives in `lib/copy.ts` behind `IMPRESSUM_FILLED`, not
@@ -40,7 +39,9 @@ export default function ImpressumPage() {
             <p className="text-muted-foreground text-sm">
               {IMPRESSUM.responsibleLabel}: {IMPRESSUM.operatorName}
             </p>
-            <p className="text-muted-foreground text-sm">{IMPRESSUM.addressOnRequest}</p>
+            <p className="text-muted-foreground text-sm">
+              {IMPRESSUM.addressLabel}: <strong>{IMPRESSUM.addressPlaceholder}</strong>
+            </p>
           </>
         ) : (
           /*
@@ -55,8 +56,9 @@ export default function ImpressumPage() {
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-medium">About this deployment</h2>
+        <h2 className="text-lg font-medium">{IMPRESSUM.aboutHeading}</h2>
         <p className="text-muted-foreground text-sm">{IMPRESSUM.nonCommercial}</p>
+        <p className="text-muted-foreground text-sm">{IMPRESSUM.addressRule}</p>
         <p className="text-muted-foreground text-sm">
           How {APP_NAME} handles personal data is described on the{' '}
           <Link href="/privacy" className="text-primary underline-offset-4 hover:underline">

@@ -545,6 +545,35 @@ the browser half.
 
 ---
 
+## How this codebase is built
+
+Every feature is a branch and a pull request, and every stage of that path has a
+named reviewer. The reviewers are Claude Code subagents defined in this
+repository, each reading the change against `SPEC.md` and `CLAUDE.md`. **Every
+report is saved verbatim to `docs/reviews/` in the run that produced it**, before
+anything is changed in response to it. That directory is the record that a stage
+ran; a stage with no report there did not run.
+
+**Agents** (`.claude/agents/`):
+
+| Agent | Stage it runs at |
+|---|---|
+| `ai-architect` | Before implementing each phase, and on any change to the data model, the AI pipeline or the server/client boundary. It also reviews documentation-only PRs at the next phase gate. |
+| `ai-code-reviewer` | On every pull request, over the full diff, before merge |
+| `supabase-security` | After the database phase, after any migration change, and before deploy |
+| `nextjs-security` | After each phase that adds pages, route handlers or lib modules, and before deploy |
+| `vercel-security` | Before the first deploy, and after any change to environment handling or build config |
+| `eu-compliance-reviewer` | On any feature that touches personal data, cookies or public pages, and once before deploy |
+
+**Commands** (`.claude/commands/`):
+
+| Command | Stage it runs at |
+|---|---|
+| `/team-review` | On a merged phase. It fans the review out to this project's own agents (`ai-code-reviewer`, `supabase-security`, `nextjs-security` and `ai-architect`, plus `eu-compliance-reviewer` when the diff touches personal data) and consolidates their findings. |
+| `/full-review` | Before a branch's pull request is opened, as the complete review pass. The command file is a generic template. Its `subagent_type` names (`code-reviewer`, `security-auditor`, `architect-reviewer` and others) are not agents defined in this repository. In practice the pass has been run with this project's own agents; three of the four `docs/reviews/full-review-*` reports name their agent in the header. |
+
+---
+
 ## Optional scope taken on
 
 Beyond the core pipeline, and each one built rather than sketched:
@@ -561,8 +590,8 @@ Beyond the core pipeline, and each one built rather than sketched:
   on untested maths.
 - **Cross-user isolation, verified** — a Playwright case in which user B is
   refused user A's *real* application id on both a read and a metered write.
-- **GDPR posture** — a complete `/privacy`, an `/impressum` route (whose operator
-  details are not filled in yet — see the limitations below), an EU processing
+- **GDPR posture** — a complete `/privacy`, an `/impressum` route (whose postal
+  address is a marked placeholder — see the limitations below), an EU processing
   region, and the erasure evidence above.
 
 ---
@@ -626,10 +655,11 @@ complete. It is carried deliberately — with registration closed the store hold
 one person's own data — and it reopens the moment a second real person holds an
 account.
 
-**The operator is not yet named on the deployment.** `IMPRESSUM_FILLED` is
-`false`, so `/impressum` states that the operator's details are not published —
-which is accurate, and is not a substitute for filling them in. `docs/deploy.md`
-step 21 makes that a precondition of sharing the link.
+**The Impressum publishes no postal address.** `/impressum` names the operator and
+a contact email, and shows the postal address as a marked placeholder, with a
+paragraph explaining why: this deployment takes no money. The day the Stripe key
+is not a test key, the placeholder is a defect and the address goes in first.
+That trigger is recorded beside `IMPRESSUM_FILLED` in `src/lib/copy.ts`.
 
 **Two open defects the sections above read past, named here so they are not a
 surprise.** The career-item `[id]` route does not parse its segment, so a
@@ -653,10 +683,15 @@ version on screen. That is also what stops `/quality` from reporting rubric
 outcomes *by model*, which is the measurement that would answer whether the
 fallback really fails grounding more often.
 
-**Not built, deliberately:** payments, i18n, realtime, notifications, analytics,
-an admin panel. `SPEC.md`'s module checklist gives the reason for each. Agentic
-tool-calling retrieval is the eighth and is not on that list — it is a Phase-2
-guardrail in `CLAUDE.md`, binding if it is ever built. There is no application
+**Not built, deliberately:** i18n, realtime, notifications, analytics, an admin
+panel. `SPEC.md`'s module checklist gives the reason for each.
+
+**Specified in SPEC v3.0 and not yet built:** Free and Pro plans with Stripe
+test-mode billing, and agentic retrieval as the Pro generation path. Until they
+are, the deployment has neither, and `/privacy` and `/impressum` do not describe
+them.
+
+There is no application
 cron either, but that is not the same as none: the 90-day purge of the
 authentication audit log is a scheduled job, and it is the one scheduled thing
 this repository has. `docs/backlog.md` is the maintained list of everything else

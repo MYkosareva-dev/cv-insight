@@ -256,10 +256,10 @@ came from the platform or the browser, and two settings can put it there:
 ### 21. Public pages
 
 `https://<url>/privacy` and `https://<url>/impressum` must load in a private
-window with no redirect. **`/impressum` will say the operator's details are not
-published** until `IMPRESSUM_FILLED` in `src/lib/copy.ts` is set to `true` with a
-real name and a working email address beside it. Do that before sharing the link
-with anyone.
+window with no redirect. `/impressum` must show the operator's name, a working
+contact email and the **marked** postal-address placeholder. It must never show a
+`[[...]]` token: `tests/unit/impressum.test.mjs` fails the build if
+`IMPRESSUM_FILLED` is `true` while one remains.
 
 ---
 
@@ -322,6 +322,6 @@ run on one deployment, not a series.
 - **The provider-account settings** in `docs/openrouter-processing.md` — logging,
   retention, training and the guardrail — are properties of an account the
   operator does not control, and are not verified by anything here.
-- **`IMPRESSUM_FILLED` is still `false`.** `/impressum` therefore states that the
-  operator's details are not published, which is accurate and is not a
-  substitute for filling them in before the link is shared.
+- **`IMPRESSUM_FILLED` was `false` at this deployment.** `/impressum` stated that
+  the operator's details were not published. SPEC v3.0 sets the switch to `true`;
+  step 21 is the check for the next deployment.

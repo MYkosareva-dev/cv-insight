@@ -79,9 +79,9 @@ export const PRIVACY_UPDATED = '4 September 2026';
  * THE OPERATOR'S IDENTITY, AND THE TWO VALUES THE AGENT MUST NOT INVENT
  * (SPEC v2.24, Block E).
  *
- * `operatorName` and `email` ship as VISIBLE placeholders and are the owner's to
- * fill. They are not defaulted, not derived from `git config`, and not guessed
- * at: an Impressum naming the wrong person is worse than one that admits it is
+ * `operatorName` and `email` are the owner's to fill — the name as dictated for
+ * SPEC v3.0, the email by the owner's own hand. They are not defaulted, not
+ * derived from `git config`, and not guessed at: an Impressum naming the wrong person is worse than one that admits it is
  * unfilled, and a contact address nobody reads makes the whole page decorative.
  * `IMPRESSUM_FILLED` is the switch — while it is false the page says plainly
  * that the details are not yet published, rather than rendering `[[...]]` at a
@@ -91,31 +91,48 @@ export const PRIVACY_UPDATED = '4 September 2026';
  * reason: a claim about the operator and the proof of it ship together, or the
  * page does not make the claim.
  *
- * WHY NO POSTAL ADDRESS. Owner decision: the deployment is shared with a named
- * handful of people and is not a public offering, so §5 DDG's ladungsfähige
- * Anschrift is very likely not engaged. Art. 13(1)(a) GDPR still requires the
- * controller be identifiable and contactable, which name + a working email
- * address plus an undertaking to supply the address on request satisfies for a
- * closed demo. THE DAY THE DEPLOYMENT BECOMES PUBLIC OR COMMERCIAL this stops
- * being enough and a real postal address goes in — that is recorded here rather
- * than in a reviewer's report, because this is the file someone edits.
+ * TRUE FROM v3.0, WITH BOTH VALUES FILLED BY THE OWNER.
+ * `tests/unit/impressum.test.mjs` fails while the switch is true and any value
+ * below still carries a `[[...]]` token, so the page cannot ship rendering the
+ * placeholder at a reader as a `mailto:` link.
+ *
+ * WHY THE POSTAL ADDRESS IS A MARKED PLACEHOLDER (SPEC v3.0, Block E). § 5 DDG
+ * asks a publicly offered service for an address at which its operator can be
+ * served. This deployment takes no money, so the slot renders a placeholder in
+ * square brackets with the word "placeholder", and the paragraph beside it
+ * states the rule, states that it is not met here, and states what replaces it.
+ * Never an invented street: a plausible fictitious address would be the one
+ * sentence on this page that lies.
+ *
+ * THE SINGLE REMAINING TRIGGER: the day `STRIPE_SECRET_KEY` is not a `sk_test_`
+ * key, the placeholder is a defect and the address goes in first.
  */
-export const IMPRESSUM_FILLED = false;
+export const IMPRESSUM_FILLED = true;
 
 export const IMPRESSUM = {
   heading: 'Impressum',
   /** Angaben gemäß § 5 DDG. */
   legalBasisLine: 'Angaben gemäß § 5 DDG',
-  operatorName: '[[OPERATOR FULL LEGAL NAME — owner to fill]]',
-  email: '[[OPERATOR CONTACT EMAIL — owner to fill]]',
+  operatorName: 'Margarita Kosareva',
+  email: 'kosareva.my@gmail.com',
   unfilled:
     'The operator’s name and contact address are not yet published here. They are filled in before this deployment is shared with anyone, and until then this page makes no claim about who operates the app.',
   responsibleLabel: 'Responsible for the content',
   contactLabel: 'Contact',
-  addressOnRequest:
-    'A postal address is not published on this page. It is supplied on request to the email address above, without undue delay and in any case within one month.',
+  addressLabel: 'Postal address',
+  /** Single brackets on purpose: a MARKED placeholder, not an unfilled `[[...]]` token. */
+  addressPlaceholder: '[ placeholder — see “About this deployment” ]',
+  aboutHeading: 'About this deployment',
+  /**
+   * The pre-v3.0 sentence, kept until billing ships. SPEC v3.0's first sentence
+   * names a Free and a Pro plan and Stripe, which this deployment does not have
+   * yet; it lands with the branch that builds them (architect review,
+   * docs/reviews/compliance-and-docs-architect-plan.md, finding 1).
+   */
   nonCommercial:
     'CV Insight is a non-commercial demonstration project. It is not offered as a service, no payment is taken for it, and it carries no advertising.',
+  addressRule:
+    'A publicly offered service in Germany must publish an address at which its operator can be served (§ 5 DDG). This deployment offers no paid service and takes no money, and its operator’s postal address is therefore shown as a marked placeholder rather than published here; it is supplied on request to the email address above. Before any deployment that can take a payment, the placeholder is replaced by the operator’s serviceable address.',
 } as const;
 
 /**
@@ -644,6 +661,14 @@ export const RESULT = {
   // --- Phase 4: the tailored-resume tab, the judge card, re-score, export ---
   tabResume: 'Tailored resume',
   editorLabel: 'Tailored resume',
+  /**
+   * THE AI-GENERATED STATEMENT (SPEC v3.0, Block G G5). One sentence, two
+   * places: a fixed, non-editable line above the editor, and the final paragraph
+   * of every `.docx` — appended by the export (`exportLines` in lib/utils.ts),
+   * never stored in the version row. The editor's text stays the user's, and the
+   * sentence cannot be removed from the file by editing it out of the editor.
+   */
+  aiGeneratedLine: 'Generated with AI from the author’s career base and reviewed by the author.',
   /**
    * US-3 step 4 inserts into the editor, and there is no editor until a version
    * exists. The button is DISABLED with this hint rather than quietly appending

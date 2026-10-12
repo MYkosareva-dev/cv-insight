@@ -110,9 +110,8 @@ brand-new project, and the closure is in the table below.
    Phase 6, owner triage; answered in part by the Phase-7 fresh-clone run, and
    scoped by the Phase-7 CI round.
 
-7. **Two one-line owner actions gate sharing the link.** `IMPRESSUM_FILLED` is
-   still `false`, so `/impressum` correctly states the operator is not published —
-   accurate, and not a substitute for filling it in. And **Speed Insights must be
+7. **Two one-line owner actions gate sharing the link.** ~~`IMPRESSUM_FILLED`~~
+   **Closed (v3.0)** — the switch is `true` with the operator's name and email. And **Speed Insights must be
    off** in the Vercel dashboard: it beacons per-visit data to a third party, and
    `/privacy` states in its own words that there are no analytics and no trackers.
    The CSP would currently stop the beacon leaving, which is a reason to turn the
