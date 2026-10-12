@@ -725,6 +725,8 @@ export const RESULT = {
     'Your Free plan allows 1 tailored resume per day. Try again tomorrow, or upgrade to Pro in Settings for higher daily limits.',
   /** 400 for a generate body that is not `{ "mode"?: "single" | "agentic" }`. */
   generateBadRequest: 'The request could not be read. Reload the page and try again.',
+  /** The link under a Free daily-limit refusal — to the Plan block, until /pricing exists. */
+  dailyLimitSettingsLink: 'See your plan in Settings',
   /** 429 DAILY_LIMIT on Pro — the v2.x copy, unchanged. */
   dailyLimitPro: 'Daily AI limit reached (50 calls). Try again tomorrow.',
 

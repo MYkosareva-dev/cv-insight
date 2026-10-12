@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
@@ -11,7 +12,7 @@ import { BusyDots } from '@/components/ui/busy-dots';
 import { ResumeEditor } from '@/components/applications/resume-editor';
 import { ScoreRing } from '@/components/applications/score';
 import { Button } from '@/components/ui/button';
-import { NO_SCORE, RESULT } from '@/lib/copy';
+import { ERROR_CODES, NO_SCORE, RESULT } from '@/lib/copy';
 import type {
   CoverageEntry,
   JudgeReport,
@@ -227,7 +228,25 @@ export function ResultWorkspace({
       const res = await request();
       if (!res.ok) {
         const payload = await res.json().catch(() => null);
-        toast.error(payload?.error?.message ?? fallbackMessage);
+        const message = payload?.error?.message ?? fallbackMessage;
+        /**
+         * A FREE USER AT THE DAILY CEILING SEES THE PLAN, NOT A WALL (SPEC Block
+         * E v3.0). The refusal carries the plan it was measured against, and the
+         * way to more is Settings until /pricing exists (SPEC v3.0a item 10).
+         * Rendering the plan the SERVER named is not a plan decision — the gate
+         * already made it.
+         */
+        if (payload?.error?.code === ERROR_CODES.DAILY_LIMIT && payload?.error?.plan === 'free') {
+          toast.error(message, {
+            description: (
+              <Link href="/settings" className="underline underline-offset-4">
+                {RESULT.dailyLimitSettingsLink}
+              </Link>
+            ),
+          });
+        } else {
+          toast.error(message);
+        }
         return;
       }
       await onOk(res);

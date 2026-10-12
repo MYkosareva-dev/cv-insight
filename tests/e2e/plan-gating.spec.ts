@@ -18,9 +18,11 @@ import { ERROR_CODES, ERROR_MESSAGES, RESULT, SCAN } from '../../src/lib/copy';
  * Pro caller can be shown to proceed. That cannot be written here: `tests/` is
  * in scope for check.mjs R1 (`.from(` outside a DAL), R10 (the service-role key
  * and client) and R7 (reading the webhook's signing secret to forge an event),
- * and renaming a variable to slip past a rule is not a fix. The Pro half is
- * therefore witnessed on the deployment in docs/eval/billing-webhook-evidence.md,
- * through a real test-mode Checkout — the same path a user takes — and is marked
+ * and renaming a variable to slip past a rule is not a fix. The Pro half —
+ * `mode: "agentic"` proceeding for a Pro account — is NOT WITNESSED YET. It is to
+ * be witnessed on the deployment run (SPEC Block H item 12), through a real
+ * test-mode Checkout, the same path a user takes; the local half recorded in
+ * docs/eval/billing-webhook-evidence.md does not include it. It is marked
  * `fixme` below so the gap is visible in the report rather than absent from it.
  *
  * Synthetic data only: the career base and the posting are the calibration
@@ -198,7 +200,7 @@ test.describe('plan gating — at the gate', () => {
   });
 
   test.fixme('after a ledger row makes the account Pro, the same `agentic` call proceeds', async () => {
-    // Not writable under check.mjs R1/R7/R10 — see the header. Witnessed on the
-    // deployment in docs/eval/billing-webhook-evidence.md instead.
+    // Not writable under check.mjs R1/R7/R10 — see the header. NOT witnessed
+    // yet: it belongs to the deployment run, SPEC Block H item 12.
   });
 });

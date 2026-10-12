@@ -15,8 +15,10 @@ import { ERROR_CODES, SETTINGS } from '../../src/lib/copy';
  * WHAT IS NOT HERE. The Pro half of item 13 — `/api/billing/portal` answering a
  * `billing.stripe.com` URL for a Pro account — needs a ledger row, which only
  * the webhook may write and which this file cannot forge without the signing
- * secret (R7). It is witnessed through a real test-mode Checkout in
- * docs/eval/billing-webhook-evidence.md and marked `fixme` below.
+ * secret (R7). It is NOT WITNESSED YET: it is to be witnessed on the deployment
+ * run (SPEC Block H item 12), through a real test-mode Checkout, and the local
+ * half in docs/eval/billing-webhook-evidence.md does not record a portal URL. It
+ * is marked `fixme` below.
  */
 
 const password = 'billing-e2e-password';
@@ -126,7 +128,7 @@ test.describe('billing', () => {
   });
 
   test.fixme('a Pro account’s portal call answers a billing.stripe.com URL', async () => {
-    // Needs a webhook-written ledger row — see the header. Witnessed in
-    // docs/eval/billing-webhook-evidence.md.
+    // Needs a webhook-written ledger row — see the header. NOT witnessed yet:
+    // it belongs to the deployment run, SPEC Block H item 12.
   });
 });
