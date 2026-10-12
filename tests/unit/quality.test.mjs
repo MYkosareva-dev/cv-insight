@@ -7,6 +7,7 @@ import {
   classifyRuns,
   generationProvenance,
   formatUsdFromMicro,
+  pathSummary,
   rubricDistribution,
   rubricOutcomes,
   share,
@@ -551,5 +552,133 @@ describe('summariseCalls — fallback PER STEP', () => {
       'google/gemini-2.5-flash',
       'anthropic/claude-sonnet-4.6',
     ]);
+  });
+});
+
+/**
+ * SPEC v3.0, Block H item 14: the two generation paths on /quality. A run is an
+ * `ai` row; its path is its log; its cost is the RUN_STEPS rows of its
+ * application from its own `ai` row until the next `ai` or `user` row — which
+ * rests on `logLlmCall` writing through `after()`, i.e. AFTER the run's versions.
+ */
+describe('pathSummary — agentic vs single-shot, per run', () => {
+  const version = (over) => ({
+    id: over.id,
+    application_id: 'app-1',
+    source: 'ai',
+    judge: null,
+    retrieval_log: null,
+    created_at: '2026-10-12T10:00:00Z',
+    ...over,
+  });
+  const search = (round, refused = false, failed = false) => ({
+    round,
+    query: refused ? 'q' : 'found',
+    chunks: refused || failed ? null : 3,
+    bestSimilarity: refused || failed ? null : 0.6,
+    itemTitles: [],
+    refused,
+    reason: refused ? 'budget' : null,
+    failed,
+  });
+
+  test('nothing generated measures nothing — null per run, never 0', () => {
+    const p = pathSummary([], []);
+    assert.equal(p.single.runs, 0);
+    assert.equal(p.single.costPerRunMicro, null);
+    assert.equal(p.agentic.meanSearchesPerRun, null);
+  });
+
+  test('the path is the log: null is single-shot, an array (even empty) is agentic', () => {
+    const p = pathSummary(
+      [
+        version({ id: 'v1', created_at: '2026-10-12T10:00:00Z' }),
+        version({ id: 'v2', created_at: '2026-10-12T11:00:00Z', retrieval_log: [] }),
+      ],
+      [],
+    );
+    assert.equal(p.single.runs, 1);
+    assert.equal(p.agentic.runs, 1);
+    assert.equal(p.agentic.searches, 0);
+    assert.equal(p.agentic.meanSearchesPerRun, 0);
+  });
+
+  test('searches are counted from the ai row only — refusals out, failed searches in, the revision not again', () => {
+    const log = [search(1), search(1), search(2, true), search(2, false, true), { round: 3, ended: 'round_error' }];
+    const p = pathSummary(
+      [
+        version({ id: 'a', created_at: '2026-10-12T10:00:00Z', retrieval_log: log }),
+        version({ id: 'r', source: 'ai_revision', created_at: '2026-10-12T10:00:01Z', retrieval_log: log }),
+        version({ id: 'b', created_at: '2026-10-12T11:00:00Z', retrieval_log: [search(1)] }),
+      ],
+      [],
+    );
+    assert.equal(p.agentic.runs, 2);
+    assert.equal(p.agentic.searches, 4);
+    assert.equal(p.agentic.meanSearchesPerRun, 2);
+  });
+
+  test('rows land AFTER their run’s versions and are attributed to it — through the revision, until the next run', () => {
+    const versions = [
+      version({ id: 's', created_at: '2026-10-12T10:00:00Z' }),
+      version({ id: 's-rev', source: 'ai_revision', created_at: '2026-10-12T10:00:00.5Z' }),
+      version({ id: 'g', created_at: '2026-10-12T11:00:00Z', retrieval_log: [search(1)] }),
+    ];
+    const calls = [
+      // The single run's rows, written after its two versions.
+      call({ step: 'embed', cost_usd_micro: 20, created_at: '2026-10-12T10:00:01Z' }),
+      call({ step: 'generate', cost_usd_micro: 10_000, created_at: '2026-10-12T10:00:01Z' }),
+      call({ step: 'judge', cost_usd_micro: 2_000, created_at: '2026-10-12T10:00:01Z' }),
+      // A re-score between runs is not a run's spend.
+      call({ step: 'rescore', cost_usd_micro: 99_999, created_at: '2026-10-12T10:30:00Z' }),
+      // The agentic run's rows.
+      call({ step: 'generate_agentic', cost_usd_micro: 8_000, created_at: '2026-10-12T11:00:01Z' }),
+      call({ step: 'generate_agentic', cost_usd_micro: 12_000, created_at: '2026-10-12T11:00:01Z' }),
+      call({ step: 'embed', cost_usd_micro: 20, created_at: '2026-10-12T11:00:01Z' }),
+      call({ step: 'judge', cost_usd_micro: 2_000, created_at: '2026-10-12T11:00:02Z' }),
+    ];
+    const p = pathSummary(versions, calls);
+    assert.equal(p.single.costMicro, 12_020);
+    assert.equal(p.single.costPerRunMicro, 12_020);
+    assert.equal(p.agentic.costMicro, 22_020);
+    assert.equal(p.agentic.costPerRunMicro, 22_020);
+  });
+
+  test('a user version closes the window — an on-demand quality check is not the run’s cost', () => {
+    const p = pathSummary(
+      [
+        version({ id: 'a', created_at: '2026-10-12T10:00:00Z' }),
+        version({ id: 'u', source: 'user', created_at: '2026-10-12T10:05:00Z' }),
+      ],
+      [
+        call({ step: 'generate', cost_usd_micro: 10_000, created_at: '2026-10-12T10:00:01Z' }),
+        call({ step: 'judge', cost_usd_micro: 3_000, created_at: '2026-10-12T10:05:01Z' }),
+      ],
+    );
+    assert.equal(p.single.costMicro, 10_000);
+  });
+
+  test('rows of another application never count, and unpriced rows are counted as unknown, not free', () => {
+    const p = pathSummary(
+      [version({ id: 'a', created_at: '2026-10-12T10:00:00Z' })],
+      [
+        call({ step: 'generate', cost_usd_micro: 10_000, created_at: '2026-10-12T10:00:01Z' }),
+        call({ step: 'judge', cost_usd_micro: 0, cost_known: false, created_at: '2026-10-12T10:00:01Z' }),
+        call({ application_id: 'app-2', cost_usd_micro: 5_000, created_at: '2026-10-12T10:00:01Z' }),
+      ],
+    );
+    assert.equal(p.single.costMicro, 10_000);
+    assert.equal(p.single.unknownPricing, 1);
+  });
+});
+
+describe('generationProvenance — both writers (v3.0)', () => {
+  test('agentic rounds are generations, and a model that only ever served as fallback is named as one', () => {
+    const p = generationProvenance([
+      call({ step: 'generate_agentic', model: 'google/gemini-2.5-flash', fallback_used: true, created_at: '2026-10-12T12:00:00Z' }),
+      call({ step: 'generate', model: 'openai/gpt-5.4', fallback_used: false, created_at: '2026-10-12T11:00:00Z' }),
+    ]);
+    assert.equal(p.calls, 2);
+    assert.deepEqual(p.fallbackModels, ['google/gemini-2.5-flash']);
   });
 });

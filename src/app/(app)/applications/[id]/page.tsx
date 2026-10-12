@@ -14,8 +14,10 @@ import { openingVersion, partitionMissingHonest } from '@/lib/judge';
 import { listResumeVersions } from '@/lib/db/resumeVersions';
 import { getVacancy } from '@/lib/db/vacancies';
 import type { CoverageEntry, KeywordRow } from '@/lib/db/types';
+import { PLAN_LIMITS, currentPlan } from '@/lib/plan';
 import { generationProvenance } from '@/lib/quality';
 import { renderableScore } from '@/lib/scoring';
+import { getUser } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Scan result — CV Insight' };
 
@@ -113,6 +115,16 @@ export default async function ApplicationDetailPage({
    */
   const provenance = generationProvenance(await listGenerateCallsForApplication(application.id));
 
+  /**
+   * THE PLAN, FOR DISPLAY (SPEC v3.0): the rail line, the cost the dialogs state,
+   * and which `mode` the button asks for. Read through `currentPlan()`, the same
+   * function the gates use, and DECIDES NOTHING here — `authorizeGenerate()`
+   * refuses `agentic` off-plan whatever this page sends. The (app) layout has
+   * verified the session; no user reads as Free, like every unreadable plan.
+   */
+  const viewer = await getUser();
+  const plan = viewer ? await currentPlan(viewer.id) : 'free';
+
   const opening = openingVersion(versions);
   const judgeTerms = partitionMissingHonest(
     opening?.judge?.keywordCoverage.missingHonest ?? [],
@@ -150,6 +162,7 @@ export default async function ApplicationDetailPage({
           judgeTerms={judgeTerms}
           notes={application.notes}
           provenance={provenance}
+          agentic={PLAN_LIMITS[plan].agentic}
         />
       ) : (
         /* Rail 280 px beside the content at 1280; stacked at 375 (Block E). */

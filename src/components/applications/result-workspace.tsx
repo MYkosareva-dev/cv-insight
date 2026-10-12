@@ -115,6 +115,7 @@ export function ResultWorkspace({
   judgeTerms: initialJudgeTerms,
   notes,
   provenance,
+  agentic,
 }: {
   applicationId: string;
   entries: CoverageEntry[];
@@ -158,6 +159,14 @@ export function ResultWorkspace({
    * without this component holding a second copy of the fact.
    */
   provenance: GenerationProvenance;
+  /**
+   * Whether the caller's plan includes the agentic path — computed on the server
+   * from `currentPlan()`, for DISPLAY and for the `mode` the button asks for
+   * (SPEC v3.0). A courtesy, not a control: the gate refuses `agentic` off-plan
+   * whatever this sends, and a plan that lapsed between render and click gets
+   * the gate's 403.
+   */
+  agentic: boolean;
 }) {
   const router = useRouter();
 
@@ -182,6 +191,13 @@ export function ResultWorkspace({
   // generate response did — the newest row is not always that draft.
   const opening = openingVersion(initialVersions);
   const [content, setContent] = useState(opening?.content ?? '');
+  /**
+   * Which version the editor's text came from — so the research section and the
+   * "written by" line describe THAT version (SPEC v3.0, Block E). Set by the
+   * actions that put a version's text into the editor; edits made since are the
+   * user's, and the lines still describe the version they started from.
+   */
+  const [shownVersionId, setShownVersionId] = useState<string | null>(opening?.id ?? null);
   /**
    * ONE piece of state for the report and its base-checked terms, deliberately.
    *
@@ -284,13 +300,15 @@ export function ResultWorkspace({
   function generate(action: 'generate' | 'regenerate' = 'generate') {
     void run(
       action,
-      // Body is `{}`: every input lives server-side, so nothing a client sends
-      // can change what is generated or from what.
-      () => post('generate', {}),
+      // Every INPUT lives server-side, so nothing a client sends can change what
+      // is generated or from what. The body names only the retrieval path, and
+      // the gate decides whether the plan allows it (SPEC v3.0).
+      () => post('generate', agentic ? { mode: 'agentic' } : {}),
       async (res) => {
         const data = await res.json();
         setVersions((current) => mergeVersionsNewestFirst(current, data.versions ?? []));
         setContent(data.content ?? '');
+        setShownVersionId(data.resumeVersionId ?? null);
         setReview({ report: data.judge ?? null, terms: termsOf(data) });
         setRevisionNotBetter(Boolean(data.revisionNotBetter));
         setRevisionWithheld(Boolean(data.revisionWithheld));
@@ -364,6 +382,9 @@ export function ResultWorkspace({
       async (res) => {
         const data = await res.json();
         setReview({ report: data.judge ?? null, terms: termsOf(data) });
+        // The reviewed text is its own version now — the research and writer
+        // lines describe the version the editor holds.
+        if (data.resumeVersionId) setShownVersionId(data.resumeVersionId);
         /**
          * THE NEW ROW GOES INTO `versions` TOO (v2.22). The rail's bars derive
          * from the newest judged version, so without this the check the user just
@@ -383,6 +404,8 @@ export function ResultWorkspace({
                 source: data.source ?? 'user',
                 content: data.content ?? '',
                 judge: data.judge ?? null,
+                model: null,
+                retrieval_log: null,
               } as ResumeVersion,
             ]),
           );
@@ -478,6 +501,10 @@ export function ResultWorkspace({
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_1fr]">
       <div className="flex flex-col gap-6">
         <ScoreRing score={shownScore} />
+        {/* The plan and the retrieval path it buys (SPEC v3.0, Block E). */}
+        <p className="text-muted-foreground text-xs">
+          {agentic ? RESULT.planAgentic : RESULT.planSingle}
+        </p>
         {shownScore === null ? null : (
           <p className="text-muted-foreground text-xs">
             {rescored ? RESULT.rescoredExplainer : RESULT.scoreExplainer}
@@ -522,7 +549,9 @@ export function ResultWorkspace({
                 RESULT.generate
               )}
             </Button>
-            <p className="text-muted-foreground text-xs">{RESULT.generateHelp}</p>
+            <p className="text-muted-foreground text-xs">
+              {agentic ? RESULT.generateHelpAgentic : RESULT.generateHelp}
+            </p>
           </div>
         ) : null}
 
@@ -560,6 +589,8 @@ export function ResultWorkspace({
             judge={judge}
             judgeTerms={review.terms}
             provenance={provenance}
+            agentic={agentic}
+            shownVersion={versions.find((version) => version.id === shownVersionId) ?? null}
             autoRevised={autoRevised}
             revisionNotBetter={revisionNotBetter}
             revisionWithheld={revisionWithheld}

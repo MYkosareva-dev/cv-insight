@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { NAME_PLACEHOLDER, RESULT } from '@/lib/copy';
+import { type RetrievalLogEntry, isEndedEntry } from '@/lib/retrievalLog';
 import type { JudgeReport, ResumeVersion } from '@/lib/db/types';
 import type { GenerationProvenance } from '@/lib/quality';
 
@@ -43,6 +44,8 @@ export function ResumeEditor({
   revisionNotBetter,
   revisionWithheld,
   provenance,
+  agentic,
+  shownVersion,
   pending,
   onGenerate,
   onRegenerate,
@@ -61,6 +64,10 @@ export function ResumeEditor({
   revisionWithheld: boolean;
   /** Which model served this application's generations (v2.22). */
   provenance: GenerationProvenance;
+  /** The plan includes the agentic path — decides which COST the copy states (v3.0). */
+  agentic: boolean;
+  /** The version the editor's text came from: its research log and its writer (v3.0). */
+  shownVersion: ResumeVersion | null;
   /** Which metered action is in flight, or null. One at a time, by design. */
   pending: 'generate' | 'regenerate' | 'rescore' | 'judge' | 'export' | null;
   onGenerate: () => void;
@@ -94,7 +101,9 @@ export function ResumeEditor({
             RESULT.generate
           )}
         </Button>
-        <p className="text-muted-foreground text-xs">{RESULT.generateHelp}</p>
+        <p className="text-muted-foreground text-xs">
+          {agentic ? RESULT.generateHelpAgentic : RESULT.generateHelp}
+        </p>
       </div>
     );
   }
@@ -196,7 +205,7 @@ export function ResumeEditor({
           }
         />
         <Action
-          help={RESULT.regenerateHelp}
+          help={agentic ? RESULT.regenerateHelpAgentic : RESULT.regenerateHelp}
           button={
             <Button
               variant="outline"
@@ -235,6 +244,7 @@ export function ResumeEditor({
         rather than firing on a stray click.
       */}
       <RegenerateDialog
+        agentic={agentic}
         open={confirmRegenerate}
         onOpenChange={setConfirmRegenerate}
         onConfirm={() => {
@@ -251,7 +261,9 @@ export function ResumeEditor({
         revisionWithheld={revisionWithheld}
       />
 
-      <WhichModel provenance={provenance} />
+      <Research log={shownVersion?.retrieval_log ?? null} />
+
+      <WhichModel provenance={provenance} version={shownVersion} />
 
       <VersionList versions={versions} />
     </div>
@@ -336,10 +348,13 @@ function Action({ button, help }: { button: React.ReactNode; help: string }) {
  * run is 2 chat calls, or 4 with rule B3's single revision.
  */
 function RegenerateDialog({
+  agentic,
   open,
   onOpenChange,
   onConfirm,
 }: {
+  /** The path that will ACTUALLY run decides the cost stated (SPEC v3.0). */
+  agentic: boolean;
   open: boolean;
   onOpenChange: (next: boolean) => void;
   onConfirm: () => void;
@@ -351,7 +366,9 @@ function RegenerateDialog({
           <DialogTitle>{RESULT.regenerateDialogTitle}</DialogTitle>
           <DialogDescription>{RESULT.regenerateDialogBody}</DialogDescription>
         </DialogHeader>
-        <p className="text-accent text-sm">{RESULT.regenerateDialogCost}</p>
+        <p className="text-accent text-sm">
+          {agentic ? RESULT.regenerateDialogCostAgentic : RESULT.regenerateDialogCost}
+        </p>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {RESULT.regenerateCancel}
@@ -385,7 +402,29 @@ function RegenerateDialog({
  * NOTHING IS SHOWN BEFORE THERE IS A GENERATION. `calls === 0` is the empty
  * state, not a claim about a model.
  */
-function WhichModel({ provenance }: { provenance: GenerationProvenance }) {
+function WhichModel({
+  provenance,
+  version,
+}: {
+  provenance: GenerationProvenance;
+  version: ResumeVersion | null;
+}) {
+  /**
+   * PER VERSION WHEN THE VERSION KNOWS (SPEC v3.0): `resume_versions.model` is
+   * set on every AI version from 006 on, so the line speaks about the text in
+   * the editor. Fallback is read from this application's call rows — the column
+   * carries no flag of its own.
+   */
+  if (version?.model) {
+    const fellBack = provenance.fallbackModels.includes(version.model);
+    return (
+      <p className={fellBack ? 'text-destructive text-xs' : 'text-muted-foreground text-xs'}>
+        {fellBack
+          ? RESULT.writtenByVersionFallback(version.model)
+          : RESULT.writtenByVersion(version.model)}
+      </p>
+    );
+  }
   if (provenance.newestModel === null) return null;
   const fell = provenance.newestFallback;
   return (
@@ -404,5 +443,58 @@ function WhichModel({ provenance }: { provenance: GenerationProvenance }) {
         <p className="text-muted-foreground text-xs">{RESULT.writtenByFallbackAlways}</p>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * "HOW THIS DRAFT WAS RESEARCHED" (SPEC v3.0, Block E) — collapsed by default,
+ * beneath the judge card, from the version's `retrieval_log`.
+ *
+ * NO SECTION for a null log: every single-shot version, and everything written
+ * before 006. An EMPTY log is an agentic run that never searched (L9), and says
+ * so. Rendered from the log and nothing else, so it can show only what the log
+ * holds — queries, counts, career-item titles — and never chunk text.
+ */
+function Research({ log }: { log: RetrievalLogEntry[] | null }) {
+  if (log === null) return null;
+  return (
+    <details className="rounded-md border p-3 text-sm">
+      <summary className="cursor-pointer font-medium">{RESULT.researchHeading}</summary>
+      {log.length === 0 ? (
+        <p className="text-muted-foreground mt-2 text-xs">{RESULT.researchNone}</p>
+      ) : (
+        <ol className="mt-2 flex flex-col gap-2">
+          {log.map((entry, index) =>
+            isEndedEntry(entry) ? (
+              <li key={index} className="text-destructive text-xs">
+                {RESULT.researchInterrupted}
+              </li>
+            ) : (
+              <li key={index} className="flex flex-col gap-0.5 text-xs">
+                {entry.query ? <span className="font-medium">{RESULT.researchQuery(entry.query)}</span> : null}
+                <span className="text-muted-foreground">
+                  {entry.refused
+                    ? entry.reason === 'deadline'
+                      ? RESULT.researchRefusedDeadline
+                      : entry.reason === 'invalid_arguments'
+                        ? RESULT.researchRefusedInvalid
+                        : RESULT.researchRefused
+                    : entry.failed
+                      ? RESULT.researchFailed
+                      : RESULT.researchFound(entry.chunks ?? 0)}
+                </span>
+                {!entry.refused && !entry.failed && entry.itemTitles.length > 0 ? (
+                  <ul className="text-muted-foreground list-disc pl-4">
+                    {entry.itemTitles.map((title, at) => (
+                      <li key={at}>{title}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            ),
+          )}
+        </ol>
+      )}
+    </details>
   );
 }
