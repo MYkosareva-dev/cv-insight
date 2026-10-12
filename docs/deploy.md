@@ -26,6 +26,7 @@ Steps 1–3 happen before the first deploy. Steps 4–9 configure the project. S
 | Node.js version | Vercel → Settings → General | **22.x** |
 | Preview deployments | Vercel → Settings → Git | **disabled** |
 | Server-only secrets | Vercel → Settings → Environment Variables | **Production environment only** |
+| Migrations `001`–`007` | Supabase → SQL editor, in order | **applied**. `007_agentic_step.sql` goes in BEFORE the code that writes `step = 'generate_agentic'` is deployed. Without it Postgres refuses every agentic `llm_calls` row, and because the log write is fire-and-forget the loss is silent. |
 
 ---
 
