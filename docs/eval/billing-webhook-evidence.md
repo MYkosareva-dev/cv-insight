@@ -78,11 +78,29 @@ set OR the flag true now means cancel-scheduled, stored as
 set, flag false) and a `cancel_at` before the period would close. SPEC v3.0a
 item 6a records the deviation.
 
-**Not yet re-witnessed.** The fix is pinned by the fixtures, not by a second live
-run. The rows above were written before it and stay as they are — the ledger is
-append-only, so they are a true record of what the earlier code stored. The next
-Portal cancellation, on the deployment run, is where the corrected row and the
-"Cancels on … — Pro stays until then." card should be seen.
+**Re-witnessed live** — see "The fix, witnessed" below. The two rows above were
+written before the fix and stay as they are: the ledger is append-only, so they
+are a true record of what the earlier code stored.
+
+## The fix, witnessed (2026-10-12, after `1df3f62`)
+
+Same account, same dev server and `stripe listen` session, with the fix in place.
+The subscription was resumed and then cancelled again, both through the Customer
+Portal.
+
+```
+17:58:14  resumed in the Portal           evt_1UPlcA2NKY1mL9wLzyTO8Sdy   -> [200]
+
+17:59:40  cancelled again in the Portal   evt_1UPldY2NKY1mL9wLSL8WJnQL   -> [200]
+17:59:40                                  evt_1UPldY2NKY1mL9wLepfzfBS3   -> [200]
+          Settings: "Cancels on 12 November 2026 — Pro stays until then."
+```
+
+This witnesses the fix end to end: the same Portal action that produced "Renews"
+before `1df3f62` now produces the cancelling card, with the end date Stripe
+shows. Every delivery answered 200, and each appended a row rather than editing
+one — the resume and the second cancellation are new rows beside the earlier
+ones, which is how a cancellation that was undone and redone reads in a ledger.
 
 ## What this does NOT witness
 
