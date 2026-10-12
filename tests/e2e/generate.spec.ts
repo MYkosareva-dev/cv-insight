@@ -3,7 +3,15 @@ import path from 'node:path';
 
 import { expect, test, type Page } from '@playwright/test';
 
-import { NAME_PLACEHOLDER, NO_SCORE, QUALITY, RESULT, SETTINGS, SCAN } from '../../src/lib/copy';
+import {
+  ERROR_CODES,
+  NAME_PLACEHOLDER,
+  NO_SCORE,
+  QUALITY,
+  RESULT,
+  SETTINGS,
+  SCAN,
+} from '../../src/lib/copy';
 
 /**
  * Phase-4 evidence: US-4 and US-5, end to end, against a real Supabase project
@@ -749,49 +757,62 @@ test.describe('generate', () => {
       'notes sit in the LEFT column, beside the tabs rather than under them',
     ).toBeLessThan(editorBox!.x);
 
-    // --- REGENERATE (SPEC v2.20) -------------------------------------------
+    // --- REGENERATE on the Free plan (SPEC v2.20; v3.0 rule B7, edge case L6) --
     /**
-     * The affordance Block E's "hidden after first version" had removed. Three
-     * things are asserted, and the third is the one that matters most on an
-     * append-only table: it appends.
+     * THIS ACCOUNT IS FREE, AND FREE ALLOWS ONE TAILORED RESUME A DAY. The run
+     * above was it, so the second run is refused at the gate — before the lock,
+     * before retrieval, before any model request. What is asserted is what that
+     * refusal owes the user: the affordance still states its cost first; the
+     * answer is 429 with the Free copy and the plan it was measured against; the
+     * screen offers the way to more (Settings, until /pricing exists); and
+     * NOTHING IS APPENDED — the history the first run wrote is exactly as it was.
+     *
+     * A SUCCESSFUL regenerate — "it appends, never replaces", the property
+     * `mergeVersionsNewestFirst` exists for — is a Pro path now. It is witnessed
+     * on the deployment run (SPEC Block H item 12), not here: this file creates
+     * no Pro account and inserts no ledger rows.
      */
     const versionsBefore = await page.getByText(/^(AI draft|AI revision|Your edit)$/).count();
 
     await page.getByRole('button', { name: RESULT.regenerate }).click();
     const dialog = page.getByRole('dialog');
-    // IT STATES THE COST BEFORE IT RUNS. A metered action a stray click can
-    // spend money on is the thing the modal exists to prevent.
+    // IT STATES THE COST BEFORE IT RUNS — on every plan, because the click is
+    // the same click whatever the gate then answers.
     await expect(dialog.getByText(RESULT.regenerateDialogCost)).toBeVisible();
     await expect(dialog.getByText(RESULT.regenerateDialogBody)).toBeVisible();
 
     const regenerated = page.waitForResponse(
       (res) => res.url().includes('/generate') && res.request().method() === 'POST',
-      { timeout: 300_000 },
+      { timeout: 60_000 },
     );
     await dialog.getByRole('button', { name: RESULT.regenerateConfirm }).click();
     const second = await regenerated;
-    expect(second.status(), 'a regenerate is the same endpoint, run again').toBe(200);
-    const secondRun = await second.json();
-    expect(secondRun.versions.length).toBeGreaterThanOrEqual(1);
-    expect(secondRun.versions.length).toBeLessThanOrEqual(2);
+    expect(second.status(), 'a Free account’s second resume of the day is refused').toBe(429);
+    expect(await second.json()).toEqual({
+      error: {
+        code: ERROR_CODES.DAILY_LIMIT,
+        message: RESULT.dailyLimitFree,
+        plan: 'free',
+        feature: 'generate',
+      },
+    });
 
-    /**
-     * IT APPENDS, NEVER REPLACES. The list has to still hold what it held —
-     * this is the assertion `mergeVersionsNewestFirst` exists for, and the one
-     * that would have failed while the client took the response as the whole
-     * list.
-     */
-    const versionsAfter = await page.getByText(/^(AI draft|AI revision|Your edit)$/).count();
-    expect(versionsAfter, 'every earlier version is still listed').toBeGreaterThan(
-      versionsBefore,
+    // The refusal names the plan and points at it, rather than being a wall.
+    await expect(page.getByText(RESULT.dailyLimitFree)).toBeVisible();
+    await expect(page.getByRole('link', { name: RESULT.dailyLimitSettingsLink })).toHaveAttribute(
+      'href',
+      '/settings',
     );
 
-    // And it survives a reload, i.e. the rows are real and not just on screen.
+    // NOTHING WAS APPENDED, on screen or in the rows behind it.
+    expect(await page.getByText(/^(AI draft|AI revision|Your edit)$/).count()).toBe(
+      versionsBefore,
+    );
     await page.reload();
     await page.getByRole('tab', { name: RESULT.tabResume }).click();
-    expect(
-      await page.getByText(/^(AI draft|AI revision|Your edit)$/).count(),
-    ).toBeGreaterThanOrEqual(versionsAfter);
+    expect(await page.getByText(/^(AI draft|AI revision|Your edit)$/).count()).toBe(
+      versionsBefore,
+    );
 
     // --- /quality shows the run (SPEC Block H item 7) ----------------------
     /**
@@ -826,7 +847,7 @@ test.describe('generate', () => {
     /**
      * THE RUBRIC SHARES ARE PRESENT AND FRACTIONED. Not asserted as numbers — a
      * real judge decides them — but the screen must show the buckets and must
-     * say when it has too few runs to read them as a rate, which after two runs
+     * say when it has too few runs to read them as a rate, which after one run
      * it does.
      */
     await expect(page.getByText(QUALITY.outcomeApprovedFirst)).toBeVisible();

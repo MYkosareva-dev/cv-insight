@@ -61,6 +61,14 @@ const EXPECTATIONS = [
   // Route handlers answer 401 JSON themselves; a redirect to HTML would be wrong.
   ['/api/account', BYPASSED],
   ['/api', BYPASSED],
+  // v3.0: Stripe carries no session, so the webhook must never meet the
+  // fence. The existing `api` exclusion is the mechanism — no pattern of its own,
+  // which would be dead regex beside it. Its fence is the signature.
+  ['/api/stripe/webhook', BYPASSED],
+  // The two member billing routes are route handlers too: they verify the
+  // session themselves and answer 401 JSON.
+  ['/api/billing/checkout', BYPASSED],
+  ['/api/billing/portal', BYPASSED],
   // Public page — no getUser() round trip. EXACT path only: /privacy has no
   // subtree, and a prefix exclusion would put a future child outside the fence.
   ['/privacy', BYPASSED],

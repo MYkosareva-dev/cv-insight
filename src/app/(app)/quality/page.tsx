@@ -1,5 +1,7 @@
 import { LLM_STEP_LABEL, QUALITY, formatCount } from '@/lib/copy';
-import { DAILY_CALL_LIMIT, DAILY_RESCORE_LIMIT } from '@/lib/budget';
+import { dailyCallLimit, dailyRescoreLimit } from '@/lib/budget';
+import { currentPlan } from '@/lib/plan';
+import { getUser } from '@/lib/supabase/server';
 import {
   QUALITY_CALL_WINDOW,
   countCallsInLast24h,
@@ -61,6 +63,18 @@ export const metadata = { title: 'Quality — CV Insight' };
  * not to print.
  */
 export default async function QualityPage() {
+  /**
+   * THE LIMITS ARE THE CALLER'S PLAN'S (SPEC v3.0). Read through `currentPlan()`,
+   * the same function the gates use, so the tile shows the ceiling the gate
+   * enforces — this page DESCRIBES the plan and decides nothing with it. The
+   * (app) layout has verified the session; no user reads as Free, the smaller
+   * allowance, like every other unreadable plan.
+   */
+  const user = await getUser();
+  const plan = user ? await currentPlan(user.id) : 'free';
+  const callLimit = dailyCallLimit(plan);
+  const rescoreLimit = dailyRescoreLimit(plan);
+
   const [calls, versions, recent, chatCalls24h, rescoreCalls24h] = await Promise.all([
     listLlmCallsForQuality(),
     listResumeVersionsForQuality(),
@@ -151,13 +165,13 @@ export default async function QualityPage() {
         />
         <Tile
           label={QUALITY.tileChatCalls}
-          value={`${formatCount(chatCalls24h)} / ${formatCount(DAILY_CALL_LIMIT)}`}
-          source={QUALITY.tileChatCallsSource(DAILY_CALL_LIMIT)}
+          value={`${formatCount(chatCalls24h)} / ${formatCount(callLimit)}`}
+          source={QUALITY.tileChatCallsSource(callLimit)}
         />
         <Tile
           label={QUALITY.tileRescoreCalls}
-          value={`${formatCount(rescoreCalls24h)} / ${formatCount(DAILY_RESCORE_LIMIT)}`}
-          source={QUALITY.tileRescoreCallsSource(DAILY_RESCORE_LIMIT)}
+          value={`${formatCount(rescoreCalls24h)} / ${formatCount(rescoreLimit)}`}
+          source={QUALITY.tileRescoreCallsSource(rescoreLimit)}
         />
         <Tile
           label={QUALITY.tileFallback}

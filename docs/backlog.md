@@ -253,6 +253,70 @@ Each of these is a race that a single warm serverless instance hides.
   rather than the search.
 - **Speed Insights**, above.
 
+### Open questions for counsel (billing, `docs/reviews/billing-eu-compliance.md`)
+
+Both are legal judgments an engineering review cannot sign off, which is why they
+are questions and not findings. Neither blocks a test-mode deployment on its own;
+both have to be answered before the deployment can take a payment.
+
+- **`eu-b-p2` — Stripe's role and the transfer it relies on (OPEN).** /privacy
+  describes Stripe as collecting card and billing data directly and processing for
+  its own purposes as its own policy describes, and says plainly that the data is
+  transferred to and processed in the United States — but it names no transfer
+  safeguard and asserts no controller/processor classification, because neither
+  has been verified for this account. The question: under Stripe's current data
+  processing terms for this account's region, is Stripe a processor, an
+  independent controller, or both for different purposes; and which safeguard
+  (adequacy decision or SCCs) does the transfer rest on? Closes when the answer is
+  on the page, with Stripe's privacy policy linked at the processors sentence. The
+  same missing-safeguard gap applies to the AI-provider transfer paragraph and is
+  answered in the same pass.
+- **`eu-b-p10` — the § 5 DDG position (OPEN).** The Impressum shows a marked
+  address placeholder and states that the deployment cannot take money because its
+  Pro plan runs in Stripe's test mode. With open registration, two plans and a
+  displayed price, whether "no money can move" takes the deployment outside
+  § 5 DDG is a legal judgment, and the page is a written admission that the rule is
+  not met. Closes when counsel confirms the test-mode position, or when a
+  serviceable address is published and the placeholder retired. The hard backstop
+  is unchanged: the day `STRIPE_SECRET_KEY` is not a `sk_test_` key, the address
+  goes in first (`src/lib/stripe/server.ts` refuses such a key until then).
+
+### billing-pr review minors (`docs/reviews/billing-pr.md`)
+
+- **`billing-pr review minors` (OPEN, owner: left by decision).** The four MINOR
+  and five NIT findings from the branch review, recorded here rather than fixed:
+  - **m1** — Free's one-resume allowance counts committed `generate` rows, which
+    `after()` writes once the response has gone, so a second run POSTed the
+    instant the first answers can be admitted, even for the same application. The
+    declared overshoot in `src/lib/chat.ts` and SPEC v3.0a item 3 names only two
+    applications at once. Fix: count AI-sourced `resume_versions` rows (written
+    before the 200) instead, or widen the declaration.
+  - **m2** — the "nothing is spent" case in `tests/e2e/plan-gating.spec.ts`
+    asserts tiles that do not count `embed` rows and read "0 / 50" on both plans;
+    it would not catch an embeddings spend before the refusal. Fix: assert no
+    Embed row on /quality, or narrow the comment to what is asserted.
+  - **m3** — the "one subscription per customer" fence is configured, not
+    witnessed, and Checkout passes `customer_email` rather than an existing
+    `customer`, so Stripe may create a new customer per session and the setting
+    may never fire. Fix: witness a second Checkout from a Pro account; if Stripe
+    allows it, pass the stored `stripe_customer_id` as `customer`.
+  - **m4** — SPEC Block H item 12 (the deployment half of
+    `docs/eval/billing-webhook-evidence.md`) and the Stripe dashboard steps in
+    `docs/deploy.md` are still open; they belong in every hand-over until done.
+  - **n1** — the generate route buffers its body with no size cap; refuse over
+    ~1 KB on `Content-Length` first, as the scan route does.
+  - **n2** — `src/components/billing-button.tsx` navigates to whatever URL the
+    server returns; optionally allow only the two Stripe hosts.
+  - **n3** — a latest row of `canceled`, `unpaid` or `incomplete` shows only
+    [Upgrade]; `incomplete` in particular invites a second Checkout. Consider
+    [Manage subscription] whenever a customer exists and the plan is not Pro.
+  - **n4** — `pg_trigger_depth() < 2` in migration 006 would also admit a DELETE
+    issued from inside some future trigger, not only the account cascade; worth a
+    comment before anyone adds one.
+  - **n5** — the webhook builds the Stripe client and reads the signing secret
+    before verifying, so a misconfigured deployment answers an unsigned request
+    500 rather than 400. Harmless; recorded.
+
 ### Parked product decisions, not defects
 
 Four **FEATURE** entries in the Phase-2 owner-feedback section: grouping `/career`

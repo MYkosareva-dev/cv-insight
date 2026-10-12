@@ -11,7 +11,11 @@
  *
  * `lib/chat.ts` re-exports `MAX_CHAT_REQUESTS_PER_STEP`, so every existing
  * importer is unaffected and there is still exactly one source for the number.
+ *
+ * Its one import is `lib/plan.ts`, which is pure for the same reason this file
+ * is: the per-plan limits table lives there (SPEC v3.0, rule B7).
  */
+import { type MeteredStep, PLAN_LIMITS, type PlanId } from '@/lib/plan';
 
 /**
  * Hard ceiling on metered HTTP requests per user-initiated STEP: the first
@@ -87,11 +91,18 @@ export function withinBudget(ledger: { chat: number }, max: number): boolean {
  * testable and the other did not; moving both is what closes the item.
  */
 
-/** SPEC rule B7: 50 non-embedding calls per user per rolling 24 h. */
-export const DAILY_CALL_LIMIT = 50;
+/**
+ * PER PLAN FROM v3.0. The numbers live in `lib/plan.ts`, keyed by `PlanId`, and
+ * every comparison below takes the plan as its first argument — so a caller
+ * cannot ask "is this under the cap?" without saying whose cap.
+ */
+
+/** SPEC rule B7: non-embedding calls per user per rolling 24 h, every step together. */
+export const dailyCallLimit = (plan: PlanId): number => PLAN_LIMITS[plan].dailyChatCalls;
 
 /**
- * SPEC rule B7a (v2.18): the RE-SCORE ceiling, in `rescore` rows per rolling 24 h.
+ * SPEC rule B7a (v2.18; per plan from v3.0 — Free 20, Pro 100): the RE-SCORE
+ * ceiling, in `rescore` rows per rolling 24 h.
  *
  * Rule B7 excludes embeddings by definition, and for every embedding spend the
  * app had until Phase 4 that was right: indexing is a side effect of a write
@@ -106,10 +117,10 @@ export const DAILY_CALL_LIMIT = 50;
  * `embedFor` splits at EMBEDDING_BATCH_SIZE, so one re-score is 2 rows on a
  * measured run and up to 7 on the largest input rule B1 and the chunker permit
  * (200 requirements + 200 resume units). 100 rows is therefore ~50 typical
- * re-scores a day — deliberately the same order as B7's 50 chat calls, since a
+ * re-scores a day on Pro — deliberately the same order as B7's 50 chat calls, since a
  * re-score is one user action of the same kind.
  */
-export const DAILY_RESCORE_LIMIT = 100;
+export const dailyRescoreLimit = (plan: PlanId): number => PLAN_LIMITS[plan].dailyRescoreRequests;
 
 /**
  * Rule B7's comparison: may another chat request START?
@@ -124,8 +135,37 @@ export const DAILY_RESCORE_LIMIT = 100;
  * is the one line of this rule nothing had ever asserted, and it is the line
  * where an off-by-one either gives away a call or refuses one that was paid for.
  */
-export function underDailyCallCap(committed: number, ledgerChat = 0): boolean {
-  return committed + ledgerChat < DAILY_CALL_LIMIT;
+export function underDailyCallCap(plan: PlanId, committed: number, ledgerChat = 0): boolean {
+  return committed + ledgerChat < dailyCallLimit(plan);
+}
+
+/**
+ * Rule B7's PER-STEP comparison (Free, v3.0): may another RUN of this step start?
+ *
+ * Counted in SUCCESSFUL rows of that step, committed only, and both halves are
+ * decisions rather than accidents:
+ *  - Successful (`ok = true`): a scan or a generate that died with a 502 spent
+ *    the user nothing they can use, so it does not consume the day's allowance.
+ *  - No ledger: the check is made once per RUN. A scan has one parse step; a
+ *    generate run is admitted once by `authorizeGenerate()` in `lib/chat.ts`,
+ *    and its rule-B3 revision is part of the run it belongs to, not a second
+ *    resume — so it is never re-measured against the allowance it already
+ *    passed.
+ * A step with no allowance on this plan is always under it; rule B7's overall
+ * ceiling still applies to it.
+ *
+ * DECLARED IMPRECISION: a parse that spends its one repair retry writes two
+ * successful rows and so uses two of Free's three scans. Rows, not intentions,
+ * are what the ledger can count without a second source of truth.
+ */
+export function underStepCap(plan: PlanId, step: string, committedOk: number): boolean {
+  const limit = PLAN_LIMITS[plan].perStep[step as MeteredStep];
+  return limit === undefined || committedOk < limit;
+}
+
+/** Does this plan carry a per-step allowance for this step? */
+export function hasStepCap(plan: PlanId, step: string): step is MeteredStep {
+  return PLAN_LIMITS[plan].perStep[step as MeteredStep] !== undefined;
 }
 
 /**
@@ -138,6 +178,6 @@ export function underDailyCallCap(committed: number, ledgerChat = 0): boolean {
  * Re-checking mid-run would refuse a re-score whose first batch was already
  * billed, which buys a half-measured score with money already spent.
  */
-export function underRescoreCap(committed: number): boolean {
-  return committed < DAILY_RESCORE_LIMIT;
+export function underRescoreCap(plan: PlanId, committed: number): boolean {
+  return committed < dailyRescoreLimit(plan);
 }

@@ -1,16 +1,21 @@
+import { redirect } from 'next/navigation';
+
+import { BillingButton } from '@/components/billing-button';
 import { ContactsForm } from '@/components/contacts-form';
 import { DeleteAccountDialog } from '@/components/delete-account-dialog';
 import { DisplayNameForm } from '@/components/display-name-form';
 import { SETTINGS } from '@/lib/copy';
 import { getProfile } from '@/lib/db/profiles';
+import { latestForUser } from '@/lib/db/subscriptionEvents';
+import { type LedgerRead, type PlanView, planViewOf } from '@/lib/plan';
 import { EMPTY_CONTACTS, contactsOf } from '@/lib/resumeHeader';
 import { getUser } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Settings — CV Insight' };
 
 /**
- * Account screen (SPEC Block E): name, contact details, email read-only, danger
- * zone.
+ * Account screen (SPEC Block E): name, contact details, email read-only, the
+ * plan (v3.0), danger zone.
  *
  * The (app) layout has already verified the session, so `user` is non-null by
  * the time this renders; the fallback is defensive, not a second gate.
@@ -42,8 +47,59 @@ export const metadata = { title: 'Settings — CV Insight' };
  * the top-right of the app shell, which is where users look for it — a sign-out
  * buried on the settings screen is one that has to be hunted for on every screen.
  */
-export default async function SettingsPage() {
+/** "12 November 2026" — the house date format (`PRIVACY_UPDATED`), in UTC so the server's zone cannot shift it. */
+function formatPlanDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/**
+ * THE PLAN BLOCK (SPEC v3.0, Block E), from ONE ledger read.
+ *
+ * `latestForUser()` once, and every state derived from that row by
+ * `planViewOf()` — the same rule `currentPlan()` applies in the gates. Two reads
+ * (the plan, then the row for its dates) could disagree, and the card would
+ * describe a plan the gates are not enforcing.
+ *
+ * A failed read is SAID (`planUnavailable`), not rendered as a Free card: the
+ * gates treat the user as Free in that state, and the user is told why.
+ */
+async function readPlan(userId: string | undefined): Promise<PlanView> {
+  if (!userId) return planViewOf({ ok: true, row: null });
+  let read: LedgerRead;
+  try {
+    read = { ok: true, row: await latestForUser(userId) };
+  } catch (err) {
+    read = { ok: false };
+    console.error('[settings] could not read the plan', {
+      name: err instanceof Error ? err.name : typeof err,
+      code: (err as { code?: string } | null)?.code,
+    });
+  }
+  return planViewOf(read);
+}
+
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ checkout?: string | string[] }>;
+}) {
   const user = await getUser();
+  const { checkout } = await searchParams;
+  const plan = await readPlan(user?.id);
+
+  /**
+   * `?checkout=success` is NEVER A FACT (edge cases P2/P3). It only says the user
+   * came back from Stripe; the LEDGER says whether the payment landed. Pro row →
+   * the toast, through the `?notice` mechanism, which also strips the parameter.
+   * No Pro row yet → stay, and say the upgrade is being confirmed.
+   */
+  const returnedFromCheckout = checkout === 'success';
+  if (returnedFromCheckout && plan.kind === 'pro') redirect('/settings?notice=plan_upgraded');
 
   let displayName: string | null = null;
   let contacts = EMPTY_CONTACTS;
@@ -99,6 +155,8 @@ export default async function SettingsPage() {
         </p>
       </div>
 
+      <PlanBlock plan={plan} pending={returnedFromCheckout} />
+
       {/* Unchanged, deliberately: an irreversible action keeps the shape the
           owner already reviewed. */}
       <div className="border-destructive/40 flex flex-col gap-3 rounded-lg border p-4">
@@ -106,5 +164,65 @@ export default async function SettingsPage() {
         <DeleteAccountDialog />
       </div>
     </section>
+  );
+}
+
+/**
+ * Free / Pro / past due / unreadable — the card between the account details and
+ * the danger zone. [Upgrade to Pro] is the card's single violet accent.
+ *
+ * The buttons are courtesies, not controls: hiding [Upgrade] from a Pro user
+ * decides nothing (rule B11) — Stripe's one-subscription setting is the fence.
+ */
+function PlanBlock({ plan, pending }: { plan: PlanView; pending: boolean }) {
+  return (
+    <div className="border-border flex flex-col gap-3 rounded-lg border p-4">
+      <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+        {SETTINGS.planHeading}
+      </span>
+      {plan.kind === 'pro' ? (
+        <>
+          <h2 className="text-sm font-semibold">{SETTINGS.planPro}</h2>
+          <p className="text-muted-foreground text-sm">
+            {plan.cancelAtPeriodEnd
+              ? SETTINGS.planEnds(formatPlanDate(plan.periodEnd))
+              : SETTINGS.planRenews(formatPlanDate(plan.periodEnd))}
+          </p>
+          <BillingButton action="portal" />
+          <p className="text-muted-foreground text-xs">{SETTINGS.portalHelp}</p>
+        </>
+      ) : (
+        <>
+          <h2 className="text-sm font-semibold">{SETTINGS.planFree}</h2>
+          <p className="text-muted-foreground text-sm">{SETTINGS.planFreeLimits}</p>
+          {plan.kind === 'unavailable' ? (
+            <p role="status" className="text-sm">
+              {SETTINGS.planUnavailable}
+            </p>
+          ) : plan.kind === 'pastDue' ? (
+            /* P11: a customer with a failed renewal. [Upgrade] would open a
+               second subscription beside the failed one; the portal fixes it. */
+            <>
+              <p role="status" className="text-sm">
+                {SETTINGS.planPastDue}
+              </p>
+              <BillingButton action="portal" />
+              <p className="text-muted-foreground text-xs">{SETTINGS.portalHelp}</p>
+            </>
+          ) : pending ? (
+            /* P3: back from Stripe, the webhook not in yet. A second Checkout
+               beside a payment that just succeeded is the wrong control. */
+            <p role="status" className="text-sm">
+              {SETTINGS.upgradePending}
+            </p>
+          ) : (
+            <>
+              <BillingButton action="checkout" />
+              <p className="text-muted-foreground text-xs">{SETTINGS.upgradeHelp}</p>
+            </>
+          )}
+        </>
+      )}
+    </div>
   );
 }

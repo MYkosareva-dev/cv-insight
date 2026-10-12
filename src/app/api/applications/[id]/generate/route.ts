@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 import { requireApiUser } from '@/lib/auth/requireApiUser';
 import { MAX_CHAT_REQUESTS_PER_GENERATE, withinBudget } from '@/lib/budget';
-import { newCallLedger } from '@/lib/chat';
+import { authorizeGenerate, newCallLedger } from '@/lib/chat';
 import { ERROR_MESSAGES, NAME_PLACEHOLDER, RESULT } from '@/lib/copy';
 import { getApplication } from '@/lib/db/applications';
 import { getContacts, getDisplayName } from '@/lib/db/profiles';
@@ -30,9 +30,11 @@ import { type Draft, generateWithJudge, retrieveItemsFor } from '@/lib/tailoring
  *
  * Retrieve the career items → generate (P2, Sonnet) → judge (P3, Haiku) → at
  * most ONE revision fed the judge's specific findings → append the versions.
- * The request body is `{}`: every input lives server-side, so a caller cannot
- * substitute a vacancy, a resume or a corpus between the auth check and the
- * spend.
+ * The request body is `{ "mode"?: "single" | "agentic" }` (SPEC v3.0) and
+ * nothing else: every input lives server-side, so a caller cannot substitute a
+ * vacancy, a resume or a corpus between the auth check and the spend. In this
+ * build both modes run the single-shot path; `agentic` is refused for Free and
+ * admitted for Pro, and the agentic loop itself lands in its own branch.
  *
  * THE DECLARED COST OF ONE RUN, which is what the ledger is here to make true:
  *
@@ -83,7 +85,29 @@ function acquireLock(applicationId: string): boolean {
   return true;
 }
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+/**
+ * The body, SPEC v3.0: `{ "mode"?: "single" | "agentic" }`, default `single`.
+ * Strict — an unknown key is a 400, so no field can ride along unnoticed (no
+ * API accepts a prompt fragment or a `role`). An empty or absent body is `{}`,
+ * which is what every client before v3.0 sends.
+ */
+const GenerateBody = z.strictObject({ mode: z.enum(['single', 'agentic']).optional() });
+
+async function readMode(request: Request): Promise<'single' | 'agentic'> {
+  const text = await request.text();
+  if (text.trim() === '') return 'single';
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new ValidationError(RESULT.generateBadRequest);
+  }
+  const parsed = GenerateBody.safeParse(json);
+  if (!parsed.success) throw new ValidationError(RESULT.generateBadRequest);
+  return parsed.data.mode ?? 'single';
+}
+
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   let locked: string | null = null;
   try {
     const user = await requireApiUser();
@@ -92,6 +116,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     // The segment's SHAPE before Postgres sees it: a non-UUID is 404, not the
     // 500 an `invalid input syntax for type uuid` produces.
     if (!z.uuid().safeParse(id).success) throw new NotFoundError();
+
+    const mode = await readMode(request);
+
+    /**
+     * THE PLAN IS DECIDED IN THE GATE (SPEC v3.0, rule B11, edge cases L6/L7):
+     * `agentic` on Free is a 403 and a Free user's second resume of the day is a
+     * 429, both BEFORE the lock and before retrieval spends an embeddings
+     * request. This handler makes no plan decision of its own; it carries the
+     * grant to the chat calls, which refuse a `generate` step without one.
+     */
+    const grant = await authorizeGenerate(mode);
 
     // Read under the user's own session, so another account's id yields no row
     // and the answer is 404 rather than 403 (edge case S3).
@@ -117,7 +152,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     if (!acquireLock(id)) throw new AlreadyRunningError(ERROR_MESSAGES.ALREADY_RUNNING);
     locked = id;
 
-    const ledger = newCallLedger();
+    const ledger = newCallLedger(grant);
 
     // One embeddings request. Its `llm_calls` row carries this application id,
     // so a run's embedding spend is attributable to it (SPEC v2.16, p3-8).

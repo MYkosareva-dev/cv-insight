@@ -14,14 +14,22 @@ import { createClient } from '@supabase/supabase-js';
  *  - It is a FUNCTION, not a module-level constant: the key is never read at
  *    import or build time, only inside a request that has already established
  *    who is calling.
- *  - The caller must verify the user FIRST. Today that is
- *    `requireApiUser()` in DELETE /api/account, the sole consumer.
+ *  - The caller must verify who is asking FIRST. There are exactly two
+ *    consumers, each bypassing RLS for one stated reason (SPEC v3.0):
+ *      · DELETE /api/account verifies the USER (`requireApiUser()`), because
+ *        erasure must remove rows the user may not delete;
+ *      · POST /api/stripe/webhook verifies the SIGNATURE (`constructEvent`),
+ *        because the billing ledger must be written by something that is not
+ *        the user — it has no INSERT policy for any user role.
+ *    `scripts/check.mjs` R10 pins the importers to those two routes. The ledger
+ *    DAL takes this client as an ARGUMENT and never imports this module, so the
+ *    count of consumers is the count of routes that chose to build one.
  *  - `persistSession` and `autoRefreshToken` are off, and this client has no
  *    cookie adapter, so it can never write a session cookie or be mistaken for
  *    the caller's own client.
  *
- * If a second consumer is ever proposed, that is an owner decision and a SPEC
- * amendment — not a convenience import.
+ * A third consumer is an owner decision and a SPEC amendment — not a
+ * convenience import — and the build fails until R10's list says so.
  */
 export function createAdminClient() {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

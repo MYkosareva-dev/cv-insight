@@ -263,6 +263,29 @@ contact email and the **marked** postal-address placeholder. It must never show 
 
 ---
 
+## Stripe in test mode
+
+The full dashboard procedure (product, price, webhook endpoint, portal, the
+one-subscription setting, the `sk_test_` check) lands with SPEC Block H item 12.
+What is recorded here already is the local forwarding command, because it has a
+trap.
+
+### Local webhook forwarding
+
+```
+stripe listen --events "checkout.session.completed,customer.subscription.updated,customer.subscription.deleted" --forward-to localhost:3000/api/stripe/webhook
+```
+
+**Quote the event list on PowerShell.** Unquoted, PowerShell reads
+`a,b,c` as an array and hands the CLI one argument made of all three names, which
+the CLI rejects as a single invalid event name. The quotes keep it one
+comma-separated string, which is what `--events` expects. The signing secret the
+command prints is the CLI's own, differs from the deployment's, and belongs in
+`.env.local` only. A run of this command is recorded in
+`docs/eval/billing-webhook-evidence.md`.
+
+---
+
 ## Known open items at first deploy
 
 Not blockers, recorded so they are not rediscovered as surprises.

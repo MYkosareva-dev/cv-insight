@@ -11,7 +11,8 @@ import { createClient } from '@/lib/supabase/server';
 /**
  * DELETE /api/account — right to erasure (SPEC Block D #10, US-6, GDPR).
  *
- * The only consumer of the service-role client. Order is not negotiable:
+ * One of the two consumers of the service-role client (the other is the Stripe
+ * webhook, which writes the billing ledger). Order is not negotiable:
  *
  *   1. requireApiUser() — a verified user via getUser(), or 401. The service
  *      role bypasses RLS entirely, so nothing may touch it before the caller is
@@ -22,8 +23,12 @@ import { createClient } from '@/lib/supabase/server';
  *   3. HARD delete. `deleteUser(id)` defaults to `shouldSoftDelete: false` and
  *      it must stay that way — a soft delete keeps the auth.users row, fires no
  *      cascades, and would silently turn GDPR erasure into a no-op.
- *   4. Owned rows in all EIGHT tables follow via FK ON DELETE CASCADE — the six
- *      in 001, `imports` from 003, and `profiles` from 004. Every one of them
+ *   4. Owned rows in all NINE tables follow via FK ON DELETE CASCADE — the six
+ *      in 001, `imports` from 003, `profiles` from 004 and `subscription_events`
+ *      from 006. The ledger's append-only trigger lets a DELETE through only when
+ *      it arrives by this cascade (`pg_trigger_depth() >= 2`). That exemption is
+ *      witnessed with a ledger row present in docs/eval/erasure-evidence.md (v3.0
+ *      re-run, 2026-10-12; SPEC Block H item 11). Every one of them
  *      references `auth.users(id) on delete cascade`, so deleting that row is
  *      what removes them; there is no second delete to remember here, and adding
  *      one would be a way for the two to fall out of step.

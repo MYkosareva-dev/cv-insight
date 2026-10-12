@@ -3,10 +3,22 @@ import 'server-only';
 import type { User } from '@supabase/supabase-js';
 import type { z } from 'zod';
 
-import { MAX_CHAT_REQUESTS_PER_STEP, underDailyCallCap } from '@/lib/budget';
-import { countCallsInLast24h, logLlmCall } from '@/lib/db/llmCalls';
-import { ERROR_MESSAGES } from '@/lib/copy';
-import { AiUnavailableError, DailyLimitError, UnauthorizedError } from '@/lib/errors';
+import {
+  MAX_CHAT_REQUESTS_PER_STEP,
+  hasStepCap,
+  underDailyCallCap,
+  underStepCap,
+} from '@/lib/budget';
+import { countCallsInLast24h, countOkStepCallsInLast24h, logLlmCall } from '@/lib/db/llmCalls';
+import { ERROR_MESSAGES, RESULT, SCAN } from '@/lib/copy';
+import {
+  AiUnavailableError,
+  DailyLimitError,
+  PlanRequiredError,
+  ServerError,
+  UnauthorizedError,
+} from '@/lib/errors';
+import { PLAN_LIMITS, type PlanId, currentPlan } from '@/lib/plan';
 import { getUser } from '@/lib/supabase/server';
 import {
   type ChatMessage,
@@ -73,6 +85,18 @@ async function requireUser(): Promise<User> {
 }
 
 /**
+ * The user, then the plan — in that order, before anything else (SPEC v3.0,
+ * rule B11). `currentPlan()` never throws: a ledger it cannot read answers
+ * `free`, the safe direction for a metered decision. Every exported function
+ * below starts here, so no refusal can be skipped by a caller that forgot one.
+ */
+async function requireMember(): Promise<{ user: User; plan: PlanId }> {
+  const user = await requireUser();
+  const plan = await currentPlan(user.id);
+  return { user, plan };
+}
+
+/**
  * Re-exported from the connection, which owns the step vocabulary and keys its
  * model and output-ceiling maps on this exact type. Derived here a second time,
  * the two definitions could drift and the maps would silently stop covering a
@@ -118,12 +142,82 @@ export type ChatRequest = {
  * intentions. `lib/budget.ts` holds the ceiling that follows from that
  * (`MAX_CHAT_REQUESTS_PER_GENERATE`), and the generate route asserts against it.
  */
-export type CallLedger = { chat: number };
-
-export const newCallLedger = (): CallLedger => ({ chat: 0 });
+export type CallLedger = { chat: number; grant?: GenerateGrant };
 
 /**
- * Rule B7, checked ONCE per user-initiated step.
+ * A generate run's ledger carries the grant `authorizeGenerate()` issued for it;
+ * every other request makes one chat call and needs neither.
+ */
+export const newCallLedger = (grant?: GenerateGrant): CallLedger => ({ chat: 0, grant });
+
+/** Which retrieval path an admitted generate run takes. */
+export type GeneratePath = 'single';
+
+/**
+ * Proof that THIS gate admitted a generate run (SPEC v3.0, §5 and rule B11).
+ *
+ * OPAQUE AND UNFORGEABLE: the private field means no object literal satisfies
+ * the type, and the constructor is reachable only from this module — so a route
+ * cannot hand-build one and skip the plan check. The route passes it through and
+ * never reads a plan off it; `path` is the only thing it exposes, and the route
+ * does not branch on that either until the agentic loop exists.
+ */
+class GenerateGrant {
+  readonly #issuedByGate = true;
+  readonly path: GeneratePath;
+
+  constructor(path: GeneratePath) {
+    this.path = path;
+  }
+
+  /** True only of a grant this module constructed. */
+  static isGrant(value: unknown): value is GenerateGrant {
+    return value instanceof GenerateGrant && value.#issuedByGate;
+  }
+}
+
+export type { GenerateGrant };
+
+/** The body field of endpoint #5 (SPEC v3.0). */
+export type GenerateMode = 'single' | 'agentic';
+
+/**
+ * Admit one `POST /api/applications/[id]/generate` run, BEFORE its retrieval
+ * spends anything (edge case L7: "before retrieval or any model request").
+ *
+ * In order: the user, the plan, the feature, then the allowance —
+ *  1. `agentic` on a plan without it → 403 PLAN_REQUIRED. Nothing is spent and
+ *     nothing is logged, because nothing was attempted.
+ *  2. Rule B7's overall ceiling, so a user already at it is refused before the
+ *     embeddings request rather than after it.
+ *  3. Free's per-RUN resume allowance (edge case L6): one successful `generate`
+ *     row in the rolling 24 h ends the day's allowance. Measured ONCE, here: the
+ *     rule-B3 revision inside the run is part of the run it belongs to, so the
+ *     per-step check inside `runChatJson` trusts the grant instead of measuring
+ *     the revision against an allowance the run already passed. That is a
+ *     decision, not a reliance on `after()` timing.
+ *
+ * DECLARED OVERSHOOT: two runs for two different applications admitted in the
+ * same instant both pass step 3 — the in-flight lock is per application. The
+ * bound is the number of applications a Free user can start at once, and rule
+ * B7's 50-row ceiling still holds over all of them.
+ *
+ * THE AGENTIC PATH IS NOT BUILT IN THIS BRANCH. A Pro caller asking for it is
+ * admitted and served the single-shot path; the grant says `single`, which is
+ * what runs, so nothing downstream can claim an agentic run took place.
+ */
+export async function authorizeGenerate(mode: GenerateMode): Promise<GenerateGrant> {
+  const { plan } = await requireMember();
+  if (mode === 'agentic' && !PLAN_LIMITS[plan].agentic) {
+    throw new PlanRequiredError(ERROR_MESSAGES.PLAN_REQUIRED, { plan, feature: 'agentic' });
+  }
+  await assertUnderTotalCap(plan, undefined);
+  await assertUnderStepCap(plan, 'generate');
+  return new GenerateGrant('single');
+}
+
+/**
+ * Rule B7's overall ceiling, checked ONCE per user-initiated step.
  *
  * Deliberately not re-checked inside the retry budget: a submit that passed the
  * cap, spent a paid call, and then got refused on its repair retry would have
@@ -133,14 +227,54 @@ export const newCallLedger = (): CallLedger => ({ chat: 0 });
  * Embeddings are excluded by the cap's definition (rule B7), which is why both
  * the ledger and the DAL query count chat steps only.
  */
-async function assertUnderDailyCap(ledger: CallLedger | undefined): Promise<void> {
+async function assertUnderTotalCap(plan: PlanId, ledger: CallLedger | undefined): Promise<void> {
   const committed = await countCallsInLast24h();
   // The comparison is `underDailyCallCap` in `lib/budget.ts`, which is pure and
   // therefore testable at the boundary; this function is the query plus the
   // throw (backlog p4-30).
-  if (!underDailyCallCap(committed, ledger?.chat ?? 0)) {
-    throw new DailyLimitError(ERROR_MESSAGES.DAILY_LIMIT);
+  if (!underDailyCallCap(plan, committed, ledger?.chat ?? 0)) {
+    throw new DailyLimitError(
+      plan === 'pro' ? RESULT.dailyLimitPro : ERROR_MESSAGES.DAILY_LIMIT,
+      { plan, feature: 'ai_calls' },
+    );
   }
+}
+
+/**
+ * Free's per-step allowance (rule B7, v3.0), against SUCCESSFUL committed rows
+ * of that step and no ledger — see `underStepCap` in `lib/budget.ts` for why
+ * both. A plan with no allowance for the step makes no query at all.
+ */
+async function assertUnderStepCap(plan: PlanId, step: ChatStep): Promise<void> {
+  if (!hasStepCap(plan, step)) return;
+  if (underStepCap(plan, step, await countOkStepCallsInLast24h(step))) return;
+  throw step === 'generate'
+    ? new DailyLimitError(RESULT.dailyLimitFree, { plan, feature: 'generate' })
+    : new DailyLimitError(SCAN.dailyLimitFree, { plan, feature: 'scan' });
+}
+
+/**
+ * Every refusal a chat STEP can meet, in order, before its request exists.
+ *
+ * A `generate` step must arrive with a grant from `authorizeGenerate()`. Without
+ * one it is a programming error — some path reached the writer without passing
+ * the plan check — and it is refused as a 500 rather than allowed to spend. With
+ * one, the run's allowance was measured at admission and is not measured again.
+ */
+async function assertStepAllowed(
+  plan: PlanId,
+  step: ChatStep,
+  ledger: CallLedger | undefined,
+): Promise<void> {
+  if (step === 'generate') {
+    if (!GenerateGrant.isGrant(ledger?.grant)) {
+      console.error('[chat] a generate step arrived without a grant from authorizeGenerate()');
+      throw new ServerError();
+    }
+  } else {
+    await assertUnderStepCap(plan, step);
+  }
+  await assertUnderTotalCap(plan, ledger);
 }
 
 /** One shared budget for the whole step. Both exceptions draw from it. */
@@ -258,8 +392,8 @@ export async function runChat(
   request: ChatRequest,
   ledger?: CallLedger,
 ): Promise<ConnectionResult<string>> {
-  const user = await requireUser();
-  await assertUnderDailyCap(ledger);
+  const { user, plan } = await requireMember();
+  await assertStepAllowed(plan, request.step, ledger);
   const budget: Budget = { spent: 0 };
   return runChatWithin(request, user.id, request.messages, budget, ledger);
 }
@@ -314,8 +448,8 @@ export async function runChatJson<T>(args: {
   ledger?: CallLedger;
 }): Promise<{ data: T; usage: ConnectionResult<string> }> {
   const { step, messages, applicationId, schema, ledger } = args;
-  const user = await requireUser();
-  await assertUnderDailyCap(ledger);
+  const { user, plan } = await requireMember();
+  await assertStepAllowed(plan, step, ledger);
 
   const request: ChatRequest = { step, messages, jsonMode: true, applicationId };
   const budget: Budget = { spent: 0 };

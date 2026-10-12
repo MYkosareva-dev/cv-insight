@@ -29,7 +29,10 @@
  *   R10 SUPABASE_SERVICE_ROLE_KEY read anywhere but lib/supabase/admin.ts. The
  *       service role bypasses RLS entirely, so "exactly one module" was a
  *       documented rule with nothing enforcing it — R7 only proves SOME reader
- *       imported `server-only`, which a second consumer would also do.
+ *       imported `server-only`, which a second consumer would also do. From
+ *       v3.0 R10 also pins the IMPORTERS: `lib/supabase/admin.ts` only from
+ *       the account route and the Stripe webhook route, `lib/stripe/server.ts`
+ *       only from the three billing routes.
  *   R11 createServerClient outside lib/supabase/server.ts + middleware.ts, or
  *       ANY createBrowserClient import. Passing cookieOptions is what makes the
  *       session httpOnly, it must be repeated at each call site, and a third
@@ -90,6 +93,7 @@ const DAL_FILES = [
   'src/lib/db/resumeVersions.ts',
   'src/lib/db/llmCalls.ts',
   'src/lib/db/imports.ts',
+  'src/lib/db/subscriptionEvents.ts',
 ];
 
 /** The connection module — the only file allowed to name the OpenRouter host. */
@@ -99,6 +103,23 @@ const CONNECTION_FILE = 'src/lib/openrouter/server.ts';
 const SERVICE_ROLE_FILE = 'src/lib/supabase/admin.ts';
 const SERVICE_ROLE_KEY_NAME = 'SUPABASE_SERVICE_ROLE_KEY';
 
+/**
+ * The ONLY two files allowed to import the service-role client (SPEC v3.0).
+ * Each bypasses RLS for one stated reason: erasure must remove rows the user may
+ * not delete, and the billing ledger must be written by something that is not
+ * the user. A third importer fails the build until this list — and CLAUDE.md —
+ * say why.
+ */
+const SERVICE_ROLE_CONSUMERS = ['src/app/api/account/route.ts', 'src/app/api/stripe/webhook/route.ts'];
+
+/** The Stripe client module and the only three files allowed to import it (SPEC v3.0, M12). */
+const STRIPE_FILE = 'src/lib/stripe/server.ts';
+const STRIPE_CONSUMERS = [
+  'src/app/api/billing/checkout/route.ts',
+  'src/app/api/billing/portal/route.ts',
+  'src/app/api/stripe/webhook/route.ts',
+];
+
 /** The only files allowed to construct a Supabase server client (SPEC v2.1). */
 const SERVER_CLIENT_FILES = ['src/lib/supabase/server.ts', 'src/middleware.ts'];
 
@@ -106,7 +127,16 @@ const SERVER_CLIENT_FILES = ['src/lib/supabase/server.ts', 'src/middleware.ts'];
 const ENV_TEMPLATE = '.env.example';
 
 /** Server-only secrets. None of these may ever appear behind NEXT_PUBLIC_. */
-const SECRET_NAMES = ['OPENROUTER_API_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
+const SECRET_NAMES = [
+  'OPENROUTER_API_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'STRIPE_SECRET_KEY',
+  'STRIPE_WEBHOOK_SECRET',
+  // Not secret-SHAPED (no _KEY/_SECRET/_TOKEN suffix), so the heuristic in
+  // envSecretsRead would never see it. Listed so R4, R7 and R8 treat it like
+  // the other two Stripe names, which CLAUDE.md requires.
+  'STRIPE_PRICE_PRO',
+];
 
 /** The only two variables allowed to be NEXT_PUBLIC_. */
 const ALLOWED_PUBLIC = ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY'];
@@ -435,6 +465,40 @@ scanLines(
   (line) => line.includes(SERVICE_ROLE_KEY_NAME),
 );
 
+/**
+ * Does this line import `modulePath` — aliased (`@/lib/…`) or relative, through
+ * `from`, a bare `import '…'`, a dynamic `import(…)` or `require(…)`? The same
+ * forms R6 covers for the connection module. Matched on the SPECIFIER, so
+ * `import Stripe from 'stripe'` is not mistaken for `@/lib/stripe/server`.
+ */
+function importsModule(line, modulePath) {
+  const tail = modulePath.replace(/^src\/lib\//, '').replace(/\.ts$/, '');
+  for (const m of line.matchAll(/(?:\bfrom|\bimport|\brequire)\s*\(?\s*['"]([^'"]+)['"]/g)) {
+    const specifier = (m[1] ?? '').replace(/\.ts$/, '');
+    if (specifier === `@/lib/${tail}` || specifier.endsWith(`/${tail}`)) return true;
+  }
+  return false;
+}
+
+// R10b. The service-role CLIENT is pinned to its two consumers. R10 above pins
+//       where the key is READ, and that alone let any file import
+//       createAdminClient and bypass RLS without ever naming the key — so
+//       CLAUDE.md's "a third consumer fails the build" was a sentence until this.
+scanLines(
+  `R10 import of ${SERVICE_ROLE_FILE} outside ${SERVICE_ROLE_CONSUMERS.join(' + ')} — the service role bypasses RLS`,
+  (abs) => isCode(abs) && ![SERVICE_ROLE_FILE, ...SERVICE_ROLE_CONSUMERS].includes(rel(abs)),
+  (line) => importsModule(line, SERVICE_ROLE_FILE),
+);
+
+// R10c. The Stripe client is pinned to the three billing route handlers, for the
+//       same reason: it holds a secret key, and its importers are the complete
+//       list of places that can create a payment session.
+scanLines(
+  `R10 import of ${STRIPE_FILE} outside ${STRIPE_CONSUMERS.join(' + ')}`,
+  (abs) => isCode(abs) && ![STRIPE_FILE, ...STRIPE_CONSUMERS].includes(rel(abs)),
+  (line) => importsModule(line, STRIPE_FILE),
+);
+
 // R11a. createServerClient is pinned to the two files that pass cookieOptions.
 scanLines(
   `R11 createServerClient outside ${SERVER_CLIENT_FILES.join(' + ')} — it would miss cookieOptions`,
@@ -628,8 +692,10 @@ console.log(
     NL + '  NEXT_PUBLIC_ hygiene incl. .env.example; no openrouter.ai URL or connection' +
     NL + '  import outside the gates; every secret reader imports server-only;' +
     NL + '  next.config.* clean of secrets and env injection; no getSession() in src/;' +
-    NL + '  service-role key pinned to lib/supabase/admin.ts; createServerClient pinned to' +
-    NL + '  server.ts + middleware.ts with shared cookieOptions, no createBrowserClient;' +
+    NL + '  service-role key pinned to lib/supabase/admin.ts and its client to the account' +
+    NL + '  and Stripe-webhook routes; Stripe client pinned to the three billing routes;' +
+    NL + '  createServerClient pinned to server.ts + middleware.ts with shared' +
+    NL + '  cookieOptions, no createBrowserClient;' +
     NL + '  AUDIT_RETENTION_VERIFIED only with real evidence behind it; every' +
     NL + '  backticked repo path in the docs/ shelf resolves against the tree.',
 );

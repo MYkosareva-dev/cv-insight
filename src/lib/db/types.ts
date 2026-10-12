@@ -1,8 +1,14 @@
 import 'server-only';
 
 /**
- * Row shapes for the eight owned tables: `001_init.sql`, plus `imports` from
- * `003_imports.sql` and `profiles` from `004_profiles.sql`.
+ * Row shapes for the nine owned tables: `001_init.sql`, plus `imports` from
+ * `003_imports.sql`, `profiles` from `004_profiles.sql` and `subscription_events`
+ * from `006_subscription_events.sql`.
+ *
+ * `lib/plan.ts` and `lib/billing/webhook.ts` are pure and import from here with
+ * `import type` only, which the compiler and Node's type stripping both erase —
+ * so this file's `server-only` never reaches a test or a client bundle through
+ * them.
  */
 
 /**
@@ -283,6 +289,24 @@ export type ResumeVersion = {
   source: 'ai' | 'ai_revision' | 'user';
   judge: JudgeReport | null;
   created_at: string;
+};
+
+/**
+ * One row of the billing ledger (migration 006). Append-only: a cancellation is
+ * a new row. `status` is Stripe's own string, verbatim — the app interprets two
+ * of them as Pro (`lib/plan.ts`) and stores the rest as received.
+ */
+export type SubscriptionEvent = {
+  id: string;
+  user_id: string;
+  stripe_event_id: string;
+  stripe_event_type: string;
+  stripe_customer_id: string;
+  stripe_subscription_id: string | null;
+  status: string;
+  cancel_at_period_end: boolean;
+  current_period_end: string | null;
+  received_at: string;
 };
 
 export type LlmCall = {

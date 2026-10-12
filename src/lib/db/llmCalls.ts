@@ -120,16 +120,31 @@ export async function listGenerateCallsForApplication(
  * arithmetic depends on could drift, and a cap measuring a different window from
  * the one it documents is a cap nobody can reason about.
  */
-async function countStepsInLast24h(steps: readonly string[]): Promise<number> {
+async function countStepsInLast24h(
+  steps: readonly string[],
+  { okOnly = false }: { okOnly?: boolean } = {},
+): Promise<number> {
   const supabase = await createClient();
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { count, error } = await supabase
+  let query = supabase
     .from('llm_calls')
     .select('id', { count: 'exact', head: true })
     .in('step', steps)
     .gte('created_at', since);
+  if (okOnly) query = query.eq('ok', true);
+  const { count, error } = await query;
   if (error) throw error;
   return count ?? 0;
+}
+
+/**
+ * Rule B7's PER-STEP allowance (Free, SPEC v3.0): SUCCESSFUL rows of one step.
+ * A failed request (`ok = false`) produced nothing the user can use, so it does
+ * not consume the day's three scans or its one resume — the overall ceiling
+ * above still counts it, because it may still have been billed.
+ */
+export async function countOkStepCallsInLast24h(step: string): Promise<number> {
+  return countStepsInLast24h([step], { okOnly: true });
 }
 
 /** Rule B7: chat steps only. Embeddings excluded by the cap's definition. */

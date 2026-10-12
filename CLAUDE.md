@@ -222,7 +222,7 @@ SPEC.md, then anything else.
   plan state; card data is entered on Stripe's hosted pages and never reaches
   this app. /privacy names Stripe, the purpose and test mode. Deleting the
   account removes the ledger rows through the cascade (witnessed in
-  docs/eval/erasure-evidence.md); the Stripe customer object is not deleted by
+  docs/eval/erasure-evidence.md, v3.0 re-run of 2026-10-12); the Stripe customer object is not deleted by
   this app and /privacy says so.
 - Every generated resume carries one line stating it was generated with AI
   from the author's career base — above the editor, and appended by the export
