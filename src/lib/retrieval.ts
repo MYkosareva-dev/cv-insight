@@ -10,11 +10,19 @@ import {
   matchDocuments as matchDocumentsRpc,
   type NewDocument,
 } from '@/lib/db/documents';
-import { underRescoreCap } from '@/lib/budget';
+import type { SearchResult } from '@/lib/agentic';
+import { AGENTIC_SEARCH_LIMIT, underRescoreCap } from '@/lib/budget';
+import { listCareerItemsByIds } from '@/lib/db/careerItems';
+import { type GenerationItem, distinctItemIds } from '@/lib/generation';
 import { countRescoreCallsInLast24h, logLlmCall } from '@/lib/db/llmCalls';
 import { ERROR_MESSAGES } from '@/lib/copy';
-import { AiUnavailableError, DailyLimitError, UnauthorizedError } from '@/lib/errors';
-import { type PlanId, currentPlan } from '@/lib/plan';
+import {
+  AiUnavailableError,
+  DailyLimitError,
+  PlanRequiredError,
+  UnauthorizedError,
+} from '@/lib/errors';
+import { PLAN_LIMITS, type PlanId, currentPlan } from '@/lib/plan';
 import { getUser } from '@/lib/supabase/server';
 import {
   EMBEDDING_BATCH_SIZE,
@@ -713,6 +721,83 @@ export async function matchDocumentsForTexts(
     // The one branch that must never be mistaken for "found nothing".
     return { status: 'could_not_search', error: err instanceof Error ? err.name : 'search failed' };
   }
+}
+
+/**
+ * ONE `search_career_base` execution for the agentic loop (SPEC v3.0 §5 items 1
+ * and 3). The query is the model's; the identity is the session's.
+ *
+ * The tool has ONE parameter and this function takes nothing else that could
+ * widen it: no user id, no item id, no limit. `matchDocuments` embeds the query
+ * (one `embed` row, attributed to the run's application) and `match_documents`
+ * filters on `auth.uid()` inside itself — so the most a model-written query can
+ * do is choose WHICH of the caller's own items come back.
+ *
+ * REFUSED OFF-PLAN, in the gate (rule B11). `authorizeGenerate` already refuses
+ * the agentic mode on Free, so no caller reaches this on Free today; this is the
+ * defence for the caller that does not exist yet.
+ *
+ * THE CHUNKS SELECT, THE ROWS SUPPLY (v2.16 note 1): chunks resolve to their
+ * career-item rows, since a chunk never carries `period`. Rows come back in rank
+ * order. Three outcomes, never two: a dead embeddings call or a failed row read
+ * is `could_not_search`, which the loop answers as "search unavailable" and logs
+ * as `failed` — never as nothing found.
+ *
+ * The development log prints one line per search — the query, the chunk count
+ * and the best score — on top of `matchDocuments`' per-chunk title lines. Chunk
+ * TEXT is printed in neither, and nothing is printed outside development.
+ */
+export async function searchCareerBase(
+  query: string,
+  applicationId: string,
+): Promise<SearchResult> {
+  const { plan } = await requireMember();
+  if (!PLAN_LIMITS[plan].agentic) {
+    throw new PlanRequiredError(ERROR_MESSAGES.PLAN_REQUIRED, { plan, feature: 'agentic' });
+  }
+
+  const outcome = await matchDocuments(query, AGENTIC_SEARCH_LIMIT, 'embed', applicationId);
+  if (outcome.status === 'could_not_search') return { status: 'could_not_search' };
+
+  const bestSimilarity =
+    outcome.chunks.length > 0 ? Math.max(...outcome.chunks.map((chunk) => chunk.similarity)) : null;
+  if (process.env.NODE_ENV === 'development') {
+    console.log(
+      `[retrieval] agentic search ${JSON.stringify(query)} → ${outcome.chunks.length} chunks, best ${
+        bestSimilarity === null ? '—' : bestSimilarity.toFixed(4)
+      }`,
+    );
+  }
+
+  let items: GenerationItem[] = [];
+  if (outcome.chunks.length > 0) {
+    try {
+      const ids = distinctItemIds(outcome.chunks, AGENTIC_SEARCH_LIMIT);
+      const byId = new Map((await listCareerItemsByIds(ids)).map((row) => [row.id, row]));
+      items = ids
+        .map((id) => byId.get(id))
+        .filter((row): row is NonNullable<typeof row> => row !== undefined)
+        .map((row) => ({
+          id: row.id,
+          type: row.type,
+          title: row.title,
+          period: row.period,
+          content: row.content,
+        }));
+    } catch (err) {
+      console.error('[retrieval] agentic search could not read its items', {
+        name: err instanceof Error ? err.name : typeof err,
+      });
+      return { status: 'could_not_search' };
+    }
+  }
+
+  return {
+    status: outcome.status,
+    chunks: outcome.chunks.length,
+    bestSimilarity,
+    items,
+  };
 }
 
 /**

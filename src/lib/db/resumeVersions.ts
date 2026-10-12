@@ -93,6 +93,9 @@ export async function insertResumeVersion(row: {
   content: string;
   source: ResumeVersion['source'];
   judge: JudgeReport | null;
+  /** v3.0 provenance — both optional so the user-edit and quality-check paths are unchanged. */
+  model?: string | null;
+  retrievalLog?: ResumeVersion['retrieval_log'];
 }): Promise<ResumeVersion> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -103,6 +106,8 @@ export async function insertResumeVersion(row: {
       content: row.content,
       source: row.source,
       judge: row.judge,
+      model: row.model ?? null,
+      retrieval_log: row.retrievalLog ?? null,
     })
     .select('*')
     .single();

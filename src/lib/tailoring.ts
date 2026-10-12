@@ -1,6 +1,7 @@
 import 'server-only';
 
-import { type CallLedger, runChat, runChatJson } from '@/lib/chat';
+import type { RetrievalLogEntry } from '@/lib/retrievalLog';
+import { type CallLedger, type GeneratePath, runAgenticGenerate, runChat, runChatJson } from '@/lib/chat';
 import { listCareerItemsByIds } from '@/lib/db/careerItems';
 import { countDocuments } from '@/lib/db/documents';
 import type { JudgeReport, ParsedVacancy } from '@/lib/db/types';
@@ -15,7 +16,13 @@ import {
   vacancyQueryText,
 } from '@/lib/generation';
 import { type Rubric, needsRevision, revisionFindings, withComputedVerdict } from '@/lib/judge';
-import { P2_GENERATE, P3_JUDGE, fillPrompt, revisionFeedbackBlock } from '@/lib/prompts';
+import {
+  P2_AGENTIC_ADDENDUM,
+  P2_GENERATE,
+  P3_JUDGE,
+  fillPrompt,
+  revisionFeedbackBlock,
+} from '@/lib/prompts';
 import {
   EMPTY_CONTACTS,
   type ModelResumeText,
@@ -206,14 +213,8 @@ export async function generateResume(args: {
   ledger: CallLedger;
   /** The profile's display name, or the visible placeholder standing in for one. */
   candidateName: string;
-}): Promise<string> {
-  const prompt = fillPrompt(P2_GENERATE, {
-    // The WRITER gets no keyword list — see `requirementsJson`.
-    parsedRequirementsJson: requirementsJson(args.parsed, false),
-    retrievedChunksJson: itemsJson(args.items),
-    revisionFeedbackBlock: revisionFeedbackBlock(args.findings),
-    candidateName: args.candidateName,
-  });
+}): Promise<{ text: string; model: string }> {
+  const prompt = p2Prompt(args);
   const result = await runChat(
     {
       step: 'generate',
@@ -242,7 +243,23 @@ export async function generateResume(args: {
    * P3 call for no benefit: a reviewer scoring grounding does not need a phone
    * number, so sending one is personal data leaving to a third party for nothing.
    */
-  return result.data.trim().slice(0, MAX_RESUME_CHARS);
+  return { text: result.data.trim().slice(0, MAX_RESUME_CHARS), model: result.model };
+}
+
+/** P2 filled — the single-shot writer's whole prompt, and the agentic writer's first part. */
+function p2Prompt(args: {
+  parsed: ParsedVacancy;
+  items: GenerationItem[];
+  findings: string[];
+  candidateName: string;
+}): string {
+  return fillPrompt(P2_GENERATE, {
+    // The WRITER gets no keyword list — see `requirementsJson`.
+    parsedRequirementsJson: requirementsJson(args.parsed, false),
+    retrievedChunksJson: itemsJson(args.items),
+    revisionFeedbackBlock: revisionFeedbackBlock(args.findings),
+    candidateName: args.candidateName,
+  });
 }
 
 /**
@@ -299,7 +316,25 @@ export async function judgeResume(args: {
  * One draft and what the reviewer said about it. `judge: null` means the check
  * did not RUN — never that it ran and found nothing.
  */
-export type Draft = { content: string; judge: JudgeReport | null };
+export type Draft = {
+  content: string;
+  judge: JudgeReport | null;
+  /** The model that wrote this draft (stored on `resume_versions.model`, v3.0). */
+  model: string;
+  /**
+   * What the agent searched for (`resume_versions.retrieval_log`): null on the
+   * single-shot path, `[]` when the agent ran and never searched, entries
+   * otherwise. The revision carries its original's log — it was written from
+   * the same researched item set.
+   */
+  retrievalLog: RetrievalLogEntry[] | null;
+};
+
+/**
+ * How the first draft of an agentic run ended, when it did not end normally.
+ * `no_tool_calls` (L9) and `round_error` are both fallbacks to single-shot.
+ */
+export type AgenticFallback = 'no_tool_calls' | 'round_error' | null;
 
 export type GenerateOutcome = {
   /** The first draft, always. */
@@ -312,6 +347,8 @@ export type GenerateOutcome = {
    * would show a "revise" verdict with no explanation of why nothing happened.
    */
   revisionWithheld: boolean;
+  /** Null on the single-shot path and on an agentic run that ended normally. */
+  agenticFallback: AgenticFallback;
 };
 
 /**
@@ -348,6 +385,11 @@ export async function generateWithJudge(args: {
   applicationId: string;
   ledger: CallLedger;
   candidateName: string;
+  /**
+   * Which writer produces the FIRST draft — the gate's decision, read off the
+   * grant (SPEC v3.0). Everything after the first draft is the same on both.
+   */
+  path: GeneratePath;
   /**
    * The header block's source, and it reaches NO model call (owner decision,
    * v2.21). The block is composed here and only after both judge steps have run,
@@ -388,33 +430,126 @@ function withHeader(draft: Draft, contacts: ResumeContacts | undefined): Draft {
   };
 }
 
+/** The first draft, and the item set its writer saw — which the judge must see too. */
+type FirstDraft = {
+  content: string;
+  model: string;
+  items: GenerationItem[];
+  retrievalLog: RetrievalLogEntry[] | null;
+  agenticFallback: AgenticFallback;
+};
+
+/**
+ * THE AGENTIC FIRST DRAFT (SPEC v3.0 §5). The loop is seeded with exactly the
+ * single-shot items, inside the same `<items>` block of the same P2, plus the
+ * addendum that introduces the tool — so it starts from today's baseline and
+ * its searches can only add evidence.
+ *
+ * Three endings. `written`: the agent's own resume over the assembled set.
+ * `no_tool_calls` (L9): round one's prose, written from the seed alone — the
+ * single-shot resume, with no second call. `round_error`: no resume exists, so
+ * the run falls through to the single-shot writer on the SEED, with that step's
+ * own capped budget; the log keeps the searches made before the error and ends
+ * with its terminal entry.
+ */
+async function agenticFirstDraft(args: {
+  parsed: ParsedVacancy;
+  items: GenerationItem[];
+  applicationId: string;
+  ledger: CallLedger;
+  candidateName: string;
+}): Promise<FirstDraft> {
+  const firstPrompt = `${p2Prompt({ ...args, findings: [] })}\n\n${P2_AGENTIC_ADDENDUM}`;
+  const outcome = await runAgenticGenerate({
+    firstPrompt,
+    seed: args.items,
+    applicationId: args.applicationId,
+    ledger: args.ledger,
+  });
+
+  if (outcome.kind === 'round_error') {
+    const written = await generateResume({ ...args, items: outcome.items, findings: [] });
+    return {
+      content: written.text,
+      model: written.model,
+      items: outcome.items,
+      retrievalLog: outcome.log,
+      agenticFallback: 'round_error',
+    };
+  }
+  return {
+    // The same backstop as the single-shot writer: the column's own bound (L3).
+    content: outcome.content.trim().slice(0, MAX_RESUME_CHARS),
+    model: outcome.model,
+    items: outcome.items,
+    retrievalLog: outcome.log,
+    agenticFallback: outcome.kind === 'no_tool_calls' ? 'no_tool_calls' : null,
+  };
+}
+
 async function runGenerateWithJudge(args: {
   parsed: ParsedVacancy;
   items: GenerationItem[];
   applicationId: string;
   ledger: CallLedger;
   candidateName: string;
+  path: GeneratePath;
   contacts?: ResumeContacts;
 }): Promise<GenerateOutcome> {
+  let first: FirstDraft;
+  if (args.path === 'agentic') {
+    first = await agenticFirstDraft(args);
+  } else {
+    const written = await generateResume({ ...args, findings: [] });
+    first = {
+      content: written.text,
+      model: written.model,
+      items: args.items,
+      retrievalLog: null,
+      agenticFallback: null,
+    };
+  }
+
+  /**
+   * From here on every step reads `first.items` — the set the first draft's
+   * writer was given (seed on the single-shot path and on a fall-through, the
+   * assembled set on a normal agentic run). P3's grounding corpus and the
+   * writer's corpus are therefore always the same set, so a claim grounded in an
+   * item the agent found is not reported as unsupported (SPEC v3.0 §5 item 5).
+   */
+  const stepArgs = { ...args, items: first.items };
+
   /**
    * The corpus every claim about "what your base supports" is checked against —
    * the items P2 and P3 were actually given. The reviewer's `missingHonest` is
    * gated on it before a single term reaches the rewrite (SPEC v2.17).
    */
-  const baseText = itemsCorpus(args.items);
+  const baseText = itemsCorpus(first.items);
 
-  const content = await generateResume({ ...args, findings: [] });
-  const judge = await judgeOrNull(args, content);
+  const content = first.content;
+  const judge = await judgeOrNull(stepArgs, content);
+  const original: Draft = {
+    content,
+    judge,
+    model: first.model,
+    retrievalLog: first.retrievalLog,
+  };
+  const done = (revision: Draft | null, revisionWithheld: boolean): GenerateOutcome => ({
+    original,
+    revision,
+    revisionWithheld,
+    agenticFallback: first.agenticFallback,
+  });
 
   if (!judge || !needsRevision(judge as Rubric, baseText)) {
-    return { original: { content, judge }, revision: null, revisionWithheld: false };
+    return done(null, false);
   }
 
   const findings = revisionFindings(judge as Rubric, baseText);
   if (findings.length === 0) {
     // Unreachable while `needsRevision` requires findings; kept as the explicit
     // statement of branch 3 rather than as an implication of another function.
-    return { original: { content, judge }, revision: null, revisionWithheld: true };
+    return done(null, true);
   }
 
   /**
@@ -429,9 +564,9 @@ async function runGenerateWithJudge(args: {
    * not arbitrary: there is no resume then, so there is nothing to lose. Here
    * there is one, and it is the one the user gets.
    */
-  let revised: string;
+  let revised: { text: string; model: string };
   try {
-    revised = await generateResume({ ...args, findings });
+    revised = await generateResume({ ...stepArgs, findings });
   } catch (err) {
     if (err instanceof DailyLimitError || err instanceof AiUnavailableError) {
       console.error('[tailoring] the revision did not run', {
@@ -440,17 +575,21 @@ async function runGenerateWithJudge(args: {
       // Not `revisionWithheld`: that names a reviewer who gave no reason. This
       // is a rewrite that was earned, had findings to work from, and could not
       // be bought. The card shows the original's own honest verdict either way.
-      return { original: { content, judge }, revision: null, revisionWithheld: false };
+      return done(null, false);
     }
     throw err;
   }
 
-  const revisedJudge = await judgeOrNull(args, revised);
-  return {
-    original: { content, judge },
-    revision: { content: revised, judge: revisedJudge },
-    revisionWithheld: false,
-  };
+  const revisedJudge = await judgeOrNull(stepArgs, revised.text);
+  return done(
+    {
+      content: revised.text,
+      judge: revisedJudge,
+      model: revised.model,
+      retrievalLog: first.retrievalLog,
+    },
+    false,
+  );
 }
 
 /**

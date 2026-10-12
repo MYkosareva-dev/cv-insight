@@ -4,7 +4,15 @@ import type { User } from '@supabase/supabase-js';
 import type { z } from 'zod';
 
 import {
+  type AgentLoopOutcome,
+  type LoopMessage,
+  RoundFailedError,
+  type ToolChoice,
+  runAgentLoop,
+} from '@/lib/agentic';
+import {
   MAX_CHAT_REQUESTS_PER_STEP,
+  MAX_TOOL_ROUNDS,
   hasStepCap,
   underDailyCallCap,
   underStepCap,
@@ -18,7 +26,10 @@ import {
   ServerError,
   UnauthorizedError,
 } from '@/lib/errors';
+import type { GenerationItem } from '@/lib/generation';
 import { PLAN_LIMITS, type PlanId, currentPlan } from '@/lib/plan';
+import { SEARCH_CAREER_BASE_TOOL } from '@/lib/prompts';
+import { searchCareerBase } from '@/lib/retrieval';
 import { getUser } from '@/lib/supabase/server';
 import {
   type ChatMessage,
@@ -28,6 +39,7 @@ import {
   OpenRouterError,
   OpenRouterUsageError,
   chatCompletion,
+  chatCompletionWithTools,
   costUsdMicro as priceOf,
 } from '@/lib/openrouter/server';
 
@@ -151,7 +163,7 @@ export type CallLedger = { chat: number; grant?: GenerateGrant };
 export const newCallLedger = (grant?: GenerateGrant): CallLedger => ({ chat: 0, grant });
 
 /** Which retrieval path an admitted generate run takes. */
-export type GeneratePath = 'single';
+export type GeneratePath = 'single' | 'agentic';
 
 /**
  * Proof that THIS gate admitted a generate run (SPEC v3.0, §5 and rule B11).
@@ -159,8 +171,8 @@ export type GeneratePath = 'single';
  * OPAQUE AND UNFORGEABLE: the private field means no object literal satisfies
  * the type, and the constructor is reachable only from this module — so a route
  * cannot hand-build one and skip the plan check. The route passes it through and
- * never reads a plan off it; `path` is the only thing it exposes, and the route
- * does not branch on that either until the agentic loop exists.
+ * never reads a plan off it; `path` is the only thing it exposes, and branching
+ * on it is following the gate's decision rather than making one.
  */
 class GenerateGrant {
   readonly #issuedByGate = true;
@@ -202,9 +214,9 @@ export type GenerateMode = 'single' | 'agentic';
  * bound is the number of applications a Free user can start at once, and rule
  * B7's 50-row ceiling still holds over all of them.
  *
- * THE AGENTIC PATH IS NOT BUILT IN THIS BRANCH. A Pro caller asking for it is
- * admitted and served the single-shot path; the grant says `single`, which is
- * what runs, so nothing downstream can claim an agentic run took place.
+ * The grant names the path that will run: `agentic` only when it was asked for
+ * AND the plan includes it — which, past step 1, is always both. A `single`
+ * request on Pro is a `single` run.
  */
 export async function authorizeGenerate(mode: GenerateMode): Promise<GenerateGrant> {
   const { plan } = await requireMember();
@@ -213,7 +225,7 @@ export async function authorizeGenerate(mode: GenerateMode): Promise<GenerateGra
   }
   await assertUnderTotalCap(plan, undefined);
   await assertUnderStepCap(plan, 'generate');
-  return new GenerateGrant('single');
+  return new GenerateGrant(mode === 'agentic' && PLAN_LIMITS[plan].agentic ? 'agentic' : 'single');
 }
 
 /**
@@ -269,6 +281,13 @@ async function assertStepAllowed(
   if (step === 'generate') {
     if (!GenerateGrant.isGrant(ledger?.grant)) {
       console.error('[chat] a generate step arrived without a grant from authorizeGenerate()');
+      throw new ServerError();
+    }
+  } else if (step === 'generate_agentic') {
+    // The agentic writer needs a grant for the AGENTIC path specifically: a
+    // `single` grant was issued to a run the plan check did not admit to this one.
+    if (!GenerateGrant.isGrant(ledger?.grant) || ledger.grant.path !== 'agentic') {
+      console.error('[chat] an agentic step arrived without an agentic grant');
       throw new ServerError();
     }
   } else {
@@ -344,7 +363,7 @@ async function issue(
  *    usage, so /quality's total cost stays truthful (DoD item 7).
  */
 function logFailure(
-  request: ChatRequest,
+  request: Pick<ChatRequest, 'step' | 'applicationId'>,
   userId: string,
   primaryModel: string,
   err: unknown,
@@ -487,6 +506,111 @@ export async function runChatJson<T>(args: {
     issues: parsedSecond.issues,
   });
   throw new AiUnavailableError(ERROR_MESSAGES.AI_UNAVAILABLE);
+}
+
+// ---------------------------------------------------------------------------
+// The agentic generate step (SPEC v3.0 §5, rule B12)
+// ---------------------------------------------------------------------------
+
+/** The loop's own request budget — one per run, capped at MAX_TOOL_ROUNDS. */
+type LoopBudget = { spent: number };
+
+/**
+ * ONE round of the agentic loop: one metered request, logged as
+ * `generate_agentic` whatever happens, and NO retry — neither the repair nor the
+ * network exception applies inside the loop (CLAUDE.md). A failure becomes
+ * `RoundFailedError`, which ends the loop and makes the run fall through to the
+ * single-shot writer on its seed.
+ */
+async function issueToolRound(
+  userId: string,
+  applicationId: string,
+  messages: LoopMessage[],
+  toolChoice: ToolChoice,
+  budget: LoopBudget,
+  ledger: CallLedger,
+) {
+  // The loop already stops at MAX_TOOL_ROUNDS; this is the gate refusing to be the
+  // place where that arithmetic is trusted rather than enforced.
+  if (budget.spent >= MAX_TOOL_ROUNDS) throw new RoundFailedError('round_budget');
+  budget.spent += 1;
+  ledger.chat += 1;
+
+  const step = 'generate_agentic' as const;
+  const primaryModel = MODEL_BY_STEP[step];
+  try {
+    const result = await chatCompletionWithTools({
+      step,
+      primaryModel,
+      messages,
+      tools: [SEARCH_CAREER_BASE_TOOL],
+      toolChoice,
+    });
+    logLlmCall({
+      user_id: userId,
+      application_id: applicationId,
+      step,
+      model: result.model,
+      fallback_used: result.fallbackUsed,
+      ok: true,
+      tokens_in: result.tokensIn,
+      tokens_out: result.tokensOut,
+      cost_usd_micro: result.costUsdMicro,
+      cost_known: result.costKnown,
+      latency_ms: result.latencyMs,
+    });
+    return { content: result.data.content, toolCalls: result.data.toolCalls, model: result.model };
+  } catch (err) {
+    logFailure({ step, applicationId }, userId, primaryModel, err);
+    if (err instanceof OpenRouterError) {
+      throw new RoundFailedError(err instanceof OpenRouterUsageError ? 'empty' : 'request');
+    }
+    throw err;
+  }
+}
+
+/**
+ * Run the agentic loop for an admitted Pro generate run. The ONLY caller of
+ * `runAgentLoop`, and the place both of its effects are built (check.mjs R6b).
+ *
+ * In order, before any spend: the user, the plan, an AGENTIC grant from
+ * `authorizeGenerate()`, rule B7's overall ceiling. The ceiling is checked once
+ * for the loop as it is once per step elsewhere — refusing round three of a run
+ * whose first two rounds were billed would buy a half-researched nothing.
+ *
+ * What comes back is the loop's outcome, unchanged. A `no_tool_calls` or
+ * `round_error` outcome is a FALLBACK and is logged here as one, metadata only:
+ * never the query, the arguments, the content or the transcript (CLAUDE.md,
+ * Privacy). `round_error` is also persisted as the log's terminal entry, so the
+ * fallback is visible on the version after a reload, not just in this line.
+ */
+export async function runAgenticGenerate(args: {
+  firstPrompt: string;
+  seed: GenerationItem[];
+  applicationId: string;
+  ledger: CallLedger;
+}): Promise<AgentLoopOutcome> {
+  const { user, plan } = await requireMember();
+  await assertStepAllowed(plan, 'generate_agentic', args.ledger);
+
+  const budget: LoopBudget = { spent: 0 };
+  const outcome = await runAgentLoop({
+    firstPrompt: args.firstPrompt,
+    seed: args.seed,
+    requestRound: (messages, toolChoice) =>
+      issueToolRound(user.id, args.applicationId, messages, toolChoice, budget, args.ledger),
+    search: (query) => searchCareerBase(query, args.applicationId),
+  });
+
+  if (outcome.kind !== 'written') {
+    console.warn('[chat] generate_agentic fell back to the single-shot path', {
+      fallback: outcome.kind,
+      rounds: outcome.rounds,
+      searches: outcome.searches,
+      ...(outcome.kind === 'round_error' ? { reason: outcome.reason } : {}),
+    });
+  }
+  return outcome;
 }
 
 /**

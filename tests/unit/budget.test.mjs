@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
 import {
+  AGENTIC_SEARCH_LIMIT,
   GENERATE_CHAT_STEPS,
   MAX_CHAT_REQUESTS_PER_GENERATE,
+  MAX_CHAT_REQUESTS_PER_GENERATE_BY_PATH,
   MAX_CHAT_REQUESTS_PER_STEP,
+  MAX_SEARCH_CALLS,
+  MAX_TOOL_ROUNDS,
   dailyCallLimit,
   dailyRescoreLimit,
   hasStepCap,
@@ -203,5 +207,33 @@ describe('rule B7 — Free per-step allowances (v3.0)', () => {
     for (const limit of Object.values(PLAN_LIMITS.free.perStep)) {
       assert.ok(limit < PLAN_LIMITS.free.dailyChatCalls);
     }
+  });
+});
+
+describe('the per-path generate ceiling (SPEC v3.0 §5 item 4, ruled 12)', () => {
+  test('single-shot keeps four capped steps: 8', () => {
+    assert.equal(MAX_CHAT_REQUESTS_PER_GENERATE_BY_PATH.single, 8);
+    assert.equal(MAX_CHAT_REQUESTS_PER_GENERATE_BY_PATH.single, MAX_CHAT_REQUESTS_PER_GENERATE);
+  });
+
+  test('agentic is the loop plus four capped steps — fall-through writer, judge, revision, judge: 12', () => {
+    assert.equal(MAX_TOOL_ROUNDS, 4);
+    assert.equal(
+      MAX_CHAT_REQUESTS_PER_GENERATE_BY_PATH.agentic,
+      MAX_TOOL_ROUNDS + GENERATE_CHAT_STEPS * MAX_CHAT_REQUESTS_PER_STEP,
+    );
+    assert.equal(MAX_CHAT_REQUESTS_PER_GENERATE_BY_PATH.agentic, 12);
+  });
+
+  test('the normal agentic path (no fall-through) reaches 10, inside the ceiling', () => {
+    const normal = MAX_TOOL_ROUNDS + 3 * MAX_CHAT_REQUESTS_PER_STEP;
+    assert.equal(normal, 10);
+    assert.ok(withinBudget({ chat: normal }, MAX_CHAT_REQUESTS_PER_GENERATE_BY_PATH.agentic));
+    assert.equal(withinBudget({ chat: 13 }, MAX_CHAT_REQUESTS_PER_GENERATE_BY_PATH.agentic), false);
+  });
+
+  test('the agentic search and per-search budgets are the SPEC numbers', () => {
+    assert.equal(MAX_SEARCH_CALLS, 6);
+    assert.equal(AGENTIC_SEARCH_LIMIT, 6);
   });
 });

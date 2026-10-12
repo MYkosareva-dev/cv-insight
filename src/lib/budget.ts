@@ -27,6 +27,14 @@ import { type MeteredStep, PLAN_LIMITS, type PlanId } from '@/lib/plan';
  * is a retry ladder however it is spelled. Both draw from this one budget, so a
  * step that spends its second request reconnecting has none left for a repair,
  * and vice versa.
+ *
+ * ONE STEP IS EXEMPT: `generate_agentic` (SPEC v3.0 §5 item 4, rule B12). This
+ * cap exists to stop RETRIES multiplying inside a step; the agentic loop is a
+ * bounded sequence of DISTINCT requests, each carrying new evidence, with its own
+ * arithmetic budget below (`MAX_TOOL_ROUNDS`, `MAX_SEARCH_CALLS`). Neither of the
+ * two retries applies inside the loop: a round that errors ends it. Parse, judge
+ * and the single-shot generate keep this cap, and so does the single-shot writer
+ * an agentic run falls through to.
  */
 export const MAX_CHAT_REQUESTS_PER_STEP = 2;
 
@@ -57,6 +65,67 @@ export const GENERATE_CHAT_STEPS = 4;
  * own definition and which is not chat.
  */
 export const MAX_CHAT_REQUESTS_PER_GENERATE = GENERATE_CHAT_STEPS * MAX_CHAT_REQUESTS_PER_STEP;
+
+// ---------------------------------------------------------------------------
+// The agentic loop (SPEC v3.0 §5, rule B12) — arithmetic in code, never a prompt
+// ---------------------------------------------------------------------------
+
+/**
+ * Model requests one agentic loop may make, the closing writing round included.
+ * The last one is sent with `tool_choice: "none"`, so the model must write.
+ */
+export const MAX_TOOL_ROUNDS = 4;
+
+/**
+ * Tool EXECUTIONS per run, counted per call and not per round: the probe found
+ * four of five models issuing two calls in one round. A call past this budget is
+ * still answered — with a refusal — because a dangling tool call is a malformed
+ * transcript.
+ */
+export const MAX_SEARCH_CALLS = 6;
+
+/** Chunks one search asks `match_documents` for, before they resolve to items. */
+export const AGENTIC_SEARCH_LIMIT = 6;
+
+/**
+ * A query longer than this is truncated before it is embedded or stored. It
+ * bounds `resume_versions.retrieval_log` (64 KB CHECK in 006) with room to spare:
+ * six queries of this size plus item titles is a few kilobytes.
+ */
+export const MAX_SEARCH_QUERY_CHARS = 500;
+
+/**
+ * The loop's wall-clock budget. Past it, the next round is the closing round and
+ * any further search is refused with reason `deadline`.
+ *
+ * A JUDGEMENT, NOT A DERIVATION. `maxDuration` is 300 s (the deployment plan's
+ * ceiling, Block D v2.24) and after the loop the run still has a judge, possibly a
+ * revision and a second judge — typically 60–90 s together. 120 s leaves that
+ * room on typical latencies. It can only REMOVE spend (an earlier closing round,
+ * a refused search), never add a request, so it sits inside the metered-call
+ * rules. A run whose every request hits its 60 s timeout still exceeds 300 s;
+ * nothing short of fewer requests fixes that, and it is declared in SPEC.
+ */
+export const AGENTIC_LOOP_DEADLINE_MS = 120_000;
+
+/**
+ * The run's chat ceiling, per retrieval path (SPEC v3.0 §5 item 4, ruled 12 by
+ * the architect: the SPEC's original `MAX_TOOL_ROUNDS + 2 × 2 = 8` left out the
+ * second judge and the fall-through writer).
+ *
+ *   single   generate → judge → revision → judge, 2 requests each        = 8
+ *   agentic  up to MAX_TOOL_ROUNDS loop requests, then four capped steps:
+ *            the fall-through writer (spent ONLY when a round errors),
+ *            judge, revision, judge                                     = 4 + 8 = 12
+ *
+ * On the normal agentic path the rounds replace the writer step, so the
+ * reachable total is 10; the ceiling is 12 because a round that errors after
+ * three good ones still buys a single-shot writer.
+ */
+export const MAX_CHAT_REQUESTS_PER_GENERATE_BY_PATH = {
+  single: MAX_CHAT_REQUESTS_PER_GENERATE,
+  agentic: MAX_TOOL_ROUNDS + GENERATE_CHAT_STEPS * MAX_CHAT_REQUESTS_PER_STEP,
+} as const;
 
 /**
  * Has this request stayed inside the ceiling it declared?
