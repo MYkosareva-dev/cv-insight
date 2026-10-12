@@ -1,7 +1,7 @@
 # Agentic vs single-shot retrieval: an observation, not a benchmark
 
-Status: SKELETON. The method is fixed below. The results table is empty until
-the runs are made, and nothing in this file is a finding until it is filled in.
+Status: RECORDED, one fixture, 2026-10-12. The two further fixtures and a base
+large enough to exercise retrieval are backlog `ag-2`.
 
 Branch: `feature/agentic-retrieval` · SPEC v3.0b (Block D §5 item 8, DoD item 14)
 
@@ -97,35 +97,104 @@ rows that came after it.
 
 ## Results
 
-Run date: `<YYYY-MM-DD>` · Fixture: Hiredbuddy (`calibration-case-hiredbuddy.json`)
+Run date: 2026-10-12 · Fixture: Hiredbuddy (`calibration-case-hiredbuddy.json`),
+the same `resumeText` and `vacancyText` on both accounts · Career base: the
+fixture's imported items only, on both accounts · Operator: owner
 
-| Path | Account | 1 Score | 2 Covered | 3 Grounding (violations) | 4 Kw / Rel / ATS | 5 Revised | 6 Writer | 7 Searches (refused, failed) / ending | 8 Chat rows | 9 Embed rows | 10 Cost |
+| Path | Account | 1 Score (scan → re-score) | 2 Covered (scan → re-score) | 3 Grounding (violations) | 4 Kw / Rel / ATS | 5 Revised | 6 Writer | 7 Searches / ending | 8 Chat rows | 9 Embed rows | 10 Cost |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| single | Free (new) | | | | | | | — | | | |
-| agentic | Pro (`pro-test2`) | | | | | | | | | | |
+| agentic | Pro (`pro-test2`), generate 19:38:16 | 56% → 59% | 4/8 → 5/8 | fail (3) | 4 / 4 / 5 | yes, still *revise* | `openai/gpt-5.4`, no fallback | 0 searches; "ran no extra searches" (L9) | 4 | 1 | $0.0296 |
+| single | Free (`free-test3`, new), generate 19:48:11 | 56% → 58% | 4/8 → 4/8 | fail (2) | 4 / 4 / 4 | yes, still *revise* | `openai/gpt-5.4`, no fallback | — (no section, correct for Free) | 5 | 1 | $0.0456 |
 
-### Evidence that the agentic rows were written
+Row 11 on both accounts: failed 0, and no fallback badge (Pro 0 of 10 rows on
+/quality, Free 0 of 11). No row was *unpriced*.
 
-Migration 007 is a configured mechanism, and this section records that it
-works. Either row 8 of the Pro run lists *Generate (agentic)* rows with result
-*ok*, or the SQL editor returns at least one `ok = true` row for:
+**Row 8, broken down.**
+- Pro: *Generate (agentic)* 1, *Generate* 1 (the rule-B3 revision), *Quality
+  check* 2. That is 4 rows, inside the agentic ceiling of 12.
+- Free: *Generate* 2, *Quality check* 3. That is 5 rows, inside the single
+  ceiling of 8.
+
+The pipeline accounts for two judge rows. The third (1,852 tokens in, 2,464
+out) is consistent with the owner-approved repair retry on one judge step. A
+network retry would have left an `ok = false` row, and the failed count is 0.
+It is not confirmed row by row: the server log line
+`[chat] judge output failed validation, one repair retry` from that run would
+confirm it. An on-demand [Check quality] would also write a *Quality check*
+row, but it appends a *Your edit* version, and none was reported.
+
+**Row 3, the violations.**
+- Pro: MS Office / Google Suite, Labelbox / Supervisely, and "reliable
+  internet connection". All three are shaped like coverage gaps: vacancy
+  requirements the base does not claim, reported as grounding failures. This is
+  the pattern recorded in `generation-coverage-control.md` and backlog `p7-1`.
+- Free: the "98 percent" metric and the "for the team" scope. Both are claims
+  about the resume's own sentences.
+
+**Row 4, ATS.** The one-point ATS difference is an account difference, not a
+path difference. `free-test3` has no display name, so its resume carries the
+`[YOUR NAME]` placeholder and the judge reports it under ATS format, as P3
+tells it to. `pro-test2` has a display name.
+
+### Evidence that the agentic rows were written (migration 007)
+
+Migration 007 was applied before the runs. The Pro run's row on /quality's
+recent-calls table reads:
+
+| Time | Step | Model | Fallback | Result |
+|---|---|---|---|---|
+| 2026-10-12 19:38 | *Generate (agentic)* | `openai/gpt-5.4` | no | *ok* |
+
+/quality renders `llm_calls` rows through the DAL, so this row exists in the
+table. Before 007, Postgres would have refused it at the CHECK, and the
+fire-and-forget logger would have dropped it with nothing on screen. The
+*Agentic generations* tile counted this run (1 run · 0 searches per run), and
+*Cost per run, by path* read *Agentic $0.0296*. Both are computed over the
+same rows. The exact `tokens_in`, `tokens_out` and `cost_usd_micro` of this
+row were not transcribed. To add them, paste the output of:
 
 ```sql
-select step, model, fallback_used, ok, tokens_in, tokens_out, cost_usd_micro, created_at
-from llm_calls where step = 'generate_agentic' order by created_at desc limit 5;
+select step, model, ok, tokens_in, tokens_out, cost_usd_micro, created_at
+from llm_calls where step = 'generate_agentic' order by created_at desc limit 1;
 ```
-
-`<PASTE QUERY OUTPUT, OR THE /quality ROWS, HERE>`
 
 ### Observed `tool_choice: "none"` behaviour
 
-The probe recorded `tool_choice: "auto"` only. If the closing round answered
-with tool calls despite `none` (the loop treats that as an erroring round, and
-row 7 then ends with *The research stopped on an error*), note it here with the
-serving model.
+Not exercised. The agent wrote on round one with `tool_choice: "auto"`, so no
+closing round was sent.
 
 ## Reading
 
-`<filled in after the runs: what changed in Covered and grounding, what each
-run cost, and whether one fixture shows any difference at all. Say plainly
-if it shows none.>`
+**This run exercised L9, not retrieval.** The fixture's career base holds fewer
+items than `MAX_GENERATION_ITEMS = 8`, so the seed (the single-shot retrieval)
+already carried the whole base into the first message. The agent had nothing
+left to search for, wrote on round one without calling the tool, and the loop
+ended as `no_tool_calls`. The empty research log and the *"ran no extra
+searches"* line show that ending working as specified, and the code logs it as a
+fallback in the server console (that line was not checked in this run). What this comparison measures is therefore:
+- the loop's behaviour on a saturated seed, which was correct: one round, no
+  search, no refusal, no error;
+- the cost of each path on this case.
+
+It does not measure whether searching adds coverage.
+
+**The coverage difference is not attributable to the path.** The agentic run
+searched nothing, so its writer saw exactly the evidence the single-shot writer
+saw. Its re-score moved one requirement (ML exposure) to *Covered* (5/8 against
+4/8), and that is run-to-run variation of one generation each. Both runs failed
+grounding and were revised once. Pro's three violations are coverage-shaped
+(`p7-1`), and Free's two are claims about its own sentences. With one run per
+path, neither difference supports a conclusion.
+
+**The cost difference is mostly the single-shot run's extra judge call, not the
+path.** The gap is $0.0456 − $0.0296 = $0.0160. The third *Quality check* row
+priced at Haiku 4.5's $1 / $5 per Mtok is 1,852 × $1 + 2,464 × $5 per million,
+about $0.0142, which is roughly nine tenths of the gap. The remaining ~$0.0018
+is token-count variation between the two generations and their reviews. On a
+saturated seed the agentic path costs the same as the single-shot path, plus
+its tool declaration and the addendum in one prompt.
+
+**What it would take to measure retrieval:** a career base larger than eight
+items, with at least one requirement covered by an item the seed retrieval
+ranks below the cut-off. Then the agent has something to find. That, and the
+two further fixtures SPEC §5 item 8 names, are backlog `ag-2`.
