@@ -253,6 +253,34 @@ Each of these is a race that a single warm serverless instance hides.
   rather than the search.
 - **Speed Insights**, above.
 
+### Open questions for counsel (billing, `docs/reviews/billing-eu-compliance.md`)
+
+Both are legal judgments an engineering review cannot sign off, which is why they
+are questions and not findings. Neither blocks a test-mode deployment on its own;
+both have to be answered before the deployment can take a payment.
+
+- **`eu-b-p2` — Stripe's role and the transfer it relies on (OPEN).** /privacy
+  describes Stripe as collecting card and billing data directly and processing for
+  its own purposes as its own policy describes, and says plainly that the data is
+  transferred to and processed in the United States — but it names no transfer
+  safeguard and asserts no controller/processor classification, because neither
+  has been verified for this account. The question: under Stripe's current data
+  processing terms for this account's region, is Stripe a processor, an
+  independent controller, or both for different purposes; and which safeguard
+  (adequacy decision or SCCs) does the transfer rest on? Closes when the answer is
+  on the page, with Stripe's privacy policy linked at the processors sentence. The
+  same missing-safeguard gap applies to the AI-provider transfer paragraph and is
+  answered in the same pass.
+- **`eu-b-p10` — the § 5 DDG position (OPEN).** The Impressum shows a marked
+  address placeholder and states that the deployment cannot take money because its
+  Pro plan runs in Stripe's test mode. With open registration, two plans and a
+  displayed price, whether "no money can move" takes the deployment outside
+  § 5 DDG is a legal judgment, and the page is a written admission that the rule is
+  not met. Closes when counsel confirms the test-mode position, or when a
+  serviceable address is published and the placeholder retired. The hard backstop
+  is unchanged: the day `STRIPE_SECRET_KEY` is not a `sk_test_` key, the address
+  goes in first (`src/lib/stripe/server.ts` refuses such a key until then).
+
 ### Parked product decisions, not defects
 
 Four **FEATURE** entries in the Phase-2 owner-feedback section: grouping `/career`
