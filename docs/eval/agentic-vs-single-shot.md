@@ -115,13 +115,19 @@ Row 11 on both accounts: failed 0, and no fallback badge (Pro 0 of 10 rows on
 - Free: *Generate* 2, *Quality check* 3. That is 5 rows, inside the single
   ceiling of 8.
 
-The pipeline accounts for two judge rows. The third (1,852 tokens in, 2,464
-out) is consistent with the owner-approved repair retry on one judge step. A
-network retry would have left an `ok = false` row, and the failed count is 0.
-It is not confirmed row by row: the server log line
-`[chat] judge output failed validation, one repair retry` from that run would
-confirm it. An on-demand [Check quality] would also write a *Quality check*
-row, but it appends a *Your edit* version, and none was reported.
+The pipeline accounts for two judge rows. **The third (1,852 tokens in, 2,464
+out) is the owner-approved repair retry on one judge step, confirmed from the
+dev-server log of the Free run** (application `f7d8970e-…`):
+
+```
+[chat] judge output failed validation, one repair retry { issues: [ { path: '', code: 'invalid_json', message: 'not valid JSON' } ] }
+```
+
+The judge's first answer on that step was not parseable JSON. It was still a
+successful HTTP response and was billed, so it is logged `ok = true`, and the
+repair request is the extra row. This is exception (a) of the metered-call
+rules, spending the step's second and last request. It agrees with the failed
+count of 0: a network retry would have left an `ok = false` row.
 
 **Row 3, the violations.**
 - Pro: MS Office / Google Suite, Labelbox / Supervisely, and "reliable
@@ -150,13 +156,23 @@ table. Before 007, Postgres would have refused it at the CHECK, and the
 fire-and-forget logger would have dropped it with nothing on screen. The
 *Agentic generations* tile counted this run (1 run · 0 searches per run), and
 *Cost per run, by path* read *Agentic $0.0296*. Both are computed over the
-same rows. The exact `tokens_in`, `tokens_out` and `cost_usd_micro` of this
-row were not transcribed. To add them, paste the output of:
+same rows.
+
+The row itself, read from the SQL editor by the owner:
 
 ```sql
 select step, model, ok, tokens_in, tokens_out, cost_usd_micro, created_at
 from llm_calls where step = 'generate_agentic' order by created_at desc limit 1;
 ```
+
+| step | model | ok | fallback_used | tokens_in | tokens_out | cost_usd_micro | created_at |
+|---|---|---|---|---|---|---|---|
+| `generate_agentic` | `openai/gpt-5.4` | true | false | 1105 | 436 | 9303 | 2026-10-12 17:38:16.669148+00 |
+
+The timestamp is the 19:38:16 local generate (UTC+2). The cost agrees with the
+price table: 1,105 × $2.50 + 436 × $15.00 per Mtok = 9,302.5 µ$, stored as
+9,303. A single row means one round, which matches the `no_tool_calls`
+ending below.
 
 ### Observed `tool_choice: "none"` behaviour
 
@@ -165,13 +181,21 @@ closing round was sent.
 
 ## Reading
 
-**This run exercised L9, not retrieval.** The fixture's career base holds fewer
-items than `MAX_GENERATION_ITEMS = 8`, so the seed (the single-shot retrieval)
-already carried the whole base into the first message. The agent had nothing
-left to search for, wrote on round one without calling the tool, and the loop
-ended as `no_tool_calls`. The empty research log and the *"ran no extra
-searches"* line show that ending working as specified, and the code logs it as a
-fallback in the server console (that line was not checked in this run). What this comparison measures is therefore:
+**This run exercised L9, not retrieval.** The fixture's career base holds five
+items, fewer than `MAX_GENERATION_ITEMS = 8`, so the seed (the single-shot
+retrieval) already carried the whole base into the first message. The Pro
+run's dev-server log (application `6d314e12-…`) shows the seed retrieval
+considering 9 chunks across those 5 items (best similarity 0.5071, *Data
+Quality Specialist*). The agent had nothing left to search for, wrote on round
+one without calling the tool, and the loop ended as `no_tool_calls`. That
+ending was logged as a fallback, as specified, confirmed from the same log:
+
+```
+[chat] generate_agentic fell back to the single-shot path { fallback: 'no_tool_calls', rounds: 1, searches: 0 }
+```
+
+The empty research log and the *"ran no extra searches"* line on screen are the
+same ending, as the user sees it. What this comparison measures is therefore:
 - the loop's behaviour on a saturated seed, which was correct: one round, no
   search, no refusal, no error;
 - the cost of each path on this case.
@@ -187,7 +211,7 @@ grounding and were revised once. Pro's three violations are coverage-shaped
 path, neither difference supports a conclusion.
 
 **The cost difference is mostly the single-shot run's extra judge call, not the
-path.** The gap is $0.0456 − $0.0296 = $0.0160. The third *Quality check* row
+path.** The gap is $0.0456 − $0.0296 = $0.0160. The third *Quality check* row (the confirmed repair retry)
 priced at Haiku 4.5's $1 / $5 per Mtok is 1,852 × $1 + 2,464 × $5 per million,
 about $0.0142, which is roughly nine tenths of the gap. The remaining ~$0.0018
 is token-count variation between the two generations and their reviews. On a
