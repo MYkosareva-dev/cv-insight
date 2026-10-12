@@ -376,6 +376,86 @@ describe('scripts/check.mjs — the gate the other gates rest on', () => {
     assert.match(stderr, /R9/);
   });
 
+  /**
+   * R10b/R10c (SPEC v3.0). The KEY was pinned to one module; the CLIENT was
+   * not, so any file could import createAdminClient and bypass RLS without ever
+   * naming the key. These cases are what make "a third consumer fails the
+   * build" a property of the build rather than a sentence in CLAUDE.md.
+   *
+   * The specifiers are ASSEMBLED, like the banned names below: this file is in
+   * R10's and R7's scope, and spelling them out would fail the shipped tree.
+   */
+  const ADMIN_MODULE = ['@', 'lib', 'supabase', 'admin'].join('/');
+  const ADMIN_RELATIVE = ['..', 'supabase', 'admin'].join('/');
+  const STRIPE_MODULE = ['@', 'lib', 'stripe', 'server'].join('/');
+  const PRICE_READ = ['process', 'env', 'STRIPE_' + 'PRICE_PRO'].join('.');
+  test('R10 FAILS on a third importer of the service-role client', () => {
+    const dir = sandbox();
+    const portal = 'src/app/api/billing/portal/route.ts';
+    write(
+      dir,
+      portal,
+      `${read(dir, portal)}\nimport { createAdminClient } from '${ADMIN_MODULE}';\nvoid createAdminClient;\n`,
+    );
+    const { status, stderr } = run(dir);
+    assert.equal(status, 1, 'a third service-role consumer must fail the build');
+    assert.match(stderr, /R10 import of src\/lib\/supabase\/admin\.ts/);
+  });
+
+  test('R10 FAILS on a RELATIVE or DYNAMIC import of the service-role client too', () => {
+    for (const line of [
+      `import { createAdminClient } from '${ADMIN_RELATIVE}';`,
+      `const m = await import('${ADMIN_MODULE}');`,
+    ]) {
+      const dir = sandbox();
+      write(dir, 'src/lib/db/sneaky.ts', `${line}\nexport {};\n`);
+      const { status, stderr } = run(dir);
+      assert.equal(status, 1, `${line} must fail the build`);
+      assert.match(stderr, /R10 import/);
+    }
+  });
+
+  test('R10 allows exactly the two named ROUTES — the ledger DAL takes the client as an argument', () => {
+    const dir = sandbox();
+    assert.match(read(dir, 'src/app/api/account/route.ts'), /@\/lib\/supabase\/admin/);
+    assert.match(read(dir, 'src/app/api/stripe/webhook/route.ts'), /@\/lib\/supabase\/admin/);
+    // An IMPORT of it, not a mention: the DAL's own docblock explains why it
+    // does not import the module, and names it to do so.
+    assert.doesNotMatch(
+      read(dir, 'src/lib/db/subscriptionEvents.ts'),
+      /(?:from|import)\s*\(?\s*['"][^'"]*supabase\/admin['"]/,
+    );
+    assert.equal(run(dir).status, 0);
+  });
+
+  test('R10 FAILS on an importer of the Stripe client outside the three billing routes', () => {
+    const dir = sandbox();
+    write(
+      dir,
+      'src/lib/stripe-peek.ts',
+      `import { stripeClient } from '${STRIPE_MODULE}';\nexport { stripeClient };\n`,
+    );
+    const { status, stderr } = run(dir);
+    assert.equal(status, 1, 'a fourth Stripe-client importer must fail the build');
+    assert.match(stderr, /R10 import of src\/lib\/stripe\/server\.ts/);
+  });
+
+  test('R10 does not mistake the stripe PACKAGE for the Stripe client module', () => {
+    // tests/unit/webhook.test.mjs imports the SDK to sign fixtures; that is not
+    // the app's client and reads no secret from the environment.
+    const dir = sandbox();
+    write(dir, 'src/lib/sdk-types.ts', "import type Stripe from 'stripe';\nexport type S = Stripe;\n");
+    assert.equal(run(dir).status, 0);
+  });
+
+  test('R7 sees STRIPE_PRICE_PRO although the name is not secret-shaped', () => {
+    const dir = sandbox();
+    write(dir, 'src/lib/price.ts', `export const price = ${PRICE_READ};\n`);
+    const { status, stderr } = run(dir);
+    assert.equal(status, 1);
+    assert.match(stderr, /R7/);
+  });
+
   test('R11c still FAILS on a browser Supabase client import', () => {
     const dir = sandbox();
     write(

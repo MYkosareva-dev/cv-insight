@@ -3,7 +3,7 @@ import 'server-only';
 import { MAX_EPHEMERAL_CHUNKS, chunkContent, titleOf } from '@/lib/chunking';
 import { ERROR_MESSAGES } from '@/lib/copy';
 import type { CoverageEntry, CoverageMap, KeywordRow, ParsedVacancy } from '@/lib/db/types';
-import { AiUnavailableError, DailyLimitError, ServerError } from '@/lib/errors';
+import { AiUnavailableError, PlanRefusalError, ServerError } from '@/lib/errors';
 import {
   type SearchedOutcome,
   embedTexts,
@@ -204,7 +204,7 @@ export function editorTextCorpus(args: {
          * decision as an outage, and telling the user to do the one thing that
          * cannot work. It travels as the 429 it is.
          */
-        if (err instanceof DailyLimitError) throw err;
+        if (err instanceof PlanRefusalError) throw err;
         return { status: 'could_not_search', error: err instanceof Error ? err.name : 'embed failed' };
       }
       if (vectors.length !== requirementTexts.length + units.length) {

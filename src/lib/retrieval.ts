@@ -14,6 +14,7 @@ import { underRescoreCap } from '@/lib/budget';
 import { countRescoreCallsInLast24h, logLlmCall } from '@/lib/db/llmCalls';
 import { ERROR_MESSAGES } from '@/lib/copy';
 import { AiUnavailableError, DailyLimitError, UnauthorizedError } from '@/lib/errors';
+import { type PlanId, currentPlan } from '@/lib/plan';
 import { getUser } from '@/lib/supabase/server';
 import {
   EMBEDDING_BATCH_SIZE,
@@ -68,6 +69,22 @@ async function requireUser(): Promise<User> {
   const user = await getUser();
   if (!user) throw new UnauthorizedError();
   return user;
+}
+
+/**
+ * The user, then the plan, at the head of EVERY exported function (SPEC v3.0,
+ * rule B11) — including the indexers and the matchers, whose spend no plan
+ * limits today. Called everywhere rather than only where a limit applies, so the
+ * day a plan gains an embeddings limit there is no exported path that forgot to
+ * read it.
+ *
+ * SAFE ON THE INDEXING PATH ONLY BECAUSE `currentPlan()` NEVER THROWS: a ledger
+ * it cannot read answers `free`. An exception here would turn a successful
+ * career-item save into a failed one, which CLAUDE.md forbids outright.
+ */
+async function requireMember(): Promise<{ user: User; plan: PlanId }> {
+  const user = await requireUser();
+  return { user, plan: await currentPlan(user.id) };
 }
 
 // The coverage threshold is rule B1 arithmetic and lives in lib/scoring.ts —
@@ -181,11 +198,12 @@ function logEmbedCall(
  * skip-when-unchanged rule. A ceiling on it would be a new way for a saved item
  * to lose its index, which is the failure those two rules exist to prevent.
  */
-async function assertUnderRescoreCap(): Promise<void> {
+async function assertUnderRescoreCap(plan: PlanId): Promise<void> {
   // `underRescoreCap` is the comparison, in `lib/budget.ts` where a unit test can
-  // reach it (backlog p4-30). This is the query and the throw.
-  if (!underRescoreCap(await countRescoreCallsInLast24h())) {
-    throw new DailyLimitError(ERROR_MESSAGES.RESCORE_LIMIT);
+  // reach it (backlog p4-30). This is the query and the throw. Per plan from
+  // v3.0: Free 20, Pro 100 (`lib/plan.ts`).
+  if (!underRescoreCap(plan, await countRescoreCallsInLast24h())) {
+    throw new DailyLimitError(ERROR_MESSAGES.RESCORE_LIMIT, { plan, feature: 'rescore' });
   }
 }
 
@@ -201,9 +219,10 @@ export async function embedTexts(
   step: EmbedStep = 'embed',
   applicationId: string | null = null,
 ): Promise<number[][]> {
-  const user = await requireUser();
-  // Rule B7a. The one step here whose spend is a repeatable user action.
-  if (step === 'rescore') await assertUnderRescoreCap();
+  const { user, plan } = await requireMember();
+  // Rule B7a. The one step here whose spend is a repeatable user action. Thrown
+  // before any `try`, so a refusal can never be read as a failed search.
+  if (step === 'rescore') await assertUnderRescoreCap(plan);
   return embedFor(user.id, texts, step, applicationId);
 }
 
@@ -310,7 +329,7 @@ export async function indexCareerItems(items: IndexableItem[]): Promise<IndexOut
    */
   let userId: string;
   try {
-    userId = (await requireUser()).id;
+    userId = (await requireMember()).user.id;
   } catch {
     return { indexed: 0, failed: items.length };
   }
@@ -366,7 +385,7 @@ export async function reindexCareerItem(item: IndexableItem): Promise<boolean> {
   // written the row.
   let userId: string;
   try {
-    userId = (await requireUser()).id;
+    userId = (await requireMember()).user.id;
   } catch {
     return false;
   }
@@ -482,7 +501,7 @@ export type ReindexOutcome = {
  * this module's other two exported indexers.
  */
 export async function reindexAllCareerItems(items: IndexableItem[]): Promise<ReindexOutcome> {
-  const user = await requireUser();
+  const { user } = await requireMember();
 
   const groups = items
     .map((item) => ({ item, chunks: chunksForItem(item.title, item.content) }))
@@ -613,7 +632,7 @@ export async function matchDocuments(
   step: EmbedStep = 'embed',
   applicationId: string | null = null,
 ): Promise<MatchOutcome> {
-  const user = await requireUser();
+  const { user } = await requireMember();
 
   let rows;
   try {
@@ -664,7 +683,7 @@ export async function matchDocumentsForTexts(
   step: EmbedStep = 'embed',
   applicationId: string | null = null,
 ): Promise<BatchMatchOutcome> {
-  const user = await requireUser();
+  const { user } = await requireMember();
   if (queryTexts.length === 0) return { status: 'searched', outcomes: [] };
 
   try {

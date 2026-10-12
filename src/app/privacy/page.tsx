@@ -49,8 +49,10 @@ export default function PrivacyPage() {
           results of each scan, <strong>a search index built from your career items</strong> (a
           second, chunked copy of them, stored so they can be matched by meaning), generated
           resume versions, <strong>the notes and the status you set on each application</strong>{' '}
-          — including whether you were interviewed or rejected — and per-call AI usage metadata,
-          in a Supabase Postgres database hosted in the EU (Frankfurt). Rows are scoped to your
+          — including whether you were interviewed or rejected — per-call AI usage metadata and,
+          if you upgrade, <strong>a record of each subscription event</strong> (described under
+          &ldquo;Plans and payment&rdquo; below), in a Supabase Postgres database hosted in the EU
+          (Frankfurt). Rows are scoped to your
           account: the database refuses to return another account&rsquo;s rows, and there is no
           administrator view.
         </p>
@@ -109,7 +111,9 @@ export default function PrivacyPage() {
         </p>
         <p className="text-muted-foreground text-sm">
           There is no processing here that relies on your consent, no advertising, no profiling for
-          marketing, and nothing is sold or shared with anyone for their own purposes.
+          marketing, and nothing is sold. Apart from what Stripe&rsquo;s own privacy policy
+          describes for payments (see &ldquo;Plans and payment&rdquo; below), no data is shared with
+          anyone for their own purposes.
         </p>
       </section>
 
@@ -180,6 +184,42 @@ export default function PrivacyPage() {
         </p>
       </section>
 
+      {/*
+       * PLANS AND PAYMENT (SPEC v3.0). Stripe is the second processor outside the
+       * AI pipeline, and the page says exactly what it gets. SPEC's draft said
+       * "your email address and nothing else"; Checkout also carries the account's
+       * internal id (`client_reference_id` and the subscription's metadata), which
+       * is how the webhook matches a payment to an account — a pseudonymous
+       * identifier is still personal data, so it is named.
+       *
+       * "That record is deleted with your account" is structurally true: every
+       * ledger row references the account with ON DELETE CASCADE and a NOT NULL
+       * key, so no row can outlive the account it belongs to. And if the ledger's
+       * append-only trigger ever refused the cascade, `deleteUser` would fail as a
+       * whole and roll back — so the risk is a FAILED ERASURE for anyone who ever
+       * upgraded, never a surviving row. That is what the erasure evidence run
+       * (Block H item 11) has to witness before this branch is deployed.
+       */}
+      <section className="flex flex-col gap-2">
+        <h2 className="text-lg font-medium">Plans and payment</h2>
+        <p className="text-muted-foreground text-sm">
+          {APP_NAME} has a Free plan and a Pro plan. Upgrading goes through Stripe, which runs in
+          test mode on this deployment — no real card is charged. When you upgrade, Stripe
+          receives your email address and an internal account identifier, so that the payment can
+          be matched to your account, and nothing else from this app; card and billing details are
+          entered on Stripe&rsquo;s own pages and never reach {APP_NAME}. We store a record of each
+          subscription event Stripe sends us (the event type and when it arrived, your plan status,
+          period and whether it is set to cancel, and Stripe&rsquo;s customer and subscription
+          identifiers), and that record is deleted with your account. The Stripe customer record
+          itself is not deleted by this app; if you want it removed, contact the operator named in
+          the Impressum and it will be deleted in Stripe for you.
+        </p>
+        <p className="text-muted-foreground text-sm">
+          Managing your plan is part of providing the service you asked for, so the legal basis is
+          the same: performance of a contract with you (Art. 6(1)(b) GDPR).
+        </p>
+      </section>
+
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium">Who else processes this data</h2>
         {/*
@@ -199,13 +239,20 @@ export default function PrivacyPage() {
          * overclaim this finding existed to fix.
          */}
         <p className="text-muted-foreground text-sm">
-          Two service providers process data on our behalf and on our instructions. Supabase
+          Four service providers process data for this app. Supabase
           provides the database and the sign-in system, in the EU (Frankfurt). Vercel hosts the
           application, and the application runs in the EU (Frankfurt) too, so your resume and
           vacancy text are processed there rather than being sent elsewhere first. Every request
           still reaches us across Vercel&rsquo;s global network, which keeps short-lived
           infrastructure logs that include IP addresses and request metadata. OpenRouter and the
-          three model companies named above receive the text described in the previous section.
+          three model companies named above receive the text described in the earlier section.
+          Supabase, Vercel and OpenRouter do so on our behalf and on our instructions. Stripe
+          manages subscriptions: if you upgrade, it receives your email address and internal
+          account identifier from us and holds your plan status. The card and billing details you
+          enter on Stripe&rsquo;s own pages are collected by Stripe directly, and what Stripe does
+          with data for its own purposes is described in Stripe&rsquo;s own privacy policy. Stripe
+          is a US company group, and this data is transferred to and processed in the United
+          States.
         </p>
       </section>
 
@@ -224,17 +271,23 @@ export default function PrivacyPage() {
         <p className="text-muted-foreground text-sm">
           What you create is kept until you remove it or delete your account — there is no separate
           expiry, and nothing is deleted behind your back. You can delete individual career items
-          at any time. Job postings, scans, generated resume versions and the AI usage records are
-          not individually deletable in this version; deleting your account removes them, and the
-          next section says exactly what that does. Authentication audit records are the one
-          category on a fixed schedule, described there.
+          at any time. Job postings, scans, generated resume versions, the AI usage records and
+          subscription event records are not individually deletable in this version; deleting your
+          account removes them, and the next section says exactly what that does. Subscription
+          event records are written by the payment system rather than by you and are kept,
+          unaltered, until you delete your account — they are the record your plan is derived
+          from. Authentication audit records are the one category on a fixed schedule, described
+          there.
         </p>
       </section>
 
       {/*
        * SINGLE SOURCE of the erasure + audit-record claim (SPEC v2.9). This is
-       * the ONLY place the page may mention audit records, retention or erasure
-       * scope. Two sentences on the subject is how the page came to contradict
+       * the ONLY place the page may mention audit records or state an audit
+       * retention PERIOD. (The "Plans and payment" paragraph states the erasure
+       * scope of the billing ledger and of Stripe's customer record; that names no
+       * period, so it does not duplicate the claim this switch guards, and it must
+       * not be "fixed" away.) Two sentences on the subject is how the page came to contradict
        * itself once already: an earlier version claimed Supabase retained the
        * records "for its own retention period" while a second section claimed we
        * delete them at 90 days. The first was simply false - auth.audit_log_entries

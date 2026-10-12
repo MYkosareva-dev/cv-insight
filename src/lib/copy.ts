@@ -73,7 +73,7 @@ export const DEMO_NOTICE = {
  * a new data category, a new recipient, a changed legal basis — and not for a
  * wording tidy-up.
  */
-export const PRIVACY_UPDATED = '4 September 2026';
+export const PRIVACY_UPDATED = '12 October 2026';
 
 /**
  * THE OPERATOR'S IDENTITY, AND THE TWO VALUES THE AGENT MUST NOT INVENT
@@ -124,15 +124,15 @@ export const IMPRESSUM = {
   addressPlaceholder: '[ placeholder — see “About this deployment” ]',
   aboutHeading: 'About this deployment',
   /**
-   * The pre-v3.0 sentence, kept until billing ships. SPEC v3.0's first sentence
-   * names a Free and a Pro plan and Stripe, which this deployment does not have
-   * yet; it lands with the branch that builds them (architect review,
-   * docs/reviews/compliance-and-docs-architect-plan.md, finding 1).
+   * SPEC v3.0, verbatim — it landed with the billing branch, because it names
+   * the two plans and Stripe, which exist from that branch on. "No real payment
+   * is possible" is true BECAUSE of the key, not of a flag: `lib/stripe/server.ts`
+   * refuses to build a client on anything but a `sk_test_` key.
    */
-  nonCommercial:
-    'CV Insight is a non-commercial demonstration project. It is not offered as a service, no payment is taken for it, and it carries no advertising.',
+  aboutDeployment:
+    'CV Insight is a demonstration deployment of a personal project. It has a Free plan and a Pro plan; upgrades go through Stripe in test mode, so no real payment is possible and none is taken from anyone. It carries no advertising.',
   addressRule:
-    'A publicly offered service in Germany must publish an address at which its operator can be served (§ 5 DDG). This deployment offers no paid service and takes no money, and its operator’s postal address is therefore shown as a marked placeholder rather than published here; it is supplied on request to the email address above. Before any deployment that can take a payment, the placeholder is replaced by the operator’s serviceable address.',
+    'A publicly offered service in Germany must publish an address at which its operator can be served (§ 5 DDG). This deployment cannot take money — its Pro plan runs in Stripe’s test mode, where no payment is possible — and its operator’s postal address is therefore shown as a marked placeholder rather than published here; it is supplied on request to the email address above. Before any deployment that can take a payment, the placeholder is replaced by the operator’s serviceable address.',
 } as const;
 
 /**
@@ -318,6 +318,14 @@ export const SCAN = {
   emptyBase: 'Your career base is empty — import a resume first.',
   goToCareerBase: 'Go to Career base',
   aiUnavailable: 'AI service is unavailable. Your vacancy was saved — retry from Applications.',
+  /**
+   * 429 DAILY_LIMIT for Free's fourth scan in a rolling 24 h (SPEC v3.0, rule B7).
+   * Its own string because `RESULT.dailyLimitFree` is about resumes, and a
+   * refusal that names the wrong allowance is one the user cannot act on.
+   * It names no /pricing link: that page is not built yet.
+   */
+  dailyLimitFree:
+    'Your Free plan allows 3 scans per day. Your vacancy was saved — run the analysis from Applications tomorrow, or upgrade to Pro in Settings for higher daily limits.',
   noRequirements: "We couldn't find concrete requirements in this posting.",
   dropzone: PDF_DROPZONE,
 
@@ -706,6 +714,19 @@ export const RESULT = {
    * the same remedy `SCAN.baseNotIndexed` names.
    */
   generateNeedsBase: baseNotIndexedCopy,
+  /**
+   * 429 DAILY_LIMIT for Free's second tailored resume in a rolling 24 h (SPEC
+   * v3.0, edge case L6). SPEC's draft said Pro "removes the daily limits" and
+   * "researches your career base step by step"; neither is true of this build —
+   * Pro raises the limits and the agentic path is not built yet — so the copy
+   * says what is.
+   */
+  dailyLimitFree:
+    'Your Free plan allows 1 tailored resume per day. Try again tomorrow, or upgrade to Pro in Settings for higher daily limits.',
+  /** 400 for a generate body that is not `{ "mode"?: "single" | "agentic" }`. */
+  generateBadRequest: 'The request could not be read. Reload the page and try again.',
+  /** 429 DAILY_LIMIT on Pro — the v2.x copy, unchanged. */
+  dailyLimitPro: 'Daily AI limit reached (50 calls). Try again tomorrow.',
 
   /**
    * NO ELLIPSIS, unlike its three siblings below, and the difference is the
@@ -1373,6 +1394,39 @@ export const SETTINGS = {
   deleteConfirm: 'Delete account',
   deleted: 'Your account and the data you created were deleted.',
   deleteFailed: 'Deletion failed — contact support.',
+
+  /**
+   * THE PLAN BLOCK (SPEC v3.0, Block E). Rendered from ONE ledger read, so the
+   * card and the plan the gates enforce cannot disagree.
+   */
+  planHeading: 'Plan',
+  planFree: 'Free plan',
+  planFreeLimits: '3 scans and 1 tailored resume per day, one retrieval pass.',
+  planPro: 'Pro plan',
+  planRenews: (date: string) => `Renews on ${date}.`,
+  planEnds: (date: string) => `Cancels on ${date} — Pro stays until then.`,
+  upgrade: 'Upgrade to Pro',
+  upgradeHelp:
+    'Opens Stripe Checkout in test mode. Use card 4242 4242 4242 4242 with any future date and any CVC.',
+  /**
+   * `?checkout=success` with no Pro row yet (edge case P3). Shown IN PLACE of
+   * [Upgrade]: a button that would open a second Checkout beside a payment that
+   * just succeeded is the wrong control to offer.
+   */
+  upgradePending: 'Your upgrade is being confirmed — refresh in a few seconds.',
+  manageSubscription: 'Manage subscription',
+  portalHelp: 'Change or cancel in Stripe’s customer portal.',
+  checkoutFailed: 'Could not open Stripe Checkout — try again.',
+  portalFailed: 'Could not open the Stripe customer portal — try again.',
+  /** The latest row is `past_due` (edge case P11): Free by rule B11, with a customer to manage. */
+  planPastDue: 'Your last payment did not go through — manage it in Stripe to keep Pro.',
+  /**
+   * The ledger could not be read (006 not applied, or the database unreachable,
+   * edge case P10). The gates treat the user as Free in this state, and the card
+   * says so, by the same rule as `contactsNotMigrated`.
+   */
+  planUnavailable: 'Your plan could not be read — the app is treating you as Free until it can.',
+  planUpgraded: 'You’re on Pro.',
 } as const;
 
 /**
@@ -1388,6 +1442,7 @@ export const SETTINGS = {
  */
 export const NOTICES = {
   account_deleted: SETTINGS.deleted,
+  plan_upgraded: SETTINGS.planUpgraded,
 } as const;
 
 export type NoticeKey = keyof typeof NOTICES;
@@ -1403,6 +1458,8 @@ export function noticeFor(key: string | null | undefined): string | null {
 export const ERROR_CODES = {
   VALIDATION_ERROR: 'VALIDATION_ERROR',
   UNAUTHORIZED: 'UNAUTHORIZED',
+  /** 403, SPEC v3.0: the caller's plan does not include the feature. */
+  PLAN_REQUIRED: 'PLAN_REQUIRED',
   NOT_FOUND: 'NOT_FOUND',
   ALREADY_RUNNING: 'ALREADY_RUNNING',
   FILE_TOO_LARGE: 'FILE_TOO_LARGE',
@@ -1421,6 +1478,12 @@ export const ERROR_CODES = {
 
 export const ERROR_MESSAGES = {
   DAILY_LIMIT: 'Daily AI limit reached (50 calls). Try again tomorrow.',
+  /**
+   * 403 PLAN_REQUIRED (SPEC v3.0). Reachable only by a direct POST — the screen
+   * never offers a Pro control to a Free user — so it is a plain statement, not
+   * a screen state.
+   */
+  PLAN_REQUIRED: 'This feature is not included in your plan.',
   /**
    * Rule B7a, the re-score ceiling. 429 DAILY_LIMIT like rule B7, because a quota
    * is what was reached — a second error CODE would say the same thing to a client

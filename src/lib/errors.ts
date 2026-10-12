@@ -1,4 +1,5 @@
 import { ERROR_CODES } from '@/lib/copy';
+import type { PlanFeature, PlanId } from '@/lib/plan';
 
 /**
  * The canonical API error shape and the errors that map onto it (SPEC Block D).
@@ -12,7 +13,14 @@ import { ERROR_CODES } from '@/lib/copy';
 
 export type ApiErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
 
-export type ApiErrorBody = { error: { code: ApiErrorCode; message: string } };
+/**
+ * `plan` and `feature` ride INSIDE `error` (SPEC v3.0, Block D 403/429), so a
+ * client that reads `error.code` and `error.message` — every client today — is
+ * untouched by their presence.
+ */
+export type ApiErrorBody = {
+  error: { code: ApiErrorCode; message: string; plan?: PlanId; feature?: PlanFeature };
+};
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;
@@ -27,6 +35,37 @@ export class ApiError extends Error {
 
   get body(): ApiErrorBody {
     return { error: { code: this.code, message: this.message } };
+  }
+}
+
+/**
+ * The shared base of the two PLAN refusals — 403 PLAN_REQUIRED and 429
+ * DAILY_LIMIT — raised only by the two gates (rule B11).
+ *
+ * A base class so that code which catches a failed search can let EVERY refusal
+ * through with one check. A refusal is not a failed search: the request was
+ * never made, so reporting it as `could_not_search` would describe the app's
+ * own budget decision as an outage (CLAUDE.md, Retrieval — three outcomes).
+ */
+export abstract class PlanRefusalError extends ApiError {
+  readonly plan: PlanId;
+  readonly feature: PlanFeature;
+
+  constructor(
+    code: ApiErrorCode,
+    status: number,
+    message: string,
+    refusal: { plan: PlanId; feature: PlanFeature },
+  ) {
+    super(code, status, message);
+    this.plan = refusal.plan;
+    this.feature = refusal.feature;
+  }
+
+  override get body(): ApiErrorBody {
+    return {
+      error: { code: this.code, message: this.message, plan: this.plan, feature: this.feature },
+    };
   }
 }
 
@@ -91,10 +130,26 @@ export class UnreadablePdfError extends ApiError {
   }
 }
 
-/** 429 DAILY_LIMIT — rule B7, 50 chat calls per rolling 24 h. Embeddings excluded. */
-export class DailyLimitError extends ApiError {
-  constructor(message: string) {
-    super(ERROR_CODES.DAILY_LIMIT, 429, message);
+/**
+ * 403 PLAN_REQUIRED — the caller's plan does not include the feature (SPEC v3.0).
+ * The one 403 in the app, and it discloses nothing about any row: it is about the
+ * caller's own plan. Distinct from 429 — the plan does not have it, as opposed to
+ * the allowance being spent.
+ */
+export class PlanRequiredError extends PlanRefusalError {
+  constructor(message: string, refusal: { plan: PlanId; feature: PlanFeature }) {
+    super(ERROR_CODES.PLAN_REQUIRED, 403, message, refusal);
+  }
+}
+
+/**
+ * 429 DAILY_LIMIT — the plan's rolling-24-hour allowance is spent: rule B7's
+ * overall chat ceiling, Free's per-step allowances, or rule B7a's re-score
+ * ceiling. Embeddings other than `rescore` are excluded by definition.
+ */
+export class DailyLimitError extends PlanRefusalError {
+  constructor(message: string, refusal: { plan: PlanId; feature: PlanFeature }) {
+    super(ERROR_CODES.DAILY_LIMIT, 429, message, refusal);
   }
 }
 

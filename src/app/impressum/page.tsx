@@ -57,7 +57,7 @@ export default function ImpressumPage() {
 
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium">{IMPRESSUM.aboutHeading}</h2>
-        <p className="text-muted-foreground text-sm">{IMPRESSUM.nonCommercial}</p>
+        <p className="text-muted-foreground text-sm">{IMPRESSUM.aboutDeployment}</p>
         <p className="text-muted-foreground text-sm">{IMPRESSUM.addressRule}</p>
         <p className="text-muted-foreground text-sm">
           How {APP_NAME} handles personal data is described on the{' '}
