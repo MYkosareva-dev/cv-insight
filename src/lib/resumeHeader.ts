@@ -123,7 +123,7 @@ export function contactValues(contacts: ResumeContacts): string[] {
 /**
  * The separator between contact fields on one line.
  *
- * EXPORTED, because `lib/docx.ts` needs it: `isHeading` refuses a line that
+ * EXPORTED, because `lib/utils.ts` needs it: `isHeading` refuses a line that
  * contains it, so a location typed in capitals is not bolded as a section
  * heading. A second copy of the character over there would have meant changing
  * the separator here silently disabled that guard.

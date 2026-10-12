@@ -125,7 +125,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
      * `withContactHeader` runs during GENERATION, so the block is part of the
      * stored version and this route writes the editor's text verbatim — which is
      * the whole point: the document on disk is the text the user saw and edited,
-     * not a second composition that could differ from it.
+     * not a second composition that could differ from it. Its one addition is
+     * the AI-generated line (SPEC v3.0), appended after that text by
+     * `exportLines` and never stored in the version.
      *
      * The reachable gap is a resume WRITTEN BEFORE the contact details were
      * saved. It has no header, the export cannot honestly graft one on (the user

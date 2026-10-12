@@ -105,6 +105,12 @@ export function ResumeEditor({
         <label htmlFor="resume-editor" className="text-sm font-medium">
           {RESULT.editorLabel}
         </label>
+        {/*
+          The AI-generated statement (SPEC v3.0, G5). Fixed text OUTSIDE the
+          textarea: the export appends the same sentence to the file, and neither
+          copy is part of the version the user edits.
+        */}
+        <p className="text-muted-foreground text-xs">{RESULT.aiGeneratedLine}</p>
         <Textarea
           id="resume-editor"
           className="min-h-96"

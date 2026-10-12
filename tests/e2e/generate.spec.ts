@@ -529,7 +529,11 @@ test.describe('generate', () => {
     // `RESULT.editorLabel`, which is right for a reader and ambiguous for a
     // locator.
     const editor = page.getByRole('textbox', { name: RESULT.editorLabel });
+    // SPEC v3.0, G5: the AI-generated statement is shown above the editor and
+    // is NOT part of the editable text.
+    await expect(page.getByText(RESULT.aiGeneratedLine)).toBeVisible();
     const draftRaw = await editor.inputValue();
+    expect(draftRaw).not.toContain(RESULT.aiGeneratedLine);
     const draft = draftRaw.toLowerCase();
     /**
      * Metadata only, and one BOOLEAN rather than the line itself: the first line
@@ -707,6 +711,11 @@ test.describe('generate', () => {
     await page.reload();
     await page.getByRole('tab', { name: RESULT.tabResume }).click();
     await expect(page.getByText(RESULT.versionLabel.user).first()).toBeVisible();
+    // The export appended the AI-generated line to the FILE only: the version it
+    // saved is the editor's text, without it.
+    expect(
+      await page.getByRole('textbox', { name: RESULT.editorLabel }).inputValue(),
+    ).not.toContain(RESULT.aiGeneratedLine);
 
     // --- the reload opens the version the response showed -------------------
     expect(

@@ -645,6 +645,14 @@ export const RESULT = {
   tabResume: 'Tailored resume',
   editorLabel: 'Tailored resume',
   /**
+   * THE AI-GENERATED STATEMENT (SPEC v3.0, Block G G5). One sentence, two
+   * places: a fixed, non-editable line above the editor, and the final paragraph
+   * of every `.docx` — appended by the export (`exportLines` in lib/utils.ts),
+   * never stored in the version row. The editor's text stays the user's, and the
+   * sentence cannot be removed from the file by editing it out of the editor.
+   */
+  aiGeneratedLine: 'Generated with AI from the author’s career base and reviewed by the author.',
+  /**
    * US-3 step 4 inserts into the editor, and there is no editor until a version
    * exists. The button is DISABLED with this hint rather than quietly appending
    * to a panel the same screen says is empty, and rather than wearing a second
