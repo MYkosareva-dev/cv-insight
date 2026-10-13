@@ -107,8 +107,11 @@ export const PRIVACY_UPDATED = '12 October 2026';
  * Never an invented street: a plausible fictitious address would be the one
  * sentence on this page that lies.
  *
- * THE SINGLE REMAINING TRIGGER: the day `STRIPE_SECRET_KEY` is not a `sk_test_`
- * key, the placeholder is a defect and the address goes in first.
+ * THE SINGLE REMAINING TRIGGER, as the page itself states it: before any
+ * deployment that can take a payment, the address goes in first. How that is
+ * detected: the day `STRIPE_SECRET_KEY` is not a `sk_test_` key, the placeholder
+ * is a defect. (Registration being open is not a trigger: SPEC v3.0 re-examined
+ * it, and the owner decided; counsel's review of that position is backlog.)
  */
 export const IMPRESSUM_FILLED = true;
 
@@ -202,20 +205,6 @@ export const AUTH = {
   toSignIn: 'Already have an account? Sign in',
   privacyLink: 'Privacy',
   impressumLink: 'Impressum',
-  /**
-   * /signup on a DEPLOYMENT (v2.25, closing gate finding `vs-1`).
-   *
-   * Password Protection turned out to be a Pro feature, so the deployment is
-   * reachable and the gate is registration being closed in the Supabase
-   * dashboard instead. That setting makes `signUpAction` fail server-side — and
-   * a form that submits into a guaranteed refusal is the app pretending to offer
-   * something it will not do. The route stays and EXPLAINS, which is the only
-   * version of this page that is honest about what the deployment is.
-   */
-  registrationClosedTitle: 'Registration is closed',
-  registrationClosedBody:
-    'CV Insight is a demonstration deployment, not a public service. Accounts are created by hand for a small number of named people, so this page has no sign-up form — an account cannot be created here.',
-  registrationClosedSignIn: 'If an account was created for you, sign in instead.',
   invalidEmail: 'Enter a valid email address.',
   shortPassword: 'Password must be at least 8 characters.',
   /**
