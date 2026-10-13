@@ -33,6 +33,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <Link href="/impressum" className="underline-offset-4 hover:underline">
           {AUTH.impressumLink}
         </Link>
+        <Link href="/pricing" className="underline-offset-4 hover:underline">
+          {AUTH.pricingLink}
+        </Link>
       </div>
     </div>
   );
