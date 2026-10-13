@@ -67,10 +67,6 @@ This closes the `/pricing` line of SPEC Block H item 12 (v3.0d item 5), which wa
 
 `checkout.session.completed` `evt_1UPk6C2NKY1mL9wLALFOBJ04` (2026-10-12 14:21 UTC, customer `cus_VQbIEOa09iUaye`) was never delivered: it fired before any webhook endpoint was listening. The ledger had no row for it, so the account read as Free while Stripe showed an active subscription — the app's plan is derived only from `subscription_events`, so an event that never arrives is a plan that never changes.
 
-Recovered on 2026-10-13 by resending the event to the production endpoint:
-
-```
-stripe events resend evt_1UPk6C2NKY1mL9wLALFOBJ04 --webhook-endpoint <we_id>
-```
+Recovered on 2026-10-13 by resending the event to the deployment's webhook destination, "brilliant-breeze" (`docs/deploy.md`, S3), with `stripe events resend evt_1UPk6C2NKY1mL9wLALFOBJ04 --webhook-endpoint` given that destination's id.
 
 The webhook answered 200, one ledger row with `status = active` appeared, and Settings switched to Pro. No code changed. The procedure is in `docs/deploy.md`, "Recovering a missed event"; the absence of any automatic reconciliation is backlog `sc-3`.

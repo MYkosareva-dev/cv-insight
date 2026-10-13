@@ -257,11 +257,6 @@ Each of these is a race that a single warm serverless instance hides.
   finding about the platform, and the next person to see it should find the answer
   rather than the search.
 - **Speed Insights**, above.
-- **`ops-1`** — the Stripe product's description still reads "Unlimited daily
-  usage", which is false: Pro raises the daily limits, it does not remove them.
-  Change it in the Stripe dashboard (test mode, **Product catalogue** → *CV
-  Insight Pro*) to "Higher daily limits and agentic retrieval". Checkout and the
-  portal show it; nothing in this repository holds it.
 
 ### Accepted at go-public (v3.0c, owner decision 2026-10-13)
 
@@ -460,6 +455,7 @@ only one place is a closure the next reader argues with.
 | `vs-1`, `vs-4`, `vs-5`, `vs-6`, `ns-2`, `eu-2`, `eu-5`, `eu-6`, `eu-7`, `eu-10` | Phase 6, SPEC v2.25 | the owner triage round — its own section below says what each one was |
 | `p3-13`, `p3-17`, `p4-19`, `p3-8`, `m-4` (budget half only) | Phases 3–4 | already marked beside their entries |
 | `eu-12` | Phase 7 | `README.md` now points at `docs/openrouter-processing.md` for the provider retention decision, which is what the finding asked for |
+| `ops-1` | dashboard change, 2026-10-13 | the Stripe product *CV Insight Pro* (test mode) reads "Higher daily limits and agentic retrieval" — a dashboard setting, so the check is the dashboard or a Checkout page, not this repository |
 | `p4-27` | Phase 7, SPEC v2.26 | `docs/eval/fresh-clone-verification.md` — `001`–`005` applied in order to a brand-new project, RLS and the policy count read back on all eight tables; and SPEC Block C now carries `004_profiles.sql` |
 
 Two things this table deliberately does not say. `p3-22` is not a closure — it
@@ -986,6 +982,8 @@ somebody remembering to run it.
 - **MINOR ux-1 — `/pricing` is linked only from the footer.** A "Compare plans"
   link in the Settings Plan block, and a sidebar entry in the design pass.
   Worklist entry above.
-- **MINOR ops-1 — the Stripe product description says "Unlimited daily
-  usage"**, which contradicts `/pricing`. A dashboard change, not a code one.
-  Worklist entry above.
+- **MINOR ops-1 — the Stripe product description said "Unlimited daily
+  usage"**, which contradicts `/pricing`: Pro raises the daily limits, it does
+  not remove them. A dashboard change, not a code one.
+  > **Closed 2026-10-13** — changed in the Stripe dashboard (test mode) to
+  > "Higher daily limits and agentic retrieval".
