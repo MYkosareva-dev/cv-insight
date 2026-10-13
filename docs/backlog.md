@@ -432,6 +432,13 @@ both have to be answered before the deployment can take a payment.
   > **Closed 2026-10-13** (`feature/design-pass-1`, SPEC v3.0e) — "Pricing" in
   > the `(app)` sidebar after Settings, and a "Compare plans" link to `/pricing`
   > in the Settings Plan block. The footer links stay.
+- **`ux-2` — the sidebar "Pricing" link leaves the `(app)` shell (OPEN).** From
+  `docs/reviews/design-pass-1-pr.md`, Minor 5. `/pricing` is a public page outside
+  the `(app)` route group, so a member who clicks the sidebar item loses the
+  sidebar, `aria-current` can never mark it active, and the page's way back lands
+  on `/scan` rather than where they came from. Consider rendering the plans inside
+  the shell for members (for example a member route that reuses the `/pricing`
+  content), keeping `/pricing` itself public for visitors.
 
 ### Parked product decisions, not defects
 

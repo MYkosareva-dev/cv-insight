@@ -238,7 +238,7 @@ export const NAV = {
   scan: 'Match a job',
   career: 'Career base',
   applications: 'Applications',
-  /** The /quality entry (v3.0e): the label says what the page records; the heading stays `QUALITY.title`. */
+  /** The /quality entry (v3.0e): the label says what the page records, and matches `QUALITY.title`. */
   quality: 'AI usage',
   settings: 'Settings',
   /** After Settings (v3.0e, backlog ux-1): the plans page was reachable from the footer only. */
@@ -899,7 +899,7 @@ export const RESULT = {
    * where the counts are without making the user go there to learn the fact.
    */
   writtenByFallbackAlways:
-    'This has happened on every generation for this scan. Quality has the per-step counts.',
+    'This has happened on every generation for this scan. AI usage has the per-step counts.',
   /**
    * PER VERSION, from 006 onward (SPEC v3.0): `resume_versions.model` records the
    * writer of each AI version, so where it is set the line can speak about THIS
@@ -1221,13 +1221,17 @@ export const QUALITY = {
    * always rendered and the percentage is dropped below `SMALL_SAMPLE`
    * observations, where it would imply precision nobody measured.
    */
-  title: 'Quality',
+  /** Heading, browser title and sidebar item all read "AI usage" (v3.0e); the route stays /quality. */
+  title: 'AI usage',
   /**
-   * What this page IS, said under the heading before any number (v3.0e). The
-   * sidebar calls it "AI usage", so the first thing on the page says why.
+   * What this page IS, said under the heading before any number (v3.0e).
+   * "Recent", never "each" or "every": the totals and the rubric read bounded
+   * windows (`QUALITY_CALL_WINDOW`, `QUALITY_VERSION_WINDOW`), and this page's
+   * own rule is that it claims nothing it did not count. Not rendered on the
+   * empty page, where none of these figures exist yet.
    */
   intro:
-    'This is the AI usage and cost record for your account: AI calls in the last 24 hours against your daily ceiling, the cost of each call and the model that served each step. It also holds the scores the quality check gave every generated resume.',
+    'This is the AI usage and cost record for your account: AI calls in the last 24 hours against your daily ceiling, what your recent calls cost and the model that served each step. It also holds the scores the quality check gave your recent generated resumes.',
   lead: 'Every number here is counted from rows this app already stores: the AI-call log and the reviewer verdicts saved with each resume version. Nothing on this screen is estimated.',
   empty: 'No AI calls yet.',
   emptyHint: 'Match a job and generate a resume — this screen fills in from the rows that run writes.',

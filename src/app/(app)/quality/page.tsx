@@ -24,7 +24,7 @@ import {
   summariseCalls,
 } from '@/lib/quality';
 
-export const metadata = { title: 'Quality — CV Insight' };
+export const metadata = { title: 'AI usage — CV Insight' };
 
 /**
  * `/quality` — the observability dashboard (SPEC Block E, Block H item 7).
@@ -114,7 +114,6 @@ export default async function QualityPage() {
     return (
       <section className="flex flex-col gap-3">
         <h1 className="text-2xl font-semibold">{QUALITY.title}</h1>
-        <p className="max-w-prose text-sm">{QUALITY.intro}</p>
         <p role="status" className="text-sm">
           {QUALITY.empty}
         </p>

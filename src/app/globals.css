@@ -82,6 +82,15 @@
   body {
     @apply bg-background text-foreground;
   }
+  /*
+   * Edge draws its own reveal eye inside every password field. The auth form
+   * has its own toggle (SPEC v3.0e), and two controls flipping one field can
+   * disagree about its state, so the built-in one is hidden.
+   */
+  input[type='password']::-ms-reveal,
+  input[type='password']::-ms-clear {
+    display: none;
+  }
 }
 
 /**
