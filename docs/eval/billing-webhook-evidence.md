@@ -152,13 +152,9 @@ Customer Portal, cancel at period end, 11:24:04 UTC. Two deliveries, both source
 "Customer portal":
 
 ```
-customer.subscription.updated  evt_1UQ3oN2NKY1mL9wL8X1oD4c    HTTP 200
+customer.subscription.updated  evt_1UQ3oN2NKY1mL9wL8X1oD4dy  HTTP 200
 customer.subscription.updated  evt_1UQ3oO2NKY1mL9wLkAIlCfPP  HTTP 200
 ```
-
-(The first id is three characters shorter than the other two. It is recorded as
-reported; if it was cut when copied, the full id is in the destination's
-delivery log.)
 
 Ledger: two new rows, `status = active`, `cancel_at_period_end = true` — the
 `1df3f62` fix (a scheduled cancellation read from `cancel_at` as well as
