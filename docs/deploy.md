@@ -300,7 +300,9 @@ Stripe.
 
 ### S3. Webhook endpoint on the deployment URL
 
-**Developers** → **Webhooks** → **Add endpoint**:
+**Developers** → **Webhooks** → **Add destination** (the dashboard calls an
+endpoint an *event destination*). The deployment's destination is named
+**"brilliant-breeze"**, on API version `2026-08-26.dahlia`:
 
 - URL: `https://cv-insight-lime.vercel.app/api/stripe/webhook`
 - Events — exactly these three, nothing else:
@@ -328,6 +330,9 @@ to one subscription** → on. The app derives one plan from the latest ledger ro
 a second concurrent subscription for the same customer would make that row
 ambiguous. If the dashboard has moved this setting, search the settings for
 "one subscription" — the setting must be on, wherever it lives.
+Turning it on is not proof that it fires: the checkout route does not pass an
+existing `customer`, so Stripe may create a new customer per session and never
+apply the limit. Backlog `m3` is that open question.
 
 ### S6. The `sk_test_` check
 
@@ -337,6 +342,12 @@ Put it in `STRIPE_SECRET_KEY`. The check is not trust in the paste:
 start `sk_test_`, so after deploying, **[Upgrade to Pro]** in Settings returning
 a `checkout.stripe.com` page that shows Stripe's *Test mode* badge is the proof.
 Never compare or print the value — the prefix is all that is checked.
+
+**Then set the three values in Vercel** (step 8): Settings → Environment
+Variables → `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`,
+**Production only**, marked Sensitive. Environment variables are read at build
+time and at function start, so **redeploy** after adding or changing them — a
+value saved in the dashboard does nothing to the deployment already running.
 
 **The end-to-end record** of one real test-mode upgrade on the deployment — the
 session, the three deliveries with their 200s, the ledger rows, one redelivery

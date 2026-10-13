@@ -355,9 +355,11 @@ both have to be answered before the deployment can take a payment.
     `customer`, so Stripe may create a new customer per session and the setting
     may never fire. Fix: witness a second Checkout from a Pro account; if Stripe
     allows it, pass the stored `stripe_customer_id` as `customer`.
-  - **m4** — SPEC Block H item 12 (the deployment half of
-    `docs/eval/billing-webhook-evidence.md`) and the Stripe dashboard steps in
-    `docs/deploy.md` are still open; they belong in every hand-over until done.
+  - ~~**m4**~~ **Closed 2026-10-13** — SPEC Block H item 12's deployment half is
+    recorded in `docs/eval/billing-webhook-evidence.md` ("Deployment run"), and
+    the Stripe dashboard steps are in `docs/deploy.md` (S1–S6).
+    `customer.subscription.deleted` on the deployment is not yet witnessed; it
+    arrives at the run account's period end, 13 November 2026.
   - **n1** — the generate route buffers its body with no size cap; refuse over
     ~1 KB on `Content-Length` first, as the scan route does.
   - **n2** — `src/components/billing-button.tsx` navigates to whatever URL the
