@@ -875,3 +875,23 @@ somebody remembering to run it.
   - **Security NOTE (`</items>` escaping):** a career item containing `</items>` can close the data block early in the tool message, as it already can in P2/P3. It is the caller's own data and crosses no account. Escape `<` as `\u003c` at both sites.
   - **Security NOTE (grant constructor):** code already holding a grant could construct another through `grant.constructor`. Defence in depth only; use a module-private token argument.
   - **Security NOTE (retrievalLog.ts comment): checked and NOT changed.** `plan.ts` imports the ledger DAL lazily inside `currentPlan()`, and the first build of this branch failed because that pulled `supabase/server` into the client bundle. The comment is accurate.
+
+## v3.0c — from the go-public PR review (2026-10-13)
+
+- **MINOR gp-4 — go-public-pr review minors** (`docs/reviews/go-public-pr.md`).
+  The two factual minors (deploy.md S2 cited a constant that does not exist; the
+  README missed-webhook paragraph overstated the retry window and the Settings
+  notice) were fixed in the branch. Major 1 — registration open verified on the
+  deployment — is the hand-over's, after merge. What remains, one line each:
+  - **m2 (second half):** SPEC specifies a `/pricing` screen with `PRICING.*`
+    copy that is not built; confirm it as deferred or build it.
+  - **m4:** the 2026-09-04 deployment record in `docs/deploy.md` keeps a row 11
+    "Registration closed" under a heading that says it follows the checklist,
+    and nothing marks it as history; add one line above the table once the v3.0c
+    step-11 row exists.
+  - **n5:** `docs/eval/e2e-go-public-run.txt` carries repeated
+    `The destination stream closed early` server errors with no note on what
+    they are, and console-encoding mojibake in its first section.
+  - **n6:** the L7 test no longer checks that `/quality` shows the caller's plan
+    ceiling ("0 / 50", "0 / 20"); only the unit suite covers that now, and the
+    test's comment could say so.

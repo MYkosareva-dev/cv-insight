@@ -776,8 +776,12 @@ by this app. `/privacy` says so and offers deletion on request to the operator.
 **A missed webhook leaves the plan behind Stripe.** The plan is read from the
 ledger, and only the webhook writes the ledger. If a delivery fails, someone who
 upgraded stays on Free — and someone who cancelled keeps Pro until the period end
-the last delivered row recorded — until Stripe's retry lands. Stripe retries for
-up to three days, and Settings says "being confirmed" in that window. There is no
+the last delivered row recorded — until Stripe's retry lands. This deployment
+runs in test mode, where Stripe retries a failed delivery for a limited time
+only; the destination's delivery log in the Stripe dashboard shows each attempt
+and when the next one is due. Settings says "Your upgrade is being confirmed"
+only on the return from Checkout; a later visit inside that window shows plain
+Free, and a missed cancellation shows Pro with no notice at all. There is no
 reconciliation job that polls Stripe instead; that is a deliberate SPEC decision,
 not an omission.
 

@@ -293,8 +293,9 @@ Checkout and the portal show; nothing in the app reads it.
 
 ### S2. Price
 
-On that product, add a **recurring** price: **€5 / month**, matching
-`PRICING.proPrice` in `src/lib/copy.ts`. Copy the price id (`price_…`) into
+On that product, add a **recurring** price of **five euros per month**. No
+constant in this repository holds the amount, and none should: the app never
+states or computes the price. Copy the price id (`price_…`) into
 `STRIPE_PRICE_PRO`. The checkout route sends only this id; the amount lives in
 Stripe.
 
