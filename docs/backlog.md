@@ -375,6 +375,22 @@ both have to be answered before the deployment can take a payment.
     before verifying, so a misconfigured deployment answers an unsigned request
     500 rather than 400. Harmless; recorded.
 
+### When a dependency release changes what is reachable (`docs/reviews/dependency-patch-pr.md`)
+
+- **`dp-1` — dev-only `braces` advisory through `eslint-config-next` (OPEN,
+  accepted).** GHSA-vfj7-8cjw-p6xm, `braces <=3.0.3` → `micromatch` →
+  `fast-glob` → `@next/eslint-plugin-next` → `eslint-config-next`. Every node is
+  `dev`; `npm audit --omit=dev` reports 0. npm's only offered fix is a major
+  downgrade of `eslint-config-next` to 14.x, below Next 16, so it is not taken.
+  Re-check `npm audit` when `eslint-config-next` ships on a patched `braces`.
+- **`dp-2` — the `middleware` file convention is deprecated in Next 16.4 in
+  favour of `proxy` (OPEN).** `src/middleware.ts` still works. Moving to
+  a `proxy` file is one branch that changes three places together: the file
+  (codemod `middleware-to-proxy`), `scripts/check.mjs` R11
+  (`SERVER_CLIENT_FILES` and its comments), and CLAUDE.md's Secrets rule naming
+  `src/middleware.ts` — which needs an owner amendment. Renaming the file alone
+  leaves R11 checking a path that no longer exists.
+
 ### Parked product decisions, not defects
 
 Four **FEATURE** entries in the Phase-2 owner-feedback section: grouping `/career`
@@ -895,3 +911,13 @@ somebody remembering to run it.
   - **n6:** the L7 test no longer checks that `/quality` shows the caller's plan
     ceiling ("0 / 50", "0 / 20"); only the unit suite covers that now, and the
     test's comment could say so.
+
+## v3.0d — from the dependency-patch PR review (2026-10-13)
+
+- **MINOR dp-1 — dev-only `braces` advisory via `eslint-config-next`**
+  (`docs/reviews/dependency-patch-pr.md`). The one chain `npm audit fix` without
+  `--force` could not close; production audit is clean. Worklist entry above.
+- **MINOR dp-2 — Next 16.4 deprecates the `middleware` file convention in favour
+  of `proxy`** (`docs/reviews/dependency-patch-pr.md`). Not caused by the patch;
+  the rename touches R11 and a CLAUDE.md rule, so it is its own branch. Worklist
+  entry above.
