@@ -33,7 +33,7 @@ Owner run, from a fresh clone of `main` at `5ad88e4`:
 | `npm test` | 491 unit tests, all pass |
 | `next build` | succeeded, 28 routes |
 
-Re-observed in the working tree on 2026-10-13: `npm run check` passed (13 rules) and `npm test` reported `tests 491 · pass 491 · fail 0`.
+Re-observed on 2026-10-13 on branch `feature/final-evidence`, in the working tree between commits `dcce716` and `f963fe1` — `5ad88e4` plus documentation changes only: `npm run check` passed (13 rules) and `npm test` reported `tests 491 · pass 491 · fail 0`.
 
 **Not done: the migrations were NOT re-run against a fresh Supabase project for this release.** The last run from empty is recorded in `docs/eval/fresh-clone-verification.md` and covers `001`–`005`; its section for `001`–`007` is prepared and has not been run. This release therefore has no from-empty evidence for `006_subscription_events.sql` or `007_agentic_step.sql`.
 

@@ -274,7 +274,7 @@ describe('what is answered 200 and written nowhere', () => {
     assert.deepEqual(calls.warn.map((w) => w.eventId), ['evt_orphan']);
   });
 
-  test('an account deleted since (FK violation): 200 and a warn, not three days of retries (P12)', async () => {
+  test('an account deleted since (FK violation): 200 and a warn, not a 500 that Stripe would redeliver (P12)', async () => {
     const { deps, calls } = harness({ append: async () => 'unknown_user' });
     const { payload, header } = signed(checkoutCompleted);
     assert.equal((await handleStripeWebhook(payload, header, deps)).status, 200);

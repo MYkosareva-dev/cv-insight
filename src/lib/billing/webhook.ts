@@ -149,21 +149,25 @@ function snapshotOf(raw: unknown): Snapshot | null {
  *  3. Read the subscription's CURRENT state from Stripe, for every handled
  *     event — not only for Checkout, which does not carry it. Stripe does not
  *     deliver in order and redelivers failed deliveries for a limited window,
- *     so a late copy of an old
- *     `updated(active)` would otherwise land after `deleted` and hand Pro back.
- *     Reading the subscription at receipt makes every row record what Stripe
- *     says NOW, whichever event announced it. A failed read → 500 and nothing
- *     written, so Stripe redelivers.
+ *     so a late copy of an old `updated(active)` would otherwise land after
+ *     `deleted` and hand Pro back. Reading the subscription at receipt makes
+ *     every row record what Stripe says NOW, whichever event announced it. A
+ *     failed read, or a fetched subscription whose fields do not parse → 500
+ *     and nothing written, so Stripe redelivers.
  *  4. ATTRIBUTE: `client_reference_id`, then `subscription.metadata.user_id`,
  *     then the ledger's own record of the customer. Ids that are not UUIDs are
  *     ignored rather than written — a malformed id would fail the insert, answer
  *     500 and be redelivered to no purpose. No user → 200 and a warn line with
- *     the event id, and no redelivery: only read, parse and insert failures
- *     answer 500 and are redelivered (SPEC M12, "no reconciliation job").
+ *     the event id, and nothing to redeliver.
  *  5. APPEND one row. A replay is a unique violation, caught in the DAL and
  *     answered 200 — the idempotency is the database's. A deleted account
  *     (foreign-key violation) is unattributable, not a failure → 200 and a warn.
- *  6. Anything unexpected → 500 with a generic body, nothing about the payload.
+ *  6. The 500s, each with a generic body and nothing about the payload: a
+ *     failed read (the subscription, the ledger's customer lookup), a verified
+ *     event or fetched subscription whose fields do not parse, a failed insert,
+ *     and — answered by the route before this function runs — a misconfigured
+ *     endpoint. Stripe redelivers these; every 200 above is final (SPEC M12,
+ *     "no reconciliation job").
  *
  * A verified event whose fields do not parse is a 500, not a silent 200: it is
  * visible in the Stripe dashboard's webhook log, which is where an operator

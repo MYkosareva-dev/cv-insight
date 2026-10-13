@@ -136,3 +136,15 @@ None.
 Checked: secrets ✓ (no secret-bearing change; `.env*` not read), RLS ✓ (no `supabase/` change), chokepoints ✓ (`check.mjs` passed, 13 rules), zod ✓ (no new input or LLM output), llm_calls logging ✓ (n/a, no model call touched)
 
 **Verdict: APPROVE.** The only change under `src/` is a comment in `src/lib/billing/webhook.ts`. The amended M12 and P15 match the handler's 200, 400 and 500 behaviour on every main path, and they agree with README. The release-verification record is consistent with the security scan and with the fresh-clone evidence. m1–m4 are wording precision and leftover old wording outside the diff. Fixing them in this branch is advisable but not required to merge.
+
+---
+
+## Follow-up (2026-10-13)
+
+m1–m4 and n1 were fixed on this branch in one commit:
+
+- **m1:** SPEC M12 lists every `500` exactly: read failures, parse failures, a failed ledger insert, and a misconfigured endpoint that the route answers. The `webhook.ts` comment drops "only read, parse and insert failures" and replaces "Anything unexpected → 500" with the same list. SPEC also now says a `400` is redelivered like any other non-2xx answer; the earlier "only those are redelivered" was wrong about that case.
+- **m2:** SPEC's parse case, and the comment's step 3, now include a subscription fetched from Stripe whose fields do not parse.
+- **m3:** SPEC's list of 200-and-nothing-written outcomes now includes a completed Checkout that is not a subscription.
+- **m4:** the `src/lib/db/subscriptionEvents.ts` comment now says the handler answers 200 because no redelivery would bring the account back, with no mention of three days. The test title at `tests/unit/webhook.test.mjs:277` reads "…200 and a warn, not a 500 that Stripe would redeliver (P12)". The test body is unchanged.
+- **n1:** `docs/eval/release-verification.md` names the branch and the commit range the re-observation ran in: `feature/final-evidence`, between `dcce716` and `f963fe1`, which is `5ad88e4` plus documentation changes only.
