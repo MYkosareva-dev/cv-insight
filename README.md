@@ -17,10 +17,9 @@ a feature bolted onto a text editor.
 - **Live deployment:** https://cv-insight-lime.vercel.app — on Vercel in `fra1`,
   first verified 2026-09-04 (`docs/deploy.md` records the run and the checks that
   passed). Registration is open; sign up with an address you control — it is not
-  verified, and no confirmation mail is sent. It is a **demonstration**: no other
-  person's real resume or personal details may be uploaded, and invented sample
-  data is the safer choice — the model-provider caveat under *Security and privacy
-  posture* says why. Pro upgrades run in Stripe test mode
+  verified, and no confirmation mail is sent. It is a **demonstration**: do not
+  upload a real resume or real personal details — use invented sample data. The
+  model-provider caveat under *Security and privacy posture* says why. Pro upgrades run in Stripe test mode
   (card `4242 4242 4242 4242`), so no real payment is possible.
 - **Specification:** `SPEC.md` is the single source of truth for build details.
 - **Agent rule book:** `CLAUDE.md` constrains how the code is allowed to be
@@ -483,11 +482,9 @@ the United States, to Anthropic, OpenAI and Google; no account identifier travel
 with them — not the email address, not the user id, not a session token, not a row
 id. The one profile field that does travel is the display name you save, inside
 the generation and judge prompts, for the resume's name line. This is why the
-demonstration notice on every member screen says no other person's real resume or
-personal details may be uploaded, and why the deployment is a demonstration rather
-than a service. The notice still permits a member's own career history while
-`/privacy` asks for no real resume at all; aligning the two is open (backlog
-`gp-3`). Moving to an
+demonstration notice on every member screen, like `/privacy`, asks for invented
+sample data and no real resume or real personal details at all, and why the
+deployment is a demonstration rather than a service. Moving to an
 operator-owned provider account retires the notice, that paragraph of `/privacy`,
 and the open compliance finding behind them together.
 `docs/openrouter-processing.md` is the record of what leaves, where it goes, and
@@ -732,8 +729,8 @@ postings, scans, generated versions, import records and usage rows go with the
 account. `/privacy` states this rather than implying the erasure story is
 complete. With registration open, a second real person holding an account is
 now expected, so the condition that reopens this has arrived: it is carried for
-the go-public round because the deployment is a demonstration whose notice bars
-other people's real data, and it is open as backlog `eu-8`.
+the go-public round because the deployment is a demonstration whose notice asks
+for invented data only, and it is open as backlog `eu-8`.
 
 **The Impressum publishes no postal address.** `/impressum` names the operator and
 a contact email, and shows the postal address as a marked placeholder, with a

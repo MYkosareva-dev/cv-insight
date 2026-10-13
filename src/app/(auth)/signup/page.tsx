@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import { AuthForm } from '@/components/auth-form';
 import { signUpAction } from '@/lib/auth/actions';
 import { AUTH } from '@/lib/copy';
@@ -21,6 +23,9 @@ export const metadata = { title: 'Create account — CV Insight' };
  *
  * Email confirmation stays OFF in the Supabase dashboard: this app sends no mail
  * of its own, and the Playwright suite registers through this form.
+ *
+ * The privacy line sits INSIDE the card, at the point of collection, and not only
+ * in the layout footer (owner amendment, v3.0c). It informs; it asks for nothing.
  */
 export default function SignupPage() {
   return (
@@ -33,6 +38,13 @@ export default function SignupPage() {
         altHref="/login"
         altLabel={AUTH.toSignIn}
       />
+      <p className="text-muted-foreground text-sm">
+        {AUTH.signUpPrivacyBefore}
+        <Link href="/privacy" className="text-primary underline-offset-4 hover:underline">
+          {AUTH.signUpPrivacyLink}
+        </Link>
+        {AUTH.signUpPrivacyAfter}
+      </p>
     </div>
   );
 }

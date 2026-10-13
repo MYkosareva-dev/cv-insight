@@ -277,15 +277,13 @@ the record; README's cost-fence paragraph states both.
   each account, so N scripted accounts receive N allowances. Closes when the
   deployment runs on an operator-owned key with a credit limit — the same event
   that retires the demonstration notice and `eu-2`.
-- **`gp-3` — the demonstration notice and the point of collection (OPEN, owner
-  copy decision).** From `docs/reviews/go-public-eu-compliance.md` findings 2 and
-  4. `DEMO_NOTICE.body` permits a member's own career history; `/privacy` asks for
-  no real resume at all — two instructions on two surfaces, now read by
-  strangers. And the notice renders only on the authenticated shell, so a
-  stranger creates an account before seeing it; `/signup` has no privacy line
-  inside the card. Both are SPEC-verbatim copy, so the change is the owner's:
-  align the two sentences, render the notice in the `(auth)` layout or on
-  `/signup`, and add one non-consent line in the card linking Privacy.
+- **`gp-3` — the demonstration notice and the point of collection (PARTLY
+  CLOSED v3.0c).** From `docs/reviews/go-public-eu-compliance.md` findings 2 and
+  4. Closed by owner amendment: the notice is aligned to `/privacy` (invented data
+  only), and `/signup` carries an informational privacy line inside the card.
+  **Still open:** the notice renders only on the authenticated shell, so a
+  stranger creates an account before seeing it. Rendering it in the `(auth)`
+  layout or on `/signup` is the remaining change, and it is the owner's.
 
 ### Open questions for counsel (billing, `docs/reviews/billing-eu-compliance.md`)
 
