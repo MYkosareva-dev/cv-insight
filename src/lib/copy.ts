@@ -241,6 +241,8 @@ export const NAV = {
   /** The /quality entry (v3.0e): the label says what the page records; the heading stays `QUALITY.title`. */
   quality: 'AI usage',
   settings: 'Settings',
+  /** After Settings (v3.0e, backlog ux-1): the plans page was reachable from the footer only. */
+  pricing: 'Pricing',
 } as const;
 
 export const AUTH = {
@@ -1577,6 +1579,8 @@ export const SETTINGS = {
    */
   planUnavailable: 'Your plan could not be read — the app is treating you as Free until it can.',
   planUpgraded: 'You’re on Pro.',
+  /** The link to /pricing at the foot of the Plan block, in every state (v3.0e, backlog ux-1). */
+  comparePlans: 'Compare plans',
 } as const;
 
 /**

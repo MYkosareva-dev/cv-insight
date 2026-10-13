@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, Files, FolderKanban, ScanSearch, Settings } from 'lucide-react';
+import { Activity, CreditCard, Files, FolderKanban, ScanSearch, Settings } from 'lucide-react';
 
 import { APP_NAME, NAV } from '@/lib/copy';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,7 @@ const ITEMS = [
   { href: '/applications', label: NAV.applications, Icon: Files },
   { href: '/quality', label: NAV.quality, Icon: Activity },
   { href: '/settings', label: NAV.settings, Icon: Settings },
+  { href: '/pricing', label: NAV.pricing, Icon: CreditCard },
 ] as const;
 
 /**

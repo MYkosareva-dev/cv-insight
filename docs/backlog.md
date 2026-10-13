@@ -424,11 +424,14 @@ both have to be answered before the deployment can take a payment.
   a scheduled job that reads Stripe and writes the ledger would be a second
   writer of a table whose one writer is the point. The procedure is
   `docs/deploy.md`, "Recovering a missed event".
-- **`ux-1` — `/pricing` is reachable only from the footer (OPEN, for the design
+- **`ux-1` — `/pricing` is reachable only from the footer (CLOSED, design
   pass).** A signed-in user deciding whether to upgrade has no link to the page
   that compares the plans from where the plan is shown. Add a "Compare plans"
   link in the Settings Plan block, and a sidebar entry when the design pass
   reworks the navigation.
+  > **Closed 2026-10-13** (`feature/design-pass-1`, SPEC v3.0e) — "Pricing" in
+  > the `(app)` sidebar after Settings, and a "Compare plans" link to `/pricing`
+  > in the Settings Plan block. The footer links stay.
 
 ### Parked product decisions, not defects
 
@@ -457,6 +460,7 @@ only one place is a closure the next reader argues with.
 | `eu-12` | Phase 7 | `README.md` now points at `docs/openrouter-processing.md` for the provider retention decision, which is what the finding asked for |
 | `ops-1` | dashboard change, 2026-10-13 | the Stripe product *CV Insight Pro* (test mode) reads "Higher daily limits and agentic retrieval" — a dashboard setting, so the check is the dashboard or a Checkout page, not this repository |
 | `p4-27` | Phase 7, SPEC v2.26 | `docs/eval/fresh-clone-verification.md` — `001`–`005` applied in order to a brand-new project, RLS and the policy count read back on all eight tables; and SPEC Block C now carries `004_profiles.sql` |
+| `ux-1` | `feature/design-pass-1`, SPEC v3.0e | `src/components/app-sidebar.tsx` lists `/pricing` after `/settings`, and the Settings Plan block ends in a `SETTINGS.comparePlans` link to `/pricing` |
 
 Two things this table deliberately does not say. `p3-22` is not a closure — it
 **moved**, from a backlog item to a pre-deploy gate, and its entry says so.
@@ -982,6 +986,7 @@ somebody remembering to run it.
 - **MINOR ux-1 — `/pricing` is linked only from the footer.** A "Compare plans"
   link in the Settings Plan block, and a sidebar entry in the design pass.
   Worklist entry above.
+  > **Closed 2026-10-13** — both added in `feature/design-pass-1` (SPEC v3.0e).
 - **MINOR ops-1 — the Stripe product description said "Unlimited daily
   usage"**, which contradicts `/pricing`: Pro raises the daily limits, it does
   not remove them. A dashboard change, not a code one.
