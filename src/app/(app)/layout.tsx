@@ -25,7 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </Suspense>
       <Toaster />
       <AppSidebar />
-      <div className="flex w-full max-w-5xl flex-1 flex-col">
+      <div className="flex w-full max-w-[75rem] flex-1 flex-col">
         {/*
           Sign out, top-right, on every member screen (SPEC v2.20, owner
           feedback). It lived on /settings, which is not where anyone looks for
