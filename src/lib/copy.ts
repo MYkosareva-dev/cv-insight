@@ -145,6 +145,43 @@ export const IMPRESSUM = {
 } as const;
 
 /**
+ * /pricing (SPEC v3.0, Block E). The page states limits a gate enforces and
+ * nothing a gate does not, so every row below has a counterpart in
+ * `PLAN_LIMITS` (`lib/plan.ts`) or `MAX_CAREER_ITEMS` (`lib/limits.ts`). Change
+ * a limit there and this table in the same commit.
+ *
+ * `proPrice` is the one amount in the system, as copy: changing it means
+ * changing `STRIPE_PRICE_PRO` in the Stripe dashboard and this line together.
+ */
+export const PRICING = {
+  heading: 'Plans',
+  intro: 'Two plans, and the limits the app enforces on each.',
+  freeName: 'Free',
+  proName: 'Pro',
+  freePrice: '€0',
+  proPrice: '€5 / month · test mode',
+  /** Rows verbatim from SPEC Block E, in its order. */
+  rows: [
+    { label: 'Scans', free: '3 per day', pro: '50 AI calls per day across scans and resumes' },
+    { label: 'Tailored resumes', free: '1 per day', pro: 'within the same 50' },
+    {
+      label: 'Retrieval',
+      free: 'one pass over your career base',
+      pro: 'agentic — the writer searches your base step by step and shows its work',
+    },
+    { label: 'Re-score', free: '20 per day', pro: '100 per day' },
+    { label: 'Career base', free: '200 items', pro: '200 items' },
+  ],
+  /** Rule T2: every "per day" in this app is a rolling 24 hours. */
+  rollingFootnote:
+    '“Per day” means a rolling 24 hours — the last 24 hours at any moment, not a calendar day.',
+  signInToUpgrade: 'Sign in to upgrade',
+  /** Verbatim, beneath the Pro button. */
+  testModeLine:
+    'Stripe test mode — use card 4242 4242 4242 4242, any future date, any CVC. No real charge is possible.',
+} as const;
+
+/**
  * The score placeholder. Rendered wherever a match score exists as a slot but
  * not as a number:
  *   - the parse produced 0 requirements (edge case N4, matchScore returns null);
@@ -208,6 +245,7 @@ export const AUTH = {
   toSignIn: 'Already have an account? Sign in',
   privacyLink: 'Privacy',
   impressumLink: 'Impressum',
+  pricingLink: 'Pricing',
   /**
    * The /signup card's privacy line (owner amendment, SPEC v3.0c). Informational
    * on purpose, never "you accept" or "you agree": /privacy states that nothing
