@@ -28,11 +28,15 @@ type ProAction = 'signIn' | 'checkout' | 'portal';
  *
  * The button decides nothing: the plan is enforced in the gates (rule B11), and
  * the billing routes verify the session themselves.
+ *
+ * `getUser()` stays OUTSIDE the try, as in Settings: it reads cookies, and at
+ * build time that read throws Next's dynamic-rendering signal, which a catch
+ * here would swallow and log as a failed plan read.
  */
 async function readProAction(): Promise<ProAction> {
+  const user = await getUser();
+  if (!user) return 'signIn';
   try {
-    const user = await getUser();
-    if (!user) return 'signIn';
     const view = planViewOf({ ok: true, row: await latestForUser(user.id) });
     if (view.kind === 'free') return 'checkout';
     return 'portal';
