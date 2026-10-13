@@ -439,6 +439,11 @@ both have to be answered before the deployment can take a payment.
   on `/scan` rather than where they came from. Consider rendering the plans inside
   the shell for members (for example a member route that reuses the `/pricing`
   content), keeping `/pricing` itself public for visitors.
+- **`ux-3` — the AI usage tiles do not wrap at ~840 px (OPEN).** Found while
+  taking the README screenshots. At a viewport around 840 px wide the `/quality`
+  tile grid keeps its columns, so the tiles overflow and the page scrolls
+  horizontally. The grid should drop to fewer columns before the content area is
+  narrower than the tiles.
 
 ### Parked product decisions, not defects
 
@@ -999,3 +1004,10 @@ somebody remembering to run it.
   not remove them. A dashboard change, not a code one.
   > **Closed 2026-10-13** — changed in the Stripe dashboard (test mode) to
   > "Higher daily limits and agentic retrieval".
+
+## From the README screenshot pass (2026-10-13)
+
+- **MINOR ux-3 — the AI usage tiles do not wrap at ~840 px.** At a viewport
+  around 840 px wide the `/quality` tile grid keeps its column count, the tiles
+  overflow the content area, and the page scrolls horizontally. Worklist entry
+  above.
