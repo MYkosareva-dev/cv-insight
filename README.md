@@ -612,8 +612,11 @@ none of the value.
 
 So it stays a deliberate, recorded run. The runs live in `docs/eval/` — one file
 per round, `docs/eval/phase-6-e2e-run.txt` and
-`docs/eval/fresh-clone-verification.md` being the two most recent; a run against
-the deployed project is prepared and not yet made — and
+`docs/eval/fresh-clone-verification.md` being the two before it, and
+`docs/eval/e2e-go-public-run.txt` the most recent: the first run against the
+deployed project (2026-10-13), 42 passed, 3 skipped, 1 failed — the failure a
+test asserting on a tile the empty state does not draw, fixed in the test and
+re-run alone, 4 passed — and
 `docs/backlog.md` carries the entry that would make it routine: a named test
 project the suite can select without hand-editing `.env.local`. Until that
 exists, a green CI badge means the static half is sound and says nothing about

@@ -1,0 +1,221 @@
+npm notice run cv-insight@0.1.0 test:e2e
+npm notice run playwright test
+[WebServer] npm notice run cv-insight@0.1.0 dev
+[WebServer] npm notice run next dev
+[WebServer] ÔÜá Slow filesystem detected. The benchmark took 397ms. If \\?\D:\Claude BAI\3_sprint\mkosar-AFA.BAI.3.8\.next\dev is a network drive, consider moving it to a local folder.
+[WebServer] See more: https://nextjs.org/docs/app/guides/local-development
+[WebServer] ÔÜá The "middleware" file convention is deprecated. Please use "proxy" instead.
+[WebServer] 
+[WebServer]   To migrate automatically, run:
+[WebServer]   npx @next/codemod@canary middleware-to-proxy .
+[WebServer] 
+[WebServer]   Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+
+Running 46 tests using 1 worker
+
+  Ô£ô   1 [chromium] ÔÇ║ tests\e2e\auth.spec.ts:145:3 ÔÇ║ auth ÔÇ║ sign-up lands on /career (17.4s)
+  Ô£ô   2 [chromium] ÔÇ║ tests\e2e\auth.spec.ts:152:3 ÔÇ║ auth ÔÇ║ sign-in lands on /scan, sign-out returns to /login (5.0s)
+  Ô£ô   3 [chromium] ÔÇ║ tests\e2e\auth.spec.ts:175:3 ÔÇ║ auth ÔÇ║ a signed-in user is bounced off /login and /signup (3.0s)
+  Ô£ô   4 [chromium] ÔÇ║ tests\e2e\auth.spec.ts:183:3 ÔÇ║ auth ÔÇ║ a visitor is redirected off member routes with no data flash (1.1s)
+  Ô£ô   5 [chromium] ÔÇ║ tests\e2e\auth.spec.ts:196:3 ÔÇ║ auth ÔÇ║ /privacy is public and reachable from both layouts (9.3s)
+  Ô£ô   6 [chromium] ÔÇ║ tests\e2e\auth.spec.ts:211:3 ÔÇ║ auth ÔÇ║ wrong password shows the exact copy and no other outcome (3.5s)
+  Ô£ô   7 [chromium] ÔÇ║ tests\e2e\auth.spec.ts:238:5 ÔÇ║ auth ÔÇ║ client-side validation blocks submit on a malformed email (520ms)
+  Ô£ô   8 [chromium] ÔÇ║ tests\e2e\auth.spec.ts:238:5 ÔÇ║ auth ÔÇ║ client-side validation blocks submit on a too-short password (502ms)
+  Ô£ô   9 [chromium] ÔÇ║ tests\e2e\auth.spec.ts:256:3 ÔÇ║ auth ÔÇ║ native validation never pre-empts our copy (480ms)
+  Ô£ô  10 [chromium] ÔÇ║ tests\e2e\auth.spec.ts:272:3 ÔÇ║ auth ÔÇ║ a duplicate email is reported as such (3.5s)
+  Ô£ô  11 [chromium] ÔÇ║ tests\e2e\auth.spec.ts:281:3 ÔÇ║ auth ÔÇ║ the session cookie is httpOnly, SameSite=Lax and capped at 30 days (2.1s)
+  Ô£ô  12 [chromium] ÔÇ║ tests\e2e\auth.spec.ts:325:3 ÔÇ║ auth ÔÇ║ account deletion removes the user and returns to /login with the toast (13.8s)
+  Ô£ô  13 [chromium] ÔÇ║ tests\e2e\billing.spec.ts:73:3 ÔÇ║ billing ÔÇ║ both member billing endpoints refuse a signed-out caller with 401 (195ms)
+  Ô£ô  14 [chromium] ÔÇ║ tests\e2e\billing.spec.ts:80:3 ÔÇ║ billing ÔÇ║ [Upgrade] answers a checkout.stripe.com URL as JSON, not a redirect (2.7s)
+  Ô£ô  15 [chromium] ÔÇ║ tests\e2e\billing.spec.ts:88:3 ÔÇ║ billing ÔÇ║ the portal is 404 for a Free account ÔÇö there is no customer to manage (2.0s)
+  Ô£ô  16 [chromium] ÔÇ║ tests\e2e\billing.spec.ts:95:3 ÔÇ║ billing ÔÇ║ Settings shows the Free card with [Upgrade to Pro] (2.4s)
+  Ô£ô  17 [chromium] ÔÇ║ tests\e2e\billing.spec.ts:103:3 ÔÇ║ billing ÔÇ║ `?checkout=success` with no ledger row is never a fact: pending, and no second [Upgrade] (P3) (2.4s)
+  Ô£ô  18 [chromium] ÔÇ║ tests\e2e\billing.spec.ts:113:3 ÔÇ║ billing ÔÇ║ the webhook refuses a delivery with no signature, or a forged one, with 400 (P5) (145ms)
+  -  19 [chromium] ÔÇ║ tests\e2e\billing.spec.ts:130:8 ÔÇ║ billing ÔÇ║ a Pro accountÔÇÖs portal call answers a billing.stripe.com URL
+  Ô£ô  20 [chromium] ÔÇ║ tests\e2e\career.spec.ts:228:3 ÔÇ║ career base ÔÇ║ every career endpoint refuses a signed-out caller with 401 (2.3s)
+  Ô£ô  21 [chromium] ÔÇ║ tests\e2e\career.spec.ts:254:3 ÔÇ║ career base ÔÇ║ a new account sees the exact empty state (2.5s)
+  Ô£ô  22 [chromium] ÔÇ║ tests\e2e\career.spec.ts:260:3 ÔÇ║ career base ÔÇ║ a scanned PDF shows the exact 422 copy, pre-opens the paste tab, and saves nothing (3.3s)
+  Ô£ô  23 [chromium] ÔÇ║ tests\e2e\career.spec.ts:296:3 ÔÇ║ career base ÔÇ║ a text-layer PDF imports, reviews and saves, and a second import ADDS (12.3s)
+  Ô£ô  24 [chromium] ÔÇ║ tests\e2e\career.spec.ts:329:3 ÔÇ║ career base ÔÇ║ re-importing the SAME text saves nothing and reports every skip (10.5s)
+  Ô£ô  25 [chromium] ÔÇ║ tests\e2e\career.spec.ts:354:3 ÔÇ║ career base ÔÇ║ a metered Save spends once even when double-clicked (9.7s)
+  Ô£ô  26 [chromium] ÔÇ║ tests\e2e\generate.spec.ts:182:3 ÔÇ║ generate ÔÇ║ all four Phase-4 endpoints refuse a signed-out caller with 401 (4.0s)
+  Ô£ô  27 [chromium] ÔÇ║ tests\e2e\generate.spec.ts:204:3 ÔÇ║ generate ÔÇ║ another user's application is 404 on every Phase-4 endpoint, never 403 (2.5s)
+[WebServer] Ô¿» Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  Ô£ô  28 [chromium] ÔÇ║ tests\e2e\generate.spec.ts:220:3 ÔÇ║ generate ÔÇ║ user B gets 404 on user A's REAL application id ÔÇö read and metered write (23.2s)
+[WebServer] Ô¿» Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+[phase-4] run: {"versions":2,"autoRevised":true,"revisionNotBetter":false,"revisionWithheld":false,"verdicts":[{"source":"ai","verdict":"revise","grounding":"fail","violations":3,"keywordCoverage":3,"relevance":4,"atsFormat":4,"missingHonest":5,"atsIssues":2},{"source":"ai_revision","verdict":"revise","grounding":"fail","violations":2,"keywordCoverage":3,"relevance":4,"atsFormat":4,"missingHonest":4,"atsIssues":1}]}
+[phase-5] generation provenance: This version was written by openai/gpt-5.4.
+[phase-4] header: {"literalNamePlaceholder":false,"namePlaceholder":true}
+[phase-4] rescore: {"stored":"57%","live":"66%","entries":8}
+  Ô£ô  29 [chromium] ÔÇ║ tests\e2e\generate.spec.ts:377:3 ÔÇ║ generate ÔÇ║ generate, judge, edit, re-score, export ÔÇö the whole US-4/US-5 path (51.7s)
+[WebServer] Ô¿» Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+[WebServer] Ô¿» Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  Ô£ô  30 [chromium] ÔÇ║ tests\e2e\generate.spec.ts:862:3 ÔÇ║ generate ÔÇ║ one click, one spend: a double-clicked [Generate] sends ONE request (50.2s)
+[WebServer] Ô¿» Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+[phase-5] first five lines of the generated resume:
+  1| Mira Steinberg
+  2| mira.steinberg@example.com ┬À +49 30 901820 ┬À Hamburg, Germany ┬À Open to remote
+  3| https://www.linkedin.com/in/mira-steinberg-example ┬À https://github.com/mira-steinberg-example
+  4| 
+  5| TARGET TITLE
+[WebServer] Ô¿» Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  Ô£ô  31 [chromium] ÔÇ║ tests\e2e\generate.spec.ts:908:3 ÔÇ║ generate ÔÇ║ a saved display name becomes the resume name line and the file name (35.4s)
+[WebServer] Ô¿» Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  Ô£ô  32 [chromium] ÔÇ║ tests\e2e\generate.spec.ts:1091:3 ÔÇ║ generate ÔÇ║ an empty editor blocks both metered buttons with the exact copy (17.1s)
+[WebServer] Ô¿» Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+[phase-4] grounding gate: {"verdict":"revise","grounding":"fail","violations":5,"scores":{"keywordCoverage":3,"relevance":1,"atsFormat":4}}
+  Ô£ô  33 [chromium] ÔÇ║ tests\e2e\generate.spec.ts:1115:3 ÔÇ║ generate ÔÇ║ the judge catches invention, and rule B2 forces revise however good the rest is (27.8s)
+[WebServer] Ô¿» Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  Ô£ô  34 [chromium] ÔÇ║ tests\e2e\generate.spec.ts:1200:3 ÔÇ║ generate ÔÇ║ [Add to resume] is refused with a reason while no resume exists (16.0s)
+  Ô£ÿ  35 [chromium] ÔÇ║ tests\e2e\plan-gating.spec.ts:121:3 ÔÇ║ plan gating ÔÇö at the gate ÔÇ║ a Free account asking for `agentic` is refused 403 PLAN_REQUIRED, and nothing is spent (L7) (7.8s)
+  Ô£ô  36 [chromium] ÔÇ║ tests\e2e\plan-gating.spec.ts:150:3 ÔÇ║ plan gating ÔÇö at the gate ÔÇ║ a body with any field but `mode` is a 400, before the gate spends a read (2.3s)
+  Ô£ô  37 [chromium] ÔÇ║ tests\e2e\plan-gating.spec.ts:162:3 ÔÇ║ plan gating ÔÇö at the gate ÔÇ║ a signed-out caller is 401 before any plan is read (84ms)
+[WebServer] Ô¿» Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+[WebServer] [chat] judge output failed validation, one repair retry {
+[WebServer]   issues: [ { path: '', code: 'invalid_json', message: 'not valid JSON' } ]
+[WebServer] }
+  Ô£ô  38 [chromium] ÔÇ║ tests\e2e\plan-gating.spec.ts:169:3 ÔÇ║ plan gating ÔÇö at the gate ÔÇ║ a Free accountÔÇÖs SECOND resume in 24 h is 429 with the Free copy; the first is untouched (L6) (56.1s)
+  -  39 [chromium] ÔÇ║ tests\e2e\plan-gating.spec.ts:202:8 ÔÇ║ plan gating ÔÇö at the gate ÔÇ║ after a ledger row makes the account Pro, the same `agentic` call proceeds
+  Ô£ô  40 [chromium] ÔÇ║ tests\e2e\scan.spec.ts:214:3 ÔÇ║ scan ÔÇ║ both scan endpoints refuse a signed-out caller with 401 (90ms)
+  Ô£ô  41 [chromium] ÔÇ║ tests\e2e\scan.spec.ts:244:3 ÔÇ║ scan ÔÇ║ an oversized vacancy is refused with the exact copy, before any spend (2.1s)
+  Ô£ô  42 [chromium] ÔÇ║ tests\e2e\scan.spec.ts:275:3 ÔÇ║ scan ÔÇ║ an empty career base blocks the Career-base source with the exact notice (2.3s)
+  Ô£ô  43 [chromium] ÔÇ║ tests\e2e\scan.spec.ts:288:3 ÔÇ║ scan ÔÇ║ the applications list starts empty with the exact copy (2.3s)
+[WebServer] Ô¿» Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  Ô£ô  44 [chromium] ÔÇ║ tests\e2e\scan.spec.ts:294:3 ÔÇ║ scan ÔÇ║ a pasted resume scans, scores, and renders coverage, keywords and base matches (15.3s)
+[WebServer] Ô¿» Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  Ô£ô  45 [chromium] ÔÇ║ tests\e2e\scan.spec.ts:461:3 ÔÇ║ scan ÔÇ║ a career-base scan says the base is the source, instead of an empty tab (13.3s)
+  -  46 [chromium] ÔÇ║ tests\e2e\scan.spec.ts:503:3 ÔÇ║ scan ÔÇ║ an AI failure saves the vacancy as a draft and says so
+
+
+  1) [chromium] ÔÇ║ tests\e2e\plan-gating.spec.ts:121:3 ÔÇ║ plan gating ÔÇö at the gate ÔÇ║ a Free account asking for `agentic` is refused 403 PLAN_REQUIRED, and nothing is spent (L7) 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByText('0 / 50', { exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for getByText('0 / 50', { exact: true })
+
+
+      144 |      */
+      145 |     await page.goto('/quality');
+    > 146 |     await expect(page.getByText('0 / 50', { exact: true })).toBeVisible();
+          |                                                             ^
+      147 |     await expect(page.getByText('0 / 20', { exact: true })).toBeVisible();
+      148 |   });
+      149 |
+        at D:\Claude BAI\3_sprint\mkosar-AFA.BAI.3.8\tests\e2e\plan-gating.spec.ts:146:61
+
+    Error Context: test-results\plan-gating-plan-gating-ÔÇö--06116-ED-and-nothing-is-spent-L7--chromium\error-context.md
+
+    attachment #2: trace (application/zip) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\plan-gating-plan-gating-ÔÇö--06116-ED-and-nothing-is-spent-L7--chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\plan-gating-plan-gating-ÔÇö--06116-ED-and-nothing-is-spent-L7--chromium\trace.zip
+
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+  1 failed
+    [chromium] ÔÇ║ tests\e2e\plan-gating.spec.ts:121:3 ÔÇ║ plan gating ÔÇö at the gate ÔÇ║ a Free account asking for `agentic` is refused 403 PLAN_REQUIRED, and nothing is spent (L7) 
+  3 skipped
+  42 passed (8.7m)
+
+
+================================================================================
+SECOND SECTION - plan-gating.spec.ts alone, after a TEST-ONLY fix (2026-10-13)
+================================================================================
+
+Why: the run above had 1 failure, plan-gating.spec.ts:146 (L7). Its 403
+PLAN_REQUIRED assertions passed; the last step looked for a '0 / 50' tile on
+/quality. error-context.md shows the page rendered its EMPTY STATE instead -
+'No AI calls yet.' (role=status) and no tiles at all - because the account was
+fresh and had zero llm_calls rows. So the gate behaved, nothing was spent, and
+the assertion looked for a tile the empty state never draws. It was not a
+setup call being counted: the test signs up and does nothing else.
+
+Fix, in the test only (the gate is unchanged): assert the empty state,
+QUALITY.empty, which /quality renders exactly when the caller has zero rows.
+
+The section above is kept as recorded. Its odd characters (e.g. 'ÔÇ║' for the
+arrow) are the console's re-encoding of UTF-8 output when the run was written
+from PowerShell; this section was written directly as UTF-8.
+
+Command: npx playwright test tests/e2e/plan-gating.spec.ts
+Server: local dev server (Playwright webServer) against the live Supabase project.
+Not re-run: the other specs. Their results stand as recorded above.
+
+One server log line during the run, not explained here: '[WebServer] Error: The
+destination stream closed early.' It printed during the L6 test, which passed;
+no assertion failed on it. It is recorded, not diagnosed.
+
+--- output, verbatim ---
+npm notice run cv-insight@0.1.0 npx
+npm notice run playwright test tests/e2e/plan-gating.spec.ts
+[WebServer] npm notice run cv-insight@0.1.0 dev
+[WebServer] npm notice run next dev
+[WebServer] ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.
+[WebServer] 
+[WebServer]   To migrate automatically, run:
+[WebServer]   npx @next/codemod@canary middleware-to-proxy .
+[WebServer] 
+[WebServer]   Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+[WebServer] ⚠ Slow filesystem detected. The benchmark took 222ms. If \\?\D:\Claude BAI\3_sprint\mkosar-AFA.BAI.3.8\.next\dev is a network drive, consider moving it to a local folder.
+[WebServer] See more: https://nextjs.org/docs/app/guides/local-development
+
+Running 5 tests using 1 worker
+
+(node:24108) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 1 [chromium] › tests\e2e\plan-gating.spec.ts:121:3 › plan gating — at the gate › a Free account asking for `agentic` is refused 403 PLAN_REQUIRED, and nothing is spent (L7) (4.7s)
+  ok 2 [chromium] › tests\e2e\plan-gating.spec.ts:152:3 › plan gating — at the gate › a body with any field but `mode` is a 400, before the gate spends a read (2.9s)
+  ok 3 [chromium] › tests\e2e\plan-gating.spec.ts:164:3 › plan gating — at the gate › a signed-out caller is 401 before any plan is read (84ms)
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3157741274'
+[WebServer] }
+  ok 4 [chromium] › tests\e2e\plan-gating.spec.ts:171:3 › plan gating — at the gate › a Free account’s SECOND resume in 24 h is 429 with the Free copy; the first is untouched (L6) (47.0s)
+  -  5 [chromium] › tests\e2e\plan-gating.spec.ts:204:8 › plan gating — at the gate › after a ledger row makes the account Pro, the same `agentic` call proceeds
+
+  1 skipped
+  4 passed (58.3s)

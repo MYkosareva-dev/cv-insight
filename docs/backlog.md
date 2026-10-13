@@ -76,8 +76,9 @@ brand-new project, and the closure is in the table below.
 
 6. **The Playwright suite has a project to run on again — once, not routinely.**
    **v3.0c: registration is open on the deployment's own Supabase project**, so
-   the specs can sign up there again; a run against it is prepared (target file
-   `docs/eval/e2e-go-public-run.txt`) and has not been made yet. It is still a
+   the specs can sign up there again, and the first run against it is recorded
+   in `docs/eval/e2e-go-public-run.txt` (2026-10-13: 42 passed, 3 skipped, 1
+   failed — a test defect, fixed and re-run alone, 4 passed). It is still a
    run against the production database with paid model calls, so the points below
    remain what turns it into a routine. The durable
    answer named at the end of `docs/eval/phase-6-e2e-run.txt` — option 1, a second

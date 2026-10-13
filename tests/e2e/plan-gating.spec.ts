@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { expect, test, type Page } from '@playwright/test';
 
-import { ERROR_CODES, ERROR_MESSAGES, RESULT, SCAN } from '../../src/lib/copy';
+import { ERROR_CODES, ERROR_MESSAGES, QUALITY, RESULT, SCAN } from '../../src/lib/copy';
 
 /**
  * Gating is tested at the GATE, not at the screen (SPEC v3.0, Block H item 13).
@@ -138,13 +138,15 @@ test.describe('plan gating — at the gate', () => {
 
     /**
      * "Writes no llm_calls row." This spec cannot read the table (R1), so it
-     * reads the screen that renders the cap's own counter: a fresh account that
-     * was refused at the gate has spent nothing, and the tile says 0 against the
-     * FREE plan's ceiling — which also shows the limit is the plan's.
+     * reads the screen built from it. The account is fresh — signed up, nothing
+     * imported or scanned — so ANY row would be the refused call's. /quality
+     * renders its empty state exactly when the caller has zero rows, and no
+     * tiles at all then, so this is the whole-table assertion. (It used to look
+     * for a "0 / 50" tile, which the empty state never draws — the first run
+     * against the live project, docs/eval/e2e-go-public-run.txt, found that.)
      */
     await page.goto('/quality');
-    await expect(page.getByText('0 / 50', { exact: true })).toBeVisible();
-    await expect(page.getByText('0 / 20', { exact: true })).toBeVisible();
+    await expect(page.getByText(QUALITY.empty, { exact: true })).toBeVisible();
   });
 
   test('a body with any field but `mode` is a 400, before the gate spends a read', async ({
