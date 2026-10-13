@@ -175,6 +175,14 @@ export const PRICING = {
   /** Rule T2: every "per day" in this app is a rolling 24 hours. */
   rollingFootnote:
     '“Per day” means a rolling 24 hours — the last 24 hours at any moment, not a calendar day.',
+  /**
+   * Review m5: the Pro column's "50 AI calls per day" is not Pro's alone.
+   * `PLAN_LIMITS.*.dailyChatCalls` is 50 on BOTH plans and counts every chat
+   * step (import, scan, resume, quality check); Free's per-step allowances are
+   * counted inside it. Re-scores are embeddings, with their own ceiling (B7a).
+   */
+  sharedCeilingFootnote:
+    'Both plans share one ceiling of 50 AI calls per day, counted across imports, scans, resumes and quality checks; the Free plan’s scan and resume limits sit inside it. Re-scores are counted separately.',
   signInToUpgrade: 'Sign in to upgrade',
   /** Verbatim, beneath the Pro button. */
   testModeLine:

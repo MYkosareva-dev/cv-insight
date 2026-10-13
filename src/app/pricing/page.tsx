@@ -2,9 +2,9 @@ import Link from 'next/link';
 
 import { BillingButton } from '@/components/billing-button';
 import { buttonVariants } from '@/components/ui/button';
-import { PRICING } from '@/lib/copy';
+import { APP_NAME, PRICING } from '@/lib/copy';
 import { latestForUser } from '@/lib/db/subscriptionEvents';
-import { planViewOf } from '@/lib/plan';
+import { type PlanView, planViewOf } from '@/lib/plan';
 import { getUser } from '@/lib/supabase/server';
 import { cn } from '@/lib/utils';
 
@@ -32,20 +32,45 @@ type ProAction = 'signIn' | 'checkout' | 'portal';
  * `getUser()` stays OUTSIDE the try, as in Settings: it reads cookies, and at
  * build time that read throws Next's dynamic-rendering signal, which a catch
  * here would swallow and log as a failed plan read.
+ *
+ * The session this reads may be refreshed by `getUser()`; the rotated cookie
+ * reaches the browser because the middleware runs on /pricing (v3.0d) — which
+ * is why this public page, unlike /privacy and /impressum, is not excluded
+ * from the matcher.
  */
 async function readProAction(): Promise<ProAction> {
   const user = await getUser();
   if (!user) return 'signIn';
+  let view: PlanView;
   try {
-    const view = planViewOf({ ok: true, row: await latestForUser(user.id) });
-    if (view.kind === 'free') return 'checkout';
-    return 'portal';
+    view = planViewOf({ ok: true, row: await latestForUser(user.id) });
   } catch (err) {
     console.error('[pricing] could not read the plan; rendering the visitor button', {
       name: err instanceof Error ? err.name : typeof err,
       code: (err as { code?: string } | null)?.code,
     });
-    return 'signIn';
+    view = planViewOf({ ok: false });
+  }
+  return proActionFor(view);
+}
+
+/**
+ * The P10/P11 mapping, exhaustive over `PlanView`: a new kind does not compile
+ * until someone decides which button it gets.
+ */
+function proActionFor(view: PlanView): ProAction {
+  switch (view.kind) {
+    case 'unavailable':
+      return 'signIn';
+    case 'free':
+      return 'checkout';
+    case 'pastDue':
+    case 'pro':
+      return 'portal';
+    default: {
+      const unhandled: never = view;
+      return unhandled;
+    }
   }
 }
 
@@ -61,6 +86,11 @@ export default async function PricingPage() {
 
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-6 p-6">
+      {/* The way back. `/` sends a member to /scan and a visitor to /login. */}
+      <Link href="/" className="text-primary w-fit text-sm underline-offset-4 hover:underline">
+        Back to {APP_NAME}
+      </Link>
+
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">{PRICING.heading}</h1>
         <p className="text-muted-foreground text-sm">{PRICING.intro}</p>
@@ -94,7 +124,10 @@ export default async function PricingPage() {
         </section>
       </div>
 
-      <p className="text-muted-foreground text-xs">{PRICING.rollingFootnote}</p>
+      <div className="text-muted-foreground flex flex-col gap-1 text-xs">
+        <p>{PRICING.rollingFootnote}</p>
+        <p>{PRICING.sharedCeilingFootnote}</p>
+      </div>
     </main>
   );
 }
