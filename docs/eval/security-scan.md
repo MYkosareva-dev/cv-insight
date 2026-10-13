@@ -210,7 +210,21 @@ Counts: Critical 0 · High 0 · Medium 0 · Low 2 · Info 5.
 - **Exposure:** confined to the user's own rows by `auth.uid() = user_id`. `llm_calls` has no UPDATE or DELETE, so a user can only raise their own usage count, never lower it to escape a daily limit. The plan cannot be forged this way (`subscription_events` is SELECT-only for users). Rows a user forges are visible to that user alone.
 - **Options for the owner:** accept as the stated least-privilege matrix; or, if `/quality` figures or stored scores must be trustworthy beyond the user's own view, move those writes behind server-only paths and drop the user INSERT/UPDATE on the affected tables (an owner amendment per CLAUDE.md).
 
-## 7. OWASP Top 10 (2021) category checklist
+## 7. Decisions (owner triage, 2026-10-13)
+
+No code was changed by this triage. Each finding is either tracked in `docs/backlog.md` or points to a decision already recorded.
+
+| ID | Decision | Recorded in |
+|---|---|---|
+| F1 | Tracked as `dp-1`, accepted: dev-only chain, production audit clean, npm's only fix is a downgrade below Next 16. | `docs/backlog.md`, "When a dependency release changes what is reachable" |
+| F2 | Tracked as `sc-1`: a daily cap on re-embedding at save, enforced in the retrieval gate. Accepted for now because the OpenRouter key carries a spend limit. | `docs/backlog.md`, "From the security scan" |
+| F3 | Already decided: `'unsafe-inline'` in `script-src` is needed for App Router hydration, and per-request nonces were rejected because they would force `/privacy` and `/impressum` dynamic. | `next.config.ts`, the comment block above `CSP_DIRECTIVES` ("WHY `script-src` CARRIES `'unsafe-inline'`"); `docs/eval/csp-verification.md`, "Experiment 1 — the strict policy", "Why a nonce was rejected rather than adopted" and "Experiment 2 — the shipped policy" |
+| F4 | Accepted today. The session cookie is `SameSite=Lax`, so browsers do not send it on cross-site mutating requests; there is no custom domain and so no same-site sibling; CSP `form-action 'self'` stops an injected form posting off-origin. Tracked as `sc-2` for the day a custom domain is introduced. | `docs/backlog.md`, "From the security scan" |
+| F5 | Accepted today. The host is Vercel-controlled: only this deployment's own host routes to it, so `request.url` yields its own origin; the caller must be signed in and could only redirect themselves. Tracked as `sc-2`: build the return URLs from an `APP_URL` setting when a custom domain is introduced. | `docs/backlog.md`, "From the security scan" |
+| F6 | Already decided: HSTS is left to Vercel on its own domains, so a `max-age` in config cannot bind a future custom domain before that choice is made on purpose. | `next.config.ts`, the comment above `SECURITY_HEADERS` ("HSTS is deliberately ABSENT") |
+| F7 | Accepted. RLS confines every user write to the user's own rows. The plan is derived from `subscription_events`, which users can only SELECT and only the webhook writes through the service role. Daily limits are counted in the two server gates (`src/lib/chat.ts`, `src/lib/retrieval.ts`) from `llm_calls`, which has no user UPDATE or DELETE, so a direct write can only raise a user's own usage count. Neither Pro nor a lower usage count can be forged. | this section; policy matrix in CLAUDE.md, "Data access rules" |
+
+## 8. OWASP Top 10 (2021) category checklist
 
 Used as a checklist taxonomy only.
 
@@ -227,7 +241,7 @@ Used as a checklist taxonomy only.
 | A09 Logging and monitoring | metadata-only logging verified (§5.6) |
 | A10 SSRF | no user-controlled outbound URL; the only outbound hosts are OpenRouter (fixed) and Stripe (SDK) |
 
-## 8. Parts of the `/security-scan` template not produced
+## 9. Parts of the `/security-scan` template not produced
 
 - **Automated remediation, CI workflow files, middleware templates:** not produced; this run lists findings only.
 - **Risk score, cost/investment estimates, compliance percentages (NIST, ISO 27001, PCI DSS, SOC 2):** not produced. This scan has no measurement those numbers could be derived from, and a figure without a basis would be invented.

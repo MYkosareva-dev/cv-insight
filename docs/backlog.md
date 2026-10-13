@@ -391,6 +391,28 @@ both have to be answered before the deployment can take a payment.
   `src/middleware.ts` — which needs an owner amendment. Renaming the file alone
   leaves R11 checking a path that no longer exists.
 
+### From the security scan (`docs/eval/security-scan.md`)
+
+- **`sc-1` — daily cap on career-item re-embedding on save (OPEN, accepted for
+  now).** Scan finding F2. Every save that changes `title` or `content`
+  re-embeds the item, and rule B7a caps only `rescore`: B9 bounds how many items
+  a user holds, not how often they are re-embedded, so scripted repeated edits
+  spend embeddings with no server-side ceiling. The fix belongs in the retrieval
+  gate, `src/lib/retrieval.ts`, beside `assertUnderRescoreCap`: a per-user
+  rolling count of `embed` rows that, once exceeded, SKIPS indexing and returns
+  the existing non-blocking warning — so indexing still never fails a save.
+  Accepted for now because the OpenRouter key carries a spend limit, which
+  bounds the worst case in money even though it does not bound it per user.
+- **`sc-2` — Origin check and configured return URLs, when a custom domain is
+  introduced (OPEN, deferred to that event).** Scan findings F4 and F5. Today
+  the session cookie is `SameSite=Lax`, the app has no custom domain, Vercel
+  routes only its own host to the deployment, and CSP carries
+  `form-action 'self'`. A custom domain whose sibling subdomains someone else
+  controls is same-site, and Lax stops separating them. On that branch: add an
+  `Origin` check for every mutating `/api/*` method in one shared helper beside
+  `requireApiUser`, and build Stripe `success_url` / `cancel_url` /
+  `return_url` from an `APP_URL` server setting instead of `request.url`.
+
 ### Parked product decisions, not defects
 
 Four **FEATURE** entries in the Phase-2 owner-feedback section: grouping `/career`
@@ -921,3 +943,13 @@ somebody remembering to run it.
   of `proxy`** (`docs/reviews/dependency-patch-pr.md`). Not caused by the patch;
   the rename touches R11 and a CLAUDE.md rule, so it is its own branch. Worklist
   entry above.
+
+## v3.0e — from the security scan of `main` at `5ad88e4` (2026-10-13)
+
+- **LOW sc-1 — re-indexing on save has no daily ceiling**
+  (`docs/eval/security-scan.md`, F2). Accepted for now behind the OpenRouter
+  key's spend limit. Worklist entry above.
+- **INFO sc-2 — no Origin check on mutating routes; Stripe return URLs built
+  from the request host** (`docs/eval/security-scan.md`, F4 and F5). Not
+  reachable without a custom domain; done when one is introduced. Worklist entry
+  above.
