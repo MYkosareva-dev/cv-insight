@@ -81,3 +81,25 @@ Files referenced:
 - D:\Claude BAI\3_sprint\mkosar-AFA.BAI.3.8\src\app\pricing\page.tsx
 - D:\Claude BAI\3_sprint\mkosar-AFA.BAI.3.8\src\app\(app)\layout.tsx
 - D:\Claude BAI\3_sprint\mkosar-AFA.BAI.3.8\SPEC.md
+
+---
+
+## Follow-up (2026-10-13, commit c915a5a)
+
+Applied by owner instruction, in one commit:
+
+| Finding | Outcome |
+|---|---|
+| 1 MAJOR — Edge shows two reveal controls | **Fixed.** `src/app/globals.css` hides `input[type='password']::-ms-reveal` and `::-ms-clear`, so the auth form's toggle is the only one. Not observable in Playwright's Chromium, as the finding noted. |
+| 2 MINOR — the intro overclaims | **Fixed.** `QUALITY.intro` now says "what your recent calls cost" and "your recent generated resumes"; the comment beside it names the two windows. |
+| 3 MINOR — the intro on the empty page | **Fixed.** Not rendered in the `calls.length === 0` branch. |
+| 4 MINOR — "Quality has the per-step counts" | **Fixed.** `RESULT.writtenByFallbackAlways` reads "AI usage has the per-step counts." |
+| 5 MINOR — sidebar Pricing leaves the shell | **Deferred** to `docs/backlog.md` as `ux-2` (OPEN). |
+| 6–9 NIT | No change. |
+
+One owner addition beyond the findings: the `/quality` page heading (`QUALITY.title`) and browser title now read "AI usage", the same as the sidebar item. The route stays `/quality`. The e2e heading assertion in `generate.spec.ts` reads `QUALITY.title`, so it follows without an edit. SPEC v3.0e and the Block E `/quality` line were updated to match.
+
+Verification after the commit:
+- `npm run check`: passed (13 rules).
+- `npm test`: 506 pass, 0 fail.
+- `npx playwright test tests/e2e/generate.spec.ts -g "the whole US-4/US-5 path"` (the test that asserts `/quality`): 1 passed.
