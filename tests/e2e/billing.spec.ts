@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { ERROR_CODES, SETTINGS } from '../../src/lib/copy';
+import { ERROR_CODES, PRICING, SETTINGS } from '../../src/lib/copy';
 
 /**
  * Billing, end to end against the app and Stripe's TEST MODE (SPEC v3.0, Block
@@ -100,6 +100,21 @@ test.describe('billing', () => {
     await expect(page.getByRole('button', { name: SETTINGS.upgrade })).toBeVisible();
   });
 
+  test('/pricing offers a Free member [Upgrade to Pro] on the Pro card, not sign-in (v3.0d)', async ({
+    page,
+  }) => {
+    await signUp(page, uniqueEmail());
+    const response = await page.goto('/pricing');
+    expect(response?.status()).toBe(200);
+    // The middleware runs on /pricing (v3.0d) and must not bounce a member.
+    expect(new URL(page.url()).pathname).toBe('/pricing');
+
+    const pro = page.getByRole('region', { name: 'Pro', exact: true });
+    await expect(pro.getByRole('button', { name: 'Upgrade to Pro' })).toBeVisible();
+    await expect(page.getByRole('link', { name: PRICING.signInToUpgrade })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: SETTINGS.manageSubscription })).toHaveCount(0);
+  });
+
   test('`?checkout=success` with no ledger row is never a fact: pending, and no second [Upgrade] (P3)', async ({
     page,
   }) => {
@@ -130,5 +145,11 @@ test.describe('billing', () => {
   test.fixme('a Pro account’s portal call answers a billing.stripe.com URL', async () => {
     // Needs a webhook-written ledger row — see the header. NOT witnessed yet:
     // it belongs to the deployment run, SPEC Block H item 12.
+  });
+
+  test.fixme('/pricing offers a Pro member [Manage subscription] (v3.0d)', async () => {
+    // Same reason as above: a Pro account needs a webhook-written ledger row,
+    // which this file cannot forge. NOT witnessed yet — deployment run, Block H
+    // item 12. The mapping itself is the exhaustive switch in the page.
   });
 });
