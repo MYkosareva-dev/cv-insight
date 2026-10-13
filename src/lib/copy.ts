@@ -145,6 +145,51 @@ export const IMPRESSUM = {
 } as const;
 
 /**
+ * /pricing (SPEC v3.0, Block E). The page states limits a gate enforces and
+ * nothing a gate does not, so every row below has a counterpart in
+ * `PLAN_LIMITS` (`lib/plan.ts`) or `MAX_CAREER_ITEMS` (`lib/limits.ts`). Change
+ * a limit there and this table in the same commit.
+ *
+ * `proPrice` is the one amount in the system, as copy: changing it means
+ * changing `STRIPE_PRICE_PRO` in the Stripe dashboard and this line together.
+ */
+export const PRICING = {
+  heading: 'Plans',
+  intro: 'Two plans, and the limits the app enforces on each.',
+  freeName: 'Free',
+  proName: 'Pro',
+  freePrice: '€0',
+  proPrice: '€5 / month · test mode',
+  /** Rows verbatim from SPEC Block E, in its order. */
+  rows: [
+    { label: 'Scans', free: '3 per day', pro: '50 AI calls per day across scans and resumes' },
+    { label: 'Tailored resumes', free: '1 per day', pro: 'within the same 50' },
+    {
+      label: 'Retrieval',
+      free: 'one pass over your career base',
+      pro: 'agentic — the writer searches your base step by step and shows its work',
+    },
+    { label: 'Re-score', free: '20 per day', pro: '100 per day' },
+    { label: 'Career base', free: '200 items', pro: '200 items' },
+  ],
+  /** Rule T2: every "per day" in this app is a rolling 24 hours. */
+  rollingFootnote:
+    '“Per day” means a rolling 24 hours — the last 24 hours at any moment, not a calendar day.',
+  /**
+   * Review m5: the Pro column's "50 AI calls per day" is not Pro's alone.
+   * `PLAN_LIMITS.*.dailyChatCalls` is 50 on BOTH plans and counts every chat
+   * step (import, scan, resume, quality check); Free's per-step allowances are
+   * counted inside it. Re-scores are embeddings, with their own ceiling (B7a).
+   */
+  sharedCeilingFootnote:
+    'Both plans share one ceiling of 50 AI calls per day, counted across imports, scans, resumes and quality checks; the Free plan’s scan and resume limits sit inside it. Re-scores are counted separately.',
+  signInToUpgrade: 'Sign in to upgrade',
+  /** Verbatim, beneath the Pro button. */
+  testModeLine:
+    'Stripe test mode — use card 4242 4242 4242 4242, any future date, any CVC. No real charge is possible.',
+} as const;
+
+/**
  * The score placeholder. Rendered wherever a match score exists as a slot but
  * not as a number:
  *   - the parse produced 0 requirements (edge case N4, matchScore returns null);
@@ -208,6 +253,7 @@ export const AUTH = {
   toSignIn: 'Already have an account? Sign in',
   privacyLink: 'Privacy',
   impressumLink: 'Impressum',
+  pricingLink: 'Pricing',
   /**
    * The /signup card's privacy line (owner amendment, SPEC v3.0c). Informational
    * on purpose, never "you accept" or "you agree": /privacy states that nothing
@@ -326,10 +372,11 @@ export const SCAN = {
    * 429 DAILY_LIMIT for Free's fourth scan in a rolling 24 h (SPEC v3.0, rule B7).
    * Its own string because `RESULT.dailyLimitFree` is about resumes, and a
    * refusal that names the wrong allowance is one the user cannot act on.
-   * It names no /pricing link: that page is not built yet.
+   * The scan screen renders it as plain text, so it names the Pricing page in
+   * words rather than carrying a link.
    */
   dailyLimitFree:
-    'Your Free plan allows 3 scans per day. Your vacancy was saved — run the analysis from Applications tomorrow, or upgrade to Pro in Settings for higher daily limits.',
+    'Your Free plan allows 3 scans per day. Your vacancy was saved — run the analysis from Applications tomorrow, or see the Pricing page for Pro’s higher daily limits.',
   noRequirements: "We couldn't find concrete requirements in this posting.",
   dropzone: PDF_DROPZONE,
 
@@ -722,16 +769,15 @@ export const RESULT = {
    * 429 DAILY_LIMIT for Free's second tailored resume in a rolling 24 h (SPEC
    * v3.0, edge case L6). SPEC's draft said Pro "removes the daily limits" and
    * "researches your career base step by step". The second is true from the
-   * agentic-retrieval branch on; the first is not (Pro raises the limits), and
-   * the link goes to Settings until /pricing exists — so the copy keeps saying
-   * only what holds.
+   * agentic-retrieval branch on; the first is not (Pro raises the limits) — so
+   * the copy says only what holds. The link under it goes to /pricing.
    */
   dailyLimitFree:
-    'Your Free plan allows 1 tailored resume per day. Try again tomorrow, or upgrade to Pro in Settings for higher daily limits.',
+    'Your Free plan allows 1 tailored resume per day. Try again tomorrow, or upgrade to Pro for higher daily limits and step-by-step research of your career base.',
   /** 400 for a generate body that is not `{ "mode"?: "single" | "agentic" }`. */
   generateBadRequest: 'The request could not be read. Reload the page and try again.',
-  /** The link under a Free daily-limit refusal — to the Plan block, until /pricing exists. */
-  dailyLimitSettingsLink: 'See your plan in Settings',
+  /** The link under a Free daily-limit refusal, to /pricing. */
+  dailyLimitPricingLink: 'Compare plans',
   /** 429 DAILY_LIMIT on Pro — the v2.x copy, unchanged. */
   dailyLimitPro: 'Daily AI limit reached (50 calls). Try again tomorrow.',
 

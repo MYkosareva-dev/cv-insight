@@ -27,8 +27,8 @@ import { proPriceId, stripeClient } from '@/lib/stripe/server';
  * handler, which rule B11 forbids. Stripe's "limit customers to one
  * subscription" setting is the fence, and Settings never shows [Upgrade] to Pro.
  *
- * `cancel_url` is /settings, not SPEC's /pricing: /pricing is not built in this
- * branch, and a cancelled Checkout must not land on a 404.
+ * `cancel_url` is /pricing: a cancelled Checkout lands back on the plans it was
+ * opened from, with nothing written on either side.
  */
 
 /** The shortest Checkout lifetime Stripe accepts (30 minutes to 24 hours). */
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
         customer_email: user.email,
         subscription_data: { metadata: { user_id: user.id } },
         success_url: `${origin}/settings?checkout=success`,
-        cancel_url: `${origin}/settings`,
+        cancel_url: `${origin}/pricing`,
         expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_LIFETIME_S,
       });
       url = session.url;
