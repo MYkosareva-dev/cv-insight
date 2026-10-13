@@ -234,7 +234,8 @@ export const ERROR_PAGE = {
 } as const;
 
 export const NAV = {
-  scan: 'New scan',
+  /** The /scan entry. The route, API paths and identifiers keep "scan"; the label names the task (v3.0e). */
+  scan: 'Match a job',
   career: 'Career base',
   applications: 'Applications',
   quality: 'Quality',
@@ -384,7 +385,7 @@ export const SCAN = {
   dropzone: PDF_DROPZONE,
 
   // --- Block E: stepper, two panels, resume-source tabs (Phase 3) ---
-  title: 'New scan',
+  title: 'Match a job',
   /** "Stepper on top: 1 Resume → 2 Vacancy → 3 Results". */
   steps: ['Resume', 'Vacancy', 'Results'] as const,
   resumeSourceLabel: 'Resume source',
@@ -1152,8 +1153,8 @@ export const RESULT = {
 
 export const APPLICATIONS = {
   title: 'Applications',
-  emptyTitle: 'No scans yet. Run your first scan.',
-  newScan: 'New scan',
+  emptyTitle: 'No applications yet. Match your first job.',
+  newScan: 'Match a job',
   loadFailed: "Couldn't load applications. Refresh the page.",
 
   // --- Block E table (Phase 3) ---
@@ -1220,7 +1221,7 @@ export const QUALITY = {
   title: 'Quality',
   lead: 'Every number here is counted from rows this app already stores: the AI-call log and the reviewer verdicts saved with each resume version. Nothing on this screen is estimated.',
   empty: 'No AI calls yet.',
-  emptyHint: 'Run a scan and generate a resume — this screen fills in from the rows that run writes.',
+  emptyHint: 'Match a job and generate a resume — this screen fills in from the rows that run writes.',
   loadFailed: "Couldn't load metrics.",
 
   /** The window the totals are computed over, said out loud. */

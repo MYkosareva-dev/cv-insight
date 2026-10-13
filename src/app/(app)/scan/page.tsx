@@ -2,7 +2,7 @@ import { ScanForm } from '@/components/scan/scan-form';
 import { countCareerItems } from '@/lib/db/careerItems';
 import { countDocuments } from '@/lib/db/documents';
 
-export const metadata = { title: 'New scan — CV Insight' };
+export const metadata = { title: 'Match a job — CV Insight' };
 
 /**
  * `/scan` — SPEC Block E, US-2.

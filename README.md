@@ -567,7 +567,7 @@ npm run test:e2e         # Playwright — see the caveat below
    items the split produced, then save — nothing is written until you confirm.
    Saving is also what indexes them, and coverage is always decided against this
    base, never against a resume you paste into a scan.
-4. **New scan.** Paste the job posting and press **Analyze**, for the match score,
+4. **Match a job.** Paste the job posting and press **Analyze**, for the match score,
    the requirement-by-requirement coverage table and the keyword gaps.
 5. **Generate tailored resume**, on the result screen: the draft, the rubric
    judge's card beside it, and one automatic revision if the judge asked for one.
