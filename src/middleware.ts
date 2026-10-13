@@ -1,30 +1,8 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { isAuthPath, isPublicPath } from '@/lib/auth/publicPaths';
 import { AUTH_COOKIE_OPTIONS, cappedMaxAge } from '@/lib/supabase/cookie-options';
-
-/**
- * Public routes — everything else under the matcher requires a session.
- * `/privacy` and `/impressum` are also excluded from the matcher below, so these
- * entries are belt-and-braces: if the matcher is ever widened, the public pages
- * must still not redirect.
- *
- * `/impressum` joins them in v2.24. Both pages exist to be readable by someone
- * with no account — an Impressum a visitor is redirected away from does not
- * identify anyone, and a privacy statement you must sign up to read is the same
- * defect.
- *
- * `/pricing` joins them in v3.0: the plans have to be readable before anyone
- * decides to sign up. It is the one public page that reads the session — for
- * the button alone — and it does that itself, with getUser(), in the page.
- */
-const PUBLIC_PATHS = ['/login', '/signup', '/privacy', '/impressum', '/pricing'];
-/** Signed-in users are bounced away from these. */
-const AUTH_PATHS = ['/login', '/signup'];
-
-function startsWithPath(pathname: string, paths: readonly string[]) {
-  return paths.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-}
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -80,11 +58,11 @@ export async function middleware(request: NextRequest) {
     return response;
   };
 
-  if (!user && !startsWithPath(pathname, PUBLIC_PATHS)) {
+  if (!user && !isPublicPath(pathname)) {
     return redirectTo('/login');
   }
 
-  if (user && startsWithPath(pathname, AUTH_PATHS)) {
+  if (user && isAuthPath(pathname)) {
     return redirectTo('/scan');
   }
 
@@ -109,10 +87,11 @@ export const config = {
   //                `impressum(?:/|$)`. It has no children either, and the day
   //                it grows one, that child should be inside the fence until
   //                someone decides otherwise.
-  //  - `pricing` — public too (v3.0), EXACT path on the same terms. The page
-  //                reads the session itself for its one button; a visitor
-  //                must reach it without a redirect to /login.
   //  - static assets.
+  // NOT excluded: `pricing`. It is public (lib/auth/publicPaths.ts lets a
+  // visitor through), but it is the one public page that reads the session,
+  // and a session refreshed by the page's getUser() reaches the browser only
+  // through the cookies this middleware writes (v3.0d).
   // Dots are written [.] so a later edit cannot silently un-escape them into
   // "any character".
   // Every exclusion is ANCHORED to a path segment. An unanchored `api` also
@@ -121,6 +100,6 @@ export const config = {
   // /applications/x.png skipped the fence entirely. The (app) layout caught
   // those, but a second net is not the boundary.
   matcher: [
-    '/((?!api(?:/|$)|privacy$|impressum$|pricing$|_next/static(?:/|$)|_next/image(?:/|$)|favicon[.]ico$|[^/]+[.](?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest)$).*)',
+    '/((?!api(?:/|$)|privacy$|impressum$|_next/static(?:/|$)|_next/image(?:/|$)|favicon[.]ico$|[^/]+[.](?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest)$).*)',
   ],
 };

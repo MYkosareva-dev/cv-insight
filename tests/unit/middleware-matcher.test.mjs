@@ -4,6 +4,8 @@ import path from 'node:path';
 import test, { describe } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { isAuthPath, isPublicPath } from '../../src/lib/auth/publicPaths.ts';
+
 /**
  * The middleware matcher decides which requests reach the auth fence at all, so
  * a mistake in it is invisible: nothing errors, the fence simply is not there.
@@ -48,7 +50,6 @@ const EXPECTATIONS = [
   // v2.24: the same lookalike, one page later. `impressum` unanchored would
   // also excuse /impressumleak from the fence.
   ['/impressumleak', RUNS],
-  // v3.0: and once more for /pricing.
   ['/pricingleak', RUNS],
 
   ['/', RUNS],
@@ -79,8 +80,10 @@ const EXPECTATIONS = [
   // The Impressum is public for the same reason and on the same terms (v2.24).
   ['/impressum', BYPASSED],
   ['/impressum/contact', RUNS],
-  // /pricing is public on the same terms (v3.0): the page, never a subtree.
-  ['/pricing', BYPASSED],
+  // v3.0d: /pricing is public but NOT excluded — the one public page that
+  // reads the session, so the middleware must run to write a refreshed cookie.
+  // That it does not REDIRECT a visitor is pinned below, by isPublicPath().
+  ['/pricing', RUNS],
   ['/pricing/checkout', RUNS],
   // Real static assets.
   ['/favicon.ico', BYPASSED],
@@ -120,5 +123,39 @@ describe('middleware matcher — the fence must cover every member route', () =>
         `"${bare.slice(0, -1)}" is excluded without a segment anchor — it would also match a prefix`,
       );
     }
+  });
+});
+
+/**
+ * What the middleware does once it runs: a visitor on a public path is let
+ * through, a visitor anywhere else is sent to /login. Imported from the module
+ * src/middleware.ts uses, so this pins the decision rather than a copy of it.
+ */
+describe('middleware redirect — which paths a visitor may open', () => {
+  const VISITOR_ALLOWED = [
+    ['/pricing', true],
+    // v3.0d: /pricing is public as the PAGE only. Inside the matcher, a prefix
+    // rule would let any future child past the fence.
+    ['/pricing/checkout', false],
+    ['/pricingleak', false],
+    ['/login', true],
+    ['/signup', true],
+    ['/privacy', true],
+    ['/impressum', true],
+    ['/', false],
+    ['/scan', false],
+    ['/settings', false],
+    ['/applications/9f2a6c1e-4b7d-4f7a-9e2b-3c8d1a5e7f90', false],
+  ];
+  for (const [pathname, allowed] of VISITOR_ALLOWED) {
+    test(`a visitor on ${pathname} is ${allowed ? 'let through' : 'sent to /login'}`, () => {
+      assert.equal(isPublicPath(pathname), allowed);
+    });
+  }
+
+  test('a member is bounced from the auth forms, never from /pricing', () => {
+    assert.equal(isAuthPath('/login'), true);
+    assert.equal(isAuthPath('/signup'), true);
+    assert.equal(isAuthPath('/pricing'), false);
   });
 });
