@@ -247,6 +247,9 @@ export const AUTH = {
   signOut: 'Sign out',
   emailLabel: 'Email',
   passwordLabel: 'Password',
+  /** The eye toggle inside the password field; the name says what a press will do. */
+  showPassword: 'Show password',
+  hidePassword: 'Hide password',
   signingIn: 'Signing in…',
   creatingAccount: 'Creating account…',
   toSignUp: 'No account? Create one',
