@@ -148,7 +148,8 @@ function snapshotOf(raw: unknown): Snapshot | null {
  *     retries non-2xx, and an unused event must not be retried at it.
  *  3. Read the subscription's CURRENT state from Stripe, for every handled
  *     event — not only for Checkout, which does not carry it. Stripe does not
- *     deliver in order and redelivers for days, so a late copy of an old
+ *     deliver in order and redelivers failed deliveries for a limited window,
+ *     so a late copy of an old
  *     `updated(active)` would otherwise land after `deleted` and hand Pro back.
  *     Reading the subscription at receipt makes every row record what Stripe
  *     says NOW, whichever event announced it. A failed read → 500 and nothing
