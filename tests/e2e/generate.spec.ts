@@ -768,7 +768,7 @@ test.describe('generate', () => {
      * before retrieval, before any model request. What is asserted is what that
      * refusal owes the user: the affordance still states its cost first; the
      * answer is 429 with the Free copy and the plan it was measured against; the
-     * screen offers the way to more (Settings, until /pricing exists); and
+     * screen offers the way to more (/pricing); and
      * NOTHING IS APPENDED — the history the first run wrote is exactly as it was.
      *
      * A SUCCESSFUL regenerate — "it appends, never replaces", the property
@@ -803,9 +803,9 @@ test.describe('generate', () => {
 
     // The refusal names the plan and points at it, rather than being a wall.
     await expect(page.getByText(RESULT.dailyLimitFree)).toBeVisible();
-    await expect(page.getByRole('link', { name: RESULT.dailyLimitSettingsLink })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: RESULT.dailyLimitPricingLink })).toHaveAttribute(
       'href',
-      '/settings',
+      '/pricing',
     );
 
     // NOTHING WAS APPENDED, on screen or in the rows behind it.

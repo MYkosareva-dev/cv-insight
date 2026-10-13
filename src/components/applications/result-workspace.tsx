@@ -248,15 +248,15 @@ export function ResultWorkspace({
         /**
          * A FREE USER AT THE DAILY CEILING SEES THE PLAN, NOT A WALL (SPEC Block
          * E v3.0). The refusal carries the plan it was measured against, and the
-         * way to more is Settings until /pricing exists (SPEC v3.0a item 10).
+         * way to more is /pricing (SPEC v3.0a item 10, v3.0d).
          * Rendering the plan the SERVER named is not a plan decision — the gate
          * already made it.
          */
         if (payload?.error?.code === ERROR_CODES.DAILY_LIMIT && payload?.error?.plan === 'free') {
           toast.error(message, {
             description: (
-              <Link href="/settings" className="underline underline-offset-4">
-                {RESULT.dailyLimitSettingsLink}
+              <Link href="/pricing" className="underline underline-offset-4">
+                {RESULT.dailyLimitPricingLink}
               </Link>
             ),
           });

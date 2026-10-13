@@ -364,10 +364,11 @@ export const SCAN = {
    * 429 DAILY_LIMIT for Free's fourth scan in a rolling 24 h (SPEC v3.0, rule B7).
    * Its own string because `RESULT.dailyLimitFree` is about resumes, and a
    * refusal that names the wrong allowance is one the user cannot act on.
-   * It names no /pricing link: that page is not built yet.
+   * The scan screen renders it as plain text, so it names the Pricing page in
+   * words rather than carrying a link.
    */
   dailyLimitFree:
-    'Your Free plan allows 3 scans per day. Your vacancy was saved — run the analysis from Applications tomorrow, or upgrade to Pro in Settings for higher daily limits.',
+    'Your Free plan allows 3 scans per day. Your vacancy was saved — run the analysis from Applications tomorrow, or see the Pricing page for Pro’s higher daily limits.',
   noRequirements: "We couldn't find concrete requirements in this posting.",
   dropzone: PDF_DROPZONE,
 
@@ -760,16 +761,15 @@ export const RESULT = {
    * 429 DAILY_LIMIT for Free's second tailored resume in a rolling 24 h (SPEC
    * v3.0, edge case L6). SPEC's draft said Pro "removes the daily limits" and
    * "researches your career base step by step". The second is true from the
-   * agentic-retrieval branch on; the first is not (Pro raises the limits), and
-   * the link goes to Settings until /pricing exists — so the copy keeps saying
-   * only what holds.
+   * agentic-retrieval branch on; the first is not (Pro raises the limits) — so
+   * the copy says only what holds. The link under it goes to /pricing.
    */
   dailyLimitFree:
-    'Your Free plan allows 1 tailored resume per day. Try again tomorrow, or upgrade to Pro in Settings for higher daily limits.',
+    'Your Free plan allows 1 tailored resume per day. Try again tomorrow, or upgrade to Pro for higher daily limits and step-by-step research of your career base.',
   /** 400 for a generate body that is not `{ "mode"?: "single" | "agentic" }`. */
   generateBadRequest: 'The request could not be read. Reload the page and try again.',
-  /** The link under a Free daily-limit refusal — to the Plan block, until /pricing exists. */
-  dailyLimitSettingsLink: 'See your plan in Settings',
+  /** The link under a Free daily-limit refusal, to /pricing. */
+  dailyLimitPricingLink: 'Compare plans',
   /** 429 DAILY_LIMIT on Pro — the v2.x copy, unchanged. */
   dailyLimitPro: 'Daily AI limit reached (50 calls). Try again tomorrow.',
 
