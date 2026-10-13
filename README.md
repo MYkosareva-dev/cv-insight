@@ -175,6 +175,43 @@ did not run.
 | `/full-review` | Before a branch's pull request is opened, as the complete review pass. The command file is a generic template whose `subagent_type` names are not agents defined here; in practice the pass is run with this project's own agents |
 | `/team-review` | On a merged phase: fans the review out to `ai-code-reviewer`, `supabase-security`, `nextjs-security` and `ai-architect`, plus `eu-compliance-reviewer` when the diff touches personal data, and consolidates their findings |
 
+## Limitations
+
+Billing runs in Stripe test mode only; no deployment of this app has taken a real
+payment, and the Stripe client refuses to build on anything but a `sk_test_` key.
+Deleting an account removes its ledger rows but does not cancel the Stripe
+subscription or delete the Stripe customer, so that has to be done in Stripe. The
+plan is written only by delivered webhook events, so an event Stripe fires while no
+endpoint is listening never becomes a ledger row and has to be resent by hand
+(`docs/deploy.md`, "Recovering a missed event"). Migrations `001`–`005` have been
+applied from empty to a brand-new project, but `006` and `007` have not had that
+run yet; the procedure is prepared in `docs/eval/fresh-clone-verification.md`. On
+Pro the agent is allowed to run no searches at all when the seeded retrieval
+already covers a small career base — the quality-check screenshot above is that
+case — so agentic retrieval adds evidence only where there is more to find. And
+`npm audit` reports a `braces` advisory reached only through the development-time
+lint configuration, not through anything the app ships (backlog `dp-1`). The rest
+is in [docs/backlog.md](docs/backlog.md).
+
+## Repository map
+
+| Path | What lives there |
+|---|---|
+| `src/app/` | Pages (member screens under `(app)`, auth under `(auth)`, public `/pricing`, `/privacy`, `/impressum`) and the API route handlers under `api/` |
+| `src/lib/chat.ts`, `src/lib/retrieval.ts` | The two gates: every completion and every embedding goes through one of them, after the user and the plan are checked |
+| `src/lib/agentic.ts` | The bounded Pro research loop, pure, called only by `chat.ts` |
+| `src/lib/plan.ts`, `src/lib/stripe/`, `src/lib/billing/` | Plan limits and derivation, the Stripe client, the webhook logic |
+| `src/lib/db/` | One data-access module per table — the only code that touches the database |
+| `supabase/migrations/` | Schema, row-level security policies and the pgvector match function, `001`–`007` |
+| `scripts/check.mjs` | The thirteen boundary rules, run before every build |
+| `tests/unit/` | `node:test` unit suite |
+| `tests/e2e/` | Playwright specs |
+| `docs/eval/` | Measurements and evidence runs |
+| `docs/reviews/` | Review reports, saved verbatim |
+| `docs/backlog.md` | Open findings and what would reopen them |
+| `SPEC.md` | The specification — single source of truth for build details |
+| `CLAUDE.md` | The rule book for how the code may be built |
+
 ## Status and backlog
 
 Open findings, accepted limitations and their reopening conditions are kept in
