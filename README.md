@@ -14,12 +14,13 @@ Remove the models and nothing recognisable is left: parsing the posting, scoring
 the match, grounding the generation and judging the result *are* the product, not
 a feature bolted onto a text editor.
 
-- **Live deployment:** running on Vercel in `fra1`, verified 2026-09-04 —
-  `docs/deploy.md` records the run and the checks that passed. The URL is not
-  committed to this repository: registration is closed and accounts are created by
-  hand, so the link is shared directly rather than published here. Access to the
-  running app — the URL and an account — is available on request:
-  kosareva.my@gmail.com
+- **Live deployment:** https://cv-insight-lime.vercel.app — on Vercel in `fra1`,
+  first verified 2026-09-04 (`docs/deploy.md` records the run and the checks that
+  passed). Registration is open; sign up with an address you control — it is not
+  verified, and no confirmation mail is sent. It is a **demonstration**: do not
+  upload a real resume or real personal details — use invented sample data. The
+  model-provider caveat under *Security and privacy posture* says why. Pro upgrades run in Stripe test mode
+  (card `4242 4242 4242 4242`), so no real payment is possible.
 - **Specification:** `SPEC.md` is the single source of truth for build details.
 - **Agent rule book:** `CLAUDE.md` constrains how the code is allowed to be
   built. On conflict, CLAUDE.md wins, then SPEC.md.
@@ -118,7 +119,54 @@ inside a tagged `<items>` block that the prompt marks as data; the generator is
 **not** given the keyword list, so it cannot pad the resume with terms the base
 does not support. Terms the posting asks for and the base does not honestly
 support are reported separately as `missingHonest` and never written into the
-resume text.
+resume text. This is the **Free** path, and the seed of the Pro one.
+
+### 6b. Agentic generation (Pro)
+
+On Pro the writer may also **search the career base itself**, through one tool,
+`search_career_base`, whose schema has exactly one parameter: `query`. No user
+id, no item id, no limit — the model has no vocabulary for asking about anyone
+else's data, and the search runs through the same `match_documents` fence as a
+scan. The loop is a bounded `while` in the pure `src/lib/agentic.ts`, called only
+by `src/lib/chat.ts`, which supplies the model request and the search:
+
+- **seeded, not replaced** — the first message carries the single-shot retrieval
+  result, so a search can only add evidence to the Free baseline;
+- **budgets are arithmetic in the loop**, not prompt text: at most
+  `MAX_TOOL_ROUNDS = 4` model requests and `MAX_SEARCH_CALLS = 6` searches; every
+  tool call gets a `tool` message back, refused ones included, and the budget is
+  closed with `tool_choice: "none"` while `tools` stays declared;
+- **a round that errors ends the loop** and the run falls through to the
+  single-shot draft it was seeded with, logged as a fallback — as is a model that
+  answers without `tool_calls` when tools are declared;
+- **every search is logged** to `resume_versions.retrieval_log` (round, query,
+  chunk count, best similarity, item titles, refused flag) — never chunk text —
+  and the result screen's research section renders from that log.
+
+The output then goes through the same lexical gate and the same judge as a Free
+draft. `docs/eval/tool-calling-probe.md` is the record that the configured writer
+honours `tools` on this key.
+
+### Plans: what Free and Pro change
+
+The plan is **derived, never stored where a user can write it**: `currentPlan()`
+reads the latest row of the append-only `subscription_events` ledger, which only
+the Stripe webhook writes, through the service role. Pro while that row is
+`active` or `trialing` and its period has not ended; Free otherwise, with no row,
+or when the read fails. Both gates call it right after `getUser()` and refuse with
+`403 PLAN_REQUIRED` or `429 DAILY_LIMIT` before a request body exists — no page
+makes a plan decision. Limits per rolling 24 hours, from `src/lib/plan.ts`:
+
+| | Free | Pro |
+|---|---|---|
+| Chat calls, all steps together | 50 | 50 |
+| Scans (`parse_vacancy`) | 3 | within the 50 |
+| Tailored resumes (`generate`) | 1 | within the 50 |
+| Re-score requests (embeddings) | 20 | 100 |
+| Generation path | single-shot | agentic, seeded with single-shot |
+
+Pro does not raise the overall chat ceiling; it removes the per-step allowances
+inside it. Judge and import calls are bounded by the 50 alone on both plans.
 
 ### 7. The rubric judge, and its single revision
 
@@ -151,7 +199,10 @@ Model calls are metered, so they are bounded by arithmetic rather than by
 convention: at most 2 HTTP requests per pipeline step
 (`MAX_CHAT_REQUESTS_PER_STEP`, one shared budget for the repair retry and the
 network retry — they cap, they never nest), at most 4 chat steps per generate, 50
-**chat** calls per user per rolling 24 hours, and separately 100 re-score rows.
+**chat** calls per user per rolling 24 hours, and separately the re-score rows
+(20 on Free, 100 on Pro). The agentic generate step is the one exemption from the
+per-step cap, with its own: 4 tool rounds and 6 searches, so a Pro generate is
+declared at 12 chat requests at worst against 8 for single-shot.
 The daily chat cap counts chat steps only, by definition: embedding spend is
 outside it, and the re-score endpoint — which is embeddings and no chat at all —
 has the second ceiling for exactly that reason. Ceilings live in
@@ -273,7 +324,7 @@ invisible when it goes wrong:
 
 | | Rule | The failure it makes impossible |
 |---|---|---|
-| R1/R2 | `.from(` and `.rpc(` only inside the eight DAL files listed in `scripts/check.mjs` | one DAL per table; the database is not reachable from a page or a handler, and adding a table means adding a DAL and a line on that list |
+| R1/R2 | `.from(` and `.rpc(` only inside the nine DAL files listed in `scripts/check.mjs` | one DAL per table; the database is not reachable from a page or a handler, and adding a table means adding a DAL and a line on that list |
 | R3 | no `security definer` under `supabase/` | keeps `match_documents` a filter *under* RLS, not a replacement for it |
 | R4 | no `NEXT_PUBLIC_` on a secret name, `.env.example` included | the one prefix that publishes a value to the browser |
 | R5/R6 | no `openrouter.ai` URL and no connection import outside the two gates | a hand-rolled model call that skips the verified-user check |
@@ -320,7 +371,7 @@ requires the clamp at both call sites and a unit test asserts it. `createBrowser
 is banned: it writes the session through `document.cookie`, which can never be
 `httpOnly`.
 
-**Row-level security.** RLS is enabled on all eight owner-scoped tables, every
+**Row-level security.** RLS is enabled on all nine owner-scoped tables, every
 policy scoped `auth.uid() = user_id`. The matrix is deliberately least-privilege,
 and the **absences are the design**:
 
@@ -334,14 +385,17 @@ and the **absences are the design**:
 | `llm_calls` | ✓ | ✓ | — | — | append-only audit log |
 | `imports` | ✓ | ✓ | ✓ | — | no DELETE: removing a source would strip provenance from every item pointing at it |
 | `profiles` | ✓ | ✓ | ✓ | — | no DELETE: the row dies with the account through the cascade, so a delete policy would only add a way to lose a profile without losing the account |
+| `subscription_events` | ✓ | — | — | — | the plan ledger: written only by the Stripe webhook through the service role, and a trigger beneath RLS refuses every UPDATE and every DELETE that is not the account cascade |
 
 Absent rows answer **404, never 403** — the app does not disclose that a row
 exists but belongs to someone else. `ON DELETE CASCADE` still cleans children on
 account deletion; cascades are not blocked by RLS.
 
 **The service-role key.** Read in exactly one module,
-`src/lib/supabase/admin.ts`, imported by exactly one consumer:
-`DELETE /api/account`. R10 pins the read site, because "exactly one module" was a
+`src/lib/supabase/admin.ts`, imported by exactly two consumers, each for one
+stated reason: `DELETE /api/account` (erasure must remove rows the user may not
+delete) and the Stripe webhook (the ledger must be written by something that is
+not the user). R10 pins the read site and names both consumers, because "exactly one module" was a
 documented rule with nothing enforcing it — R7 only proves that *some* reader
 imported `server-only`, which a second consumer would also do.
 
@@ -365,15 +419,22 @@ prompts are built server-side in `src/lib/prompts.ts` and never travel on the
 wire; no API accepts a `role` field or any prompt fragment from the client. The
 judge gate limits the blast radius of anything that gets through.
 
-**Registration is closed.** The deployment is reachable by anyone who has the URL
-— the platform's password wall is not available on this plan — so the gate is new
-sign-ups being **disabled in Supabase**, with accounts created by hand for named
-people. That setting lives outside this repository and nothing here can enforce
-it, so the app stops pretending otherwise: `/signup` keeps its route and explains,
-rather than offering a form that submits into a guaranteed refusal, and `/login`
-does not invite anyone to create an account. Both are fenced on `NODE_ENV`, so the
-test suite still has its form in development. A demonstration notice sits on every
-authenticated screen.
+**Registration is open, and the cost fence is per account.** Anyone can sign up;
+email confirmation is off. What bounds spend is the Free plan, enforced inside the
+two gates. Two limits of that fence are stated here because they are real and
+were accepted by the owner, not overlooked (SPEC Block E, Decision v3.0c):
+
+- **Nothing bounds the deployment's total.** The model-provider key belongs to
+  another party and carries no credit limit the operator can set, so the Free
+  plan bounds each account and N scripted sign-ups receive N allowances. When the
+  other party's balance runs out, every model call answers `AI_UNAVAILABLE`, which
+  the app reports honestly. Backlog `gp-2`.
+- **The per-account limits are not race-safe.** The gates count `llm_calls` rows
+  committed after each response, so one account firing requests in parallel can
+  pass a cap before any of them is counted. Backlog `gp-1` is the fix — a
+  reservation taken before the request.
+
+A demonstration notice sits on every authenticated screen.
 
 **Function region.** `vercel.json` pins `fra1`. The platform default is `iad1`
 (Washington DC), so without it every resume would be processed in the United
@@ -384,14 +445,17 @@ Components, which are the pinned functions.
 
 **Erasure.** Settings → delete account removes the auth user and every owned row.
 This is **witnessed, not argued**: `docs/eval/erasure-evidence.md` records a
-throwaway account populated until all eight owner-scoped tables held rows, deleted
+throwaway account populated until the eight pre-billing owner-scoped tables held rows, deleted
 **through the app's own control** rather than by SQL, with per-user counts taken
 before and after — all eight to zero (`career_items` 8→0, `documents` 24→0,
 `vacancies` 1→0, `applications` 1→0, `resume_versions` 2→0, `llm_calls` 9→0,
 `imports` 1→0, `profiles` 1→0) and the `auth.users` row gone. It witnesses nothing
 about data held at the model provider, and nothing about `auth.audit_log_entries`,
 which survives deletion by design and has its own 90-day purge with its own
-succeeded-run record.
+succeeded-run record. A second run (2026-10-12) adds the ninth table: on an
+account holding ledger rows, a direct UPDATE and a direct DELETE were refused by
+the trigger, and deletion through Settings took the ledger rows and the auth user
+to zero.
 
 **No analytics, no trackers, no third-party cookies.** This app ships no analytics
 package, no telemetry and no web-vitals reporter — verified against a clean build
@@ -416,8 +480,11 @@ therefore cannot be verified by the operator, and `/privacy` says so in those
 words instead of implying otherwise. Resume and vacancy text are transferred to
 the United States, to Anthropic, OpenAI and Google; no account identifier travels
 with them — not the email address, not the user id, not a session token, not a row
-id. This is why the demonstration notice asks people not to paste a real resume,
-and why the deployment is a demonstration rather than a service. Moving to an
+id. The one profile field that does travel is the display name you save, inside
+the generation and judge prompts, for the resume's name line. This is why the
+demonstration notice on every member screen, like `/privacy`, asks for invented
+sample data and no real resume or real personal details at all, and why the
+deployment is a demonstration rather than a service. Moving to an
 operator-owned provider account retires the notice, that paragraph of `/privacy`,
 and the open compliance finding behind them together.
 `docs/openrouter-processing.md` is the record of what leaves, where it goes, and
@@ -434,19 +501,25 @@ enabled.
 npm install
 ```
 
-Create `.env.local` with these four variables. **Names only here** — values belong
-in that file, which is gitignored and never committed:
+Create `.env.local` with these seven variables. **Names only here** — values
+belong in that file, which is gitignored and never committed:
 
 ```
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 OPENROUTER_API_KEY
 SUPABASE_SERVICE_ROLE_KEY
+STRIPE_SECRET_KEY
+STRIPE_WEBHOOK_SECRET
+STRIPE_PRICE_PRO
 ```
 
 The two `NEXT_PUBLIC_` variables are the only ones that may ever reach the
-browser. The other two are server-only and are read behind `import 'server-only'`;
-`.env.example` carries the same four names and no values.
+browser. The other five are server-only and are read behind
+`import 'server-only'`; `.env.example` carries the same seven names and no values.
+`STRIPE_SECRET_KEY` must be a `sk_test_` key — the Stripe client refuses to build
+on anything else. Without the three Stripe names the app runs on Free and the
+billing routes answer an error; `docs/deploy.md` has the Stripe setup.
 
 Apply the migrations in order, in the Supabase SQL editor:
 
@@ -456,11 +529,14 @@ supabase/migrations/002_audit_retention.sql
 supabase/migrations/003_imports.sql
 supabase/migrations/004_profiles.sql
 supabase/migrations/005_profile_contacts.sql
+supabase/migrations/006_subscription_events.sql
+supabase/migrations/007_agentic_step.sql
 ```
 
-All five have been applied in that order to a brand-new project, with RLS and the
-policy count checked on all eight tables afterwards:
-`docs/eval/fresh-clone-verification.md` is the run.
+`001`–`005` have been applied in that order to a brand-new project, with RLS and
+the policy count checked on all eight tables afterwards:
+`docs/eval/fresh-clone-verification.md` is the run. The re-run with `006` and
+`007` on nine tables is prepared in the same file and has not been made yet.
 
 **Turn `Confirm email` off before you sign up.** Supabase dashboard →
 **Authentication → Providers**, the *User Signups* card at the top of that page →
@@ -483,7 +559,7 @@ npm run test:e2e         # Playwright — see the caveat below
 
 **The first run, in the order that makes each step possible:**
 
-1. **Sign up** at `/signup` — the form is development-only — and sign in.
+1. **Sign up** at `/signup` and sign in.
 2. **Settings.** Save `Your name` and the contact details. The name line of a
    generated resume and the header of an exported `.docx` both come from here;
    with no name saved, the resume carries a visible `[YOUR NAME]` placeholder.
@@ -497,11 +573,10 @@ npm run test:e2e         # Playwright — see the caveat below
    judge's card beside it, and one automatic revision if the judge asked for one.
    Then **Download .docx** — and **Quality**, for what the run actually cost.
 
-**The Playwright suite needs a project with registration open.** All four specs
-create a throwaway account through the `/signup` form, so they cannot run against
-the deployed project — see the note at the end of
-`docs/eval/phase-6-e2e-run.txt`. Point them at a development Supabase project that
-allows sign-ups, or pre-create accounts and have the specs sign in instead.
+**The Playwright suite needs a project with registration open and confirm-email
+off.** Every spec creates a throwaway account through the `/signup` form. Since
+SPEC v3.0c the deployed project qualifies; a development project works the same
+way. It makes real, paid model calls either way.
 
 `docs/deploy.md` is the ordered deployment procedure and its verification
 checklist.
@@ -525,10 +600,10 @@ service-role key are absent rather than faked — no build step or unit test rea
 either, and a fake value would let a step that starts needing one pass anyway.
 
 **The Playwright suite is not in CI, and this is a decision rather than an
-omission.** It needs a Supabase project with sign-ups open, because all four
-specs create a throwaway account through the `/signup` form — and the deployment's
-own project has registration closed, which is the only thing keeping strangers
-out of it. It also makes real, paid OpenRouter calls: `scan.spec.ts` and
+omission.** It needs a Supabase project with sign-ups open, because every spec
+creates a throwaway account through the `/signup` form; since registration opened
+(SPEC v3.0c) the deployment's own project qualifies, so the obstacle that remains
+is cost. It makes real, paid OpenRouter calls: `scan.spec.ts` and
 `generate.spec.ts` drive genuine parses, embeddings, generations and rubric
 judgements, which is exactly what makes them evidence rather than a mock, and it
 is also a bill on every run. Putting it on every pull request would mean paying
@@ -537,7 +612,11 @@ none of the value.
 
 So it stays a deliberate, recorded run. The runs live in `docs/eval/` — one file
 per round, `docs/eval/phase-6-e2e-run.txt` and
-`docs/eval/fresh-clone-verification.md` being the two most recent — and
+`docs/eval/fresh-clone-verification.md` being the two before it, and
+`docs/eval/e2e-go-public-run.txt` the most recent: the first run against the
+deployed project (2026-10-13), 42 passed, 3 skipped, 1 failed — the failure a
+test asserting on a tile the empty state does not draw, fixed in the test and
+re-run alone, 4 passed — and
 `docs/backlog.md` carries the entry that would make it routine: a named test
 project the suite can select without hand-editing `.env.local`. Until that
 exists, a green CI badge means the static half is sound and says nothing about
@@ -651,15 +730,19 @@ re-score is the change of corpus, not the change of text.
 **Erasure is account-level.** Career items are individually deletable; job
 postings, scans, generated versions, import records and usage rows go with the
 account. `/privacy` states this rather than implying the erasure story is
-complete. It is carried deliberately — with registration closed the store holds
-one person's own data — and it reopens the moment a second real person holds an
-account.
+complete. With registration open, a second real person holding an account is
+now expected, so the condition that reopens this has arrived: it is carried for
+the go-public round because the deployment is a demonstration whose notice asks
+for invented data only, and it is open as backlog `eu-8`.
 
 **The Impressum publishes no postal address.** `/impressum` names the operator and
 a contact email, and shows the postal address as a marked placeholder, with a
-paragraph explaining why: this deployment takes no money. The day the Stripe key
-is not a test key, the placeholder is a defect and the address goes in first.
-That trigger is recorded beside `IMPRESSUM_FILLED` in `src/lib/copy.ts`.
+paragraph explaining why: this deployment cannot take money. Before any
+deployment that can take a payment, the address goes in first. The check that
+detects that moment is the Stripe key: the day `STRIPE_SECRET_KEY` is not a
+`sk_test_` key, the placeholder is a defect. That trigger is recorded beside
+`IMPRESSUM_FILLED` in `src/lib/copy.ts`. Whether the position holds for a public
+deployment at all is a question for counsel, backlog `F2`.
 
 **Two open defects the sections above read past, named here so they are not a
 surprise.** The career-item `[id]` route does not parse its segment, so a
@@ -671,30 +754,39 @@ refuse the save, so hitting the cap through an import costs money. Both are
 the top of that file for the same reason they are here.
 
 **Password reset is not implemented.** It needs email delivery, which is out of
-scope; accounts are created by hand.
+scope, and sign-up sends no mail either. A forgotten password cannot be
+recovered. Because addresses are not verified, the operator acts on a deletion
+request for such an account only once it is confirmed from that mailbox.
 
 **English only.** The UI and generated resumes are English. A non-English posting
 parses, and the resume is still written in English.
 
-**Model calls have no per-version provenance.** `llm_calls` records which model
-answered each call, and `resume_versions` has no model column, so "written by" is
-a statement about the application's most recent generation rather than about the
-version on screen. That is also what stops `/quality` from reporting rubric
-outcomes *by model*, which is the measurement that would answer whether the
-fallback really fails grounding more often.
+**Older versions have no per-version provenance.** Migration `006` added
+`resume_versions.model` (and `retrieval_log`), set on insert, so a version written
+since then says which model wrote it. Versions written before `006` carry `NULL`,
+and for those "written by" is still a statement about the application's most
+recent generation. `/quality` does not yet report rubric outcomes *by model* —
+the column now makes that measurement possible, and it is not built.
+
+**The Stripe customer is not deleted with the account.** Deleting an account
+removes its ledger rows through the cascade (witnessed in
+`docs/eval/erasure-evidence.md`), but the customer object in Stripe is not deleted
+by this app. `/privacy` says so and offers deletion on request to the operator.
+
+**A missed webhook leaves the plan behind Stripe.** The plan is read from the
+ledger, and only the webhook writes the ledger. If a delivery fails, someone who
+upgraded stays on Free — and someone who cancelled keeps Pro until the period end
+the last delivered row recorded — until Stripe's retry lands. This deployment
+runs in test mode, where Stripe retries a failed delivery for a limited time
+only; the destination's delivery log in the Stripe dashboard shows each attempt
+and when the next one is due. Settings says "Your upgrade is being confirmed"
+only on the return from Checkout; a later visit inside that window shows plain
+Free, and a missed cancellation shows Pro with no notice at all. There is no
+reconciliation job that polls Stripe instead; that is a deliberate SPEC decision,
+not an omission.
 
 **Not built, deliberately:** i18n, realtime, notifications, analytics, an admin
 panel. `SPEC.md`'s module checklist gives the reason for each.
-
-**Plans and billing are built:** Free and Pro, with the plan derived from the
-`subscription_events` ledger and enforced inside the two gates, and Stripe in
-test mode on hosted pages, which `/privacy` names as the second processor.
-
-**Agentic retrieval is built as the Pro generation path:** the writer may search
-the career base through one tool, `search_career_base`, inside a bounded loop
-(4 model requests, 6 searches), seeded with the single-shot retrieval and judged
-exactly like it. The full Pro-path walkthrough for this README is deferred to
-go-public (SPEC DoD 16).
 
 There is no application
 cron either, but that is not the same as none: the 90-day purge of the

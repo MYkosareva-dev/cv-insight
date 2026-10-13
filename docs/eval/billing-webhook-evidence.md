@@ -1,12 +1,12 @@
 # Billing — webhook evidence
 
-**Status: LOCAL HALF RECORDED, DEPLOYMENT HALF PENDING.** SPEC Block H item 12
-asks for one real test-mode upgrade witnessed end to end on the deployment. This
-file holds the local run that came first: a real Stripe test-mode Checkout,
-Customer Portal and `stripe listen` against the dev server and the live Supabase
-project. It found one defect, recorded below with its fix. The deployment run —
-the dashboard's own webhook endpoint and its delivery log — is still to do, and
-item 12 is not closed until it is here.
+**Status: LOCAL AND DEPLOYMENT HALVES RECORDED.** SPEC Block H item 12 asks for
+one real test-mode upgrade witnessed end to end on the deployment. This file
+holds the local run that came first — a real Stripe test-mode Checkout, Customer
+Portal and `stripe listen` against the dev server and the live Supabase project,
+which found one defect, recorded below with its fix — and then the deployment
+run of 2026-10-13 through the dashboard's own webhook destination and its
+delivery log, under "Deployment run" at the end.
 
 ## How it was run
 
@@ -104,8 +104,9 @@ ones, which is how a cancellation that was undone and redone reads in a ledger.
 
 ## What this does NOT witness
 
-- **The deployment.** The dashboard's webhook endpoint, its signing secret, its
-  API version and its delivery log are SPEC Block H item 12's other half.
+- **The deployment.** The dashboard's webhook destination, its signing secret,
+  its API version and its delivery log were item 12's other half — recorded
+  since, under "Deployment run" below.
 - **`customer.subscription.deleted`.** It arrives at the period end, 12 November
   2026, or earlier through a test clock; neither has happened.
 - **Pro lapsing to Free on its own** once `current_period_end` passes (edge case
@@ -113,3 +114,81 @@ ones, which is how a cancellation that was undone and redone reads in a ledger.
 - **A failed renewal** (`past_due`, edge case P11/P16), or the portal opened from
   the past-due card.
 - **The agentic path.** It is not built; a Pro account runs the single-shot path.
+
+## Deployment run (2026-10-13)
+
+The half SPEC Block H item 12 still needed, run by the owner and reported
+verbatim below; this file records it and adds nothing to it.
+
+- **When:** 2026-10-13, ~11:08–11:25 UTC.
+- **Deployment:** https://cv-insight-lime.vercel.app, built from `main` at
+  commit `740226d` with the three Stripe environment variables added in Vercel.
+  This is the billing code as merged; `feature/go-public` changes none of it.
+- **Stripe:** test mode. Event destination **"brilliant-breeze"** →
+  `https://cv-insight-lime.vercel.app/api/stripe/webhook`, API version
+  `2026-08-26.dahlia`.
+- **Account:** `free-test3@example.com`, on Free before the run.
+
+### 1. Upgrade
+
+Settings → [Upgrade to Pro] → Stripe Checkout, test card 4242, at ~11:08 UTC.
+Returned to `/settings?checkout=success` → toast "You're on Pro." → Plan block
+"Pro plan · Renews on 13 November 2026".
+
+```
+checkout.session.completed  evt_1UQ3Ze2NKY1mL9wL8W3YSjUZ  11:08:52 UTC  HTTP 200  {"received": true}
+```
+
+### 2. Replay
+
+Resent from the dashboard at 11:20:48 UTC: the same event id, HTTP 200, marked
+"Resent manually / Recovered". The ledger query by user still showed **one** row
+for `evt_1UQ3Ze…` — edge case P4, the redelivery that is a caught unique
+violation and a 200, observed on the deployment.
+
+### 3. Cancel at period end
+
+Customer Portal, cancel at period end, 11:24:04 UTC. Two deliveries, both source
+"Customer portal":
+
+```
+customer.subscription.updated  evt_1UQ3oN2NKY1mL9wL8X1oD4dy  HTTP 200
+customer.subscription.updated  evt_1UQ3oO2NKY1mL9wLkAIlCfPP  HTTP 200
+```
+
+Ledger: two new rows, `status = active`, `cancel_at_period_end = true` — the
+`1df3f62` fix (a scheduled cancellation read from `cancel_at` as well as
+`cancel_at_period_end`) holds on the deployment. Settings: "Cancels on 13
+November 2026 — Pro stays until then."
+
+### 4. The ledger after the run
+
+`select stripe_event_id, stripe_event_type, status, cancel_at_period_end …
+order by received_at`, for the run account:
+
+```
+evt_1UQ3Ze…  checkout.session.completed     active  false
+evt_1UQ3oN…  customer.subscription.updated  active  true
+evt_1UQ3oO…  customer.subscription.updated  active  true
+```
+
+**Three rows from four deliveries** — the replay wrote nothing.
+
+### What the deployment run witnesses, and what it does not
+
+Witnessed: the deployment's own signing secret verifies real deliveries (every
+one answered 200, and a wrong secret would have answered 400 and written
+nothing); Checkout → `checkout.session.completed` → a ledger row → Settings
+reading Pro; a redelivered event producing no second row; a portal cancellation
+producing `cancel_at_period_end = true` rows while the plan stays Pro.
+
+Not witnessed, and not claimed:
+
+- **`customer.subscription.deleted`.** A cancellation at period end sends it on
+  13 November 2026, not during the run. The template's third delivery line asked
+  for it; this run did not produce it, and nothing here says it arrived.
+- **Settings reading Free again** after the period end — the same event.
+- **A failed renewal** (`past_due`), as in the local run.
+- **The run account's erasure.** Deleting the account through Settings takes its
+  ledger rows with it (witnessed separately in `docs/eval/erasure-evidence.md`);
+  whether this account has been deleted yet is not recorded here.

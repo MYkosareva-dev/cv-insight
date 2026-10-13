@@ -7,50 +7,27 @@ import { AUTH } from '@/lib/copy';
 export const metadata = { title: 'Create account — CV Insight' };
 
 /**
- * REGISTRATION IS CLOSED ON A DEPLOYMENT, AND THIS PAGE SAYS SO (v2.25, gate
- * finding `vs-1`).
+ * REGISTRATION IS OPEN IN EVERY ENVIRONMENT (SPEC v3.0, superseding v2.25).
  *
- * The deployment was to be gated by Vercel Password Protection. That is a Pro
- * feature, so the gate moved: the URL is reachable, and what keeps strangers out
- * is **new sign-ups disabled in the Supabase dashboard**, with accounts created
- * by hand for named people. That setting lives outside this repository and
- * nothing here can enforce it — but this page can stop lying about it.
+ * v2.25 closed sign-ups on the deployment because an account could spend
+ * without limit and the only fence was the door. v3.0 moves the fence to where
+ * every other limit in this app already lives: the Free plan bounds what one
+ * account can spend, enforced inside the two gates (`lib/chat.ts`,
+ * `lib/retrieval.ts`) and never on this page. So the form renders on a
+ * deployment as it does in development, and there is no `NODE_ENV` branch here.
  *
- * With registration closed, `signUpAction` cannot succeed: Supabase refuses the
- * call. Rendering the form anyway would offer a control whose only outcome is a
- * refusal, which is the same defect class as a button that spends money and says
- * nothing — the app claiming a capability it does not have.
+ * What that fence does NOT cover is stated in SPEC's v3.0 decision rather than
+ * hidden: the provider key carries no credit limit, so the total across many
+ * accounts is unbounded, and the per-account caps are not race-safe under
+ * concurrent requests. Both are owner-accepted and in the backlog.
  *
- * WHY `NODE_ENV` AND NOT A NEW ENVIRONMENT VARIABLE. It is the discriminator
- * this codebase already uses for "this is a deployment" — the `/api/dev/*` fence
- * is the same line, and that fence is now witnessed against a production build
- * (Block H item 9). A dedicated `REGISTRATION_OPEN` flag would be a second
- * source of truth about the same fact, settable to the wrong value, and it would
- * still not be the actual gate. The actual gate is the Supabase setting; this is
- * the page telling the truth about it.
+ * Email confirmation stays OFF in the Supabase dashboard: this app sends no mail
+ * of its own, and the Playwright suite registers through this form.
  *
- * THE FORM SURVIVES IN DEVELOPMENT, and that is deliberate: the Playwright suite
- * creates a throwaway account per run through this form, and it only ever runs
- * against a development server. Note the limit of that — the suite talks to the
- * SAME Supabase project, so once sign-ups are disabled there the suite cannot
- * create accounts either, whatever this page renders. That consequence is the
- * deploy notes' problem, not this file's, and it is written down there rather
- * than left to be discovered.
+ * The privacy line sits INSIDE the card, at the point of collection, and not only
+ * in the layout footer (owner amendment, v3.0c). It informs; it asks for nothing.
  */
 export default function SignupPage() {
-  if (process.env.NODE_ENV === 'production') {
-    return (
-      <div className="flex flex-col gap-4">
-        <h1 className="text-xl font-semibold">{AUTH.registrationClosedTitle}</h1>
-        <p className="text-muted-foreground text-sm">{AUTH.registrationClosedBody}</p>
-        <p className="text-muted-foreground text-sm">{AUTH.registrationClosedSignIn}</p>
-        <Link href="/login" className="text-primary text-sm underline-offset-4 hover:underline">
-          {AUTH.signIn}
-        </Link>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">{AUTH.signUp}</h1>
@@ -61,6 +38,13 @@ export default function SignupPage() {
         altHref="/login"
         altLabel={AUTH.toSignIn}
       />
+      <p className="text-muted-foreground text-sm">
+        {AUTH.signUpPrivacyBefore}
+        <Link href="/privacy" className="text-primary underline-offset-4 hover:underline">
+          {AUTH.signUpPrivacyLink}
+        </Link>
+        {AUTH.signUpPrivacyAfter}
+      </p>
     </div>
   );
 }

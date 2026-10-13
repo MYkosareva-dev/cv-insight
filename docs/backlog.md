@@ -75,8 +75,12 @@ brand-new project, and the closure is in the table below.
    open item that costs money every time it fires. Phase 2.
 
 6. **The Playwright suite has a project to run on again — once, not routinely.**
-   Registration is closed on the deployment's own Supabase project and that
-   setting is its only gate, so the four specs cannot sign up there. The durable
+   **v3.0c: registration is open on the deployment's own Supabase project**, so
+   the specs can sign up there again, and the first run against it is recorded
+   in `docs/eval/e2e-go-public-run.txt` (2026-10-13: 42 passed, 3 skipped, 1
+   failed — a test defect, fixed and re-run alone, 4 passed). It is still a
+   run against the production database with paid model calls, so the points below
+   remain what turns it into a routine. The durable
    answer named at the end of `docs/eval/phase-6-e2e-run.txt` — option 1, a second
    Supabase project with registration open and `001`–`005` applied — **now exists
    and has been demonstrated**: the fresh-clone run of 2026-09-09 ran the suite on
@@ -127,10 +131,11 @@ here so that when the condition arrives the work is already identified.
 
 ### When a second real person holds an account
 
-- **`eu-8`** — granular erasure. Carried by owner decision precisely because the
-  store holds one person's own data today and account deletion removes all of it.
-  A second account holder is the event that makes it an exposure rather than a
-  limitation `/privacy` states plainly. The fix needs an owner amendment to
+- **`eu-8`** — granular erasure. **The condition has arrived (v3.0c):**
+  registration is open, so a second account holder is expected rather than
+  hypothetical. Still carried for the go-public round — the demonstration notice
+  asks for invented data and `/privacy` states the limitation plainly — but it is
+  now an exposure waiting on a fix, not a limitation waiting on an event. The fix needs an owner amendment to
   CLAUDE.md's RLS matrix, which is deliberate and should stay deliberate.
 
 ### When the test suite can create accounts again
@@ -253,10 +258,61 @@ Each of these is a race that a single warm serverless instance hides.
   rather than the search.
 - **Speed Insights**, above.
 
+### Accepted at go-public (v3.0c, owner decision 2026-10-13)
+
+Opened registration with both of these known. SPEC Block E, Decision v3.0c, is
+the record; README's cost-fence paragraph states both.
+
+- **`gp-1` — the per-account caps are not race-safe (OPEN, accepted risk).**
+  Review finding H1 (`docs/reviews/full-review-2026-10-12-architecture.md`,
+  rated High by `full-review-2026-10-12-nextjs-security.md` once registration
+  opens): the gates count `llm_calls` rows committed in `after()`, so N parallel
+  requests from one account all read the same count and all pass — up to ~8
+  generate requests each. Fix: a reservation (a row written before the request,
+  settled after) or a `security invoker` counter under `pg_advisory_xact_lock`,
+  with a witnessed run of parallel requests being refused. Its own branch and
+  architect pass.
+- **`gp-2` — the deployment's total spend is unbounded under bulk sign-up (OPEN,
+  accepted risk).** The provider key belongs to another party and carries no
+  credit limit the operator can set; confirm-email is OFF. The Free plan bounds
+  each account, so N scripted accounts receive N allowances. Closes when the
+  deployment runs on an operator-owned key with a credit limit — the same event
+  that retires the demonstration notice and `eu-2`.
+- **`gp-3` — the demonstration notice and the point of collection (PARTLY
+  CLOSED v3.0c).** From `docs/reviews/go-public-eu-compliance.md` findings 2 and
+  4. Closed by owner amendment: the notice is aligned to `/privacy` (invented data
+  only), and `/signup` carries an informational privacy line inside the card.
+  **Still open:** the notice renders only on the authenticated shell, so a
+  stranger creates an account before seeing it. Rendering it in the `(auth)`
+  layout or on `/signup` is the remaining change, and it is the owner's.
+
 ### Open questions for counsel (billing, `docs/reviews/billing-eu-compliance.md`)
 
 Both are legal judgments an engineering review cannot sign off, which is why they
-are questions and not findings. Neither blocks a test-mode deployment on its own;
+are questions and not findings. A third, from the compliance-and-docs round, sits
+with them:
+
+- **`F2` — the Impressum's § 5 DDG position (OPEN, needs counsel).**
+  `docs/reviews/compliance-and-docs-eu-compliance.md` F2: whether a public,
+  test-mode-only deployment run by a natural person may omit a serviceable postal
+  address is a legal argument, not an engineering one, and registration opening
+  (v3.0c) is when the reviewer asked for it to be answered. The page states the
+  position and its trigger honestly; counsel decides whether the position holds.
+  (`F5` from the same report is closed, not carried: SPEC v3.0a decision 12
+  records the as-built Impressum text.)
+  Go-public status (`docs/reviews/go-public-eu-compliance.md` finding 1):
+  registration opened with this still open. The reviewer also asks that the
+  rendered `addressRule` stop paraphrasing the statute (F2(a)); the owner kept the
+  address paragraph unchanged for this round, so that edit waits with this entry.
+- **`eu-gp-3` — the model-provider chain, now public (OPEN, needs counsel).**
+  `docs/reviews/go-public-eu-compliance.md` finding 3: with self-serve sign-up,
+  real data from people the operator does not know is foreseeable whatever the
+  notice says, and the provider account has no processing contract with the
+  controller (Art. 28) and transfers to the US (Art. 44 et seq.). Counsel's answer,
+  or an owner risk-acceptance Decision, alongside `F2`. The engineering fix is
+  unchanged: an operator-owned key with recorded settings (`eu-2`).
+
+The two billing questions: neither blocks a test-mode deployment on its own;
 both have to be answered before the deployment can take a payment.
 
 - **`eu-b-p2` — Stripe's role and the transfer it relies on (OPEN).** /privacy
@@ -300,9 +356,11 @@ both have to be answered before the deployment can take a payment.
     `customer`, so Stripe may create a new customer per session and the setting
     may never fire. Fix: witness a second Checkout from a Pro account; if Stripe
     allows it, pass the stored `stripe_customer_id` as `customer`.
-  - **m4** — SPEC Block H item 12 (the deployment half of
-    `docs/eval/billing-webhook-evidence.md`) and the Stripe dashboard steps in
-    `docs/deploy.md` are still open; they belong in every hand-over until done.
+  - ~~**m4**~~ **Closed 2026-10-13** — SPEC Block H item 12's deployment half is
+    recorded in `docs/eval/billing-webhook-evidence.md` ("Deployment run"), and
+    the Stripe dashboard steps are in `docs/deploy.md` (S1–S6).
+    `customer.subscription.deleted` on the deployment is not yet witnessed; it
+    arrives at the run account's period end, 13 November 2026.
   - **n1** — the generate route buffers its body with no size cap; refuse over
     ~1 KB on `Content-Length` first, as the scan route does.
   - **n2** — `src/components/billing-button.tsx` navigates to whatever URL the
@@ -739,9 +797,9 @@ round and `docs/deploy.md` is the ordered procedure.
 > into the v2.24 privacy rewrite) · the model-slug wording on `/privacy`, replaced
 > by the three provider names on owner instruction.
 
-- **CARRIED by owner decision — `eu-8`, granular erasure.** Only career items are individually deletable; job postings, scans, generated versions, import records and `llm_calls` rows go with the account. The reasoning for carrying it: with registration closed, the store holds only the owner's own data, and account deletion already removes all of it — so the Art. 17 exposure the finding describes has no third-party data to attach to. `/privacy` states the limitation plainly rather than implying the erasure story is complete. **This reopens the moment a second real person holds an account**, which is exactly when the deployment stops being a single-user demo — revisit it then, and note that adding the missing DELETE policies needs an owner amendment to CLAUDE.md's RLS matrix, which is deliberate and should stay deliberate.
+- **CARRIED by owner decision — `eu-8`, granular erasure.** Only career items are individually deletable; job postings, scans, generated versions, import records and `llm_calls` rows go with the account. The reasoning for carrying it: with registration closed, the store holds only the owner's own data, and account deletion already removes all of it — so the Art. 17 exposure the finding describes has no third-party data to attach to. `/privacy` states the limitation plainly rather than implying the erasure story is complete. **This reopens the moment a second real person holds an account** (v3.0c: that moment has arrived — see the `eu-8` entry under *Grouped by what would reopen them*), which is exactly when the deployment stops being a single-user demo — revisit it then, and note that adding the missing DELETE policies needs an owner amendment to CLAUDE.md's RLS matrix, which is deliberate and should stay deliberate.
 - **CLOSED — `eu-9`, `0 owned rows` after deletion is now witnessed.** Owner-run on 2026-09-04 against the live project and recorded in `docs/eval/erasure-evidence.md`: a throwaway account populated until all eight owner-scoped tables held rows, deleted through the app's own [Delete account and data] control rather than by SQL, with per-user counts taken before and after — all eight to zero, and the `auth.users` row gone. It closed the way the finding recommended, with a SQL-level check recorded in `docs/eval/` rather than an R10 carve-out, so `SUPABASE_SERVICE_ROLE_KEY` is still read in exactly one module and the thirteen rules are still frozen. SPEC Block H item 3 carries the same conclusion.
-- **MINOR — the Playwright suite cannot create accounts once registration is closed.** All four specs sign up through the `/signup` form against the same Supabase project the deployment uses. `docs/deploy.md` step 1 handles it by ordering (run the suite before closing registration), which is correct once and useless the second time. A durable fix is a second Supabase project for tests, or pre-created accounts the suite signs into instead of registering. Needed before the suite can be run again after deploy.
+- **MINOR — the Playwright suite cannot create accounts once registration is closed.** *(Superseded v3.0c: registration is open on the deployment.)* All four specs sign up through the `/signup` form against the same Supabase project the deployment uses. `docs/deploy.md` step 1 handles it by ordering (run the suite before closing registration), which is correct once and useless the second time. A durable fix is a second Supabase project for tests, or pre-created accounts the suite signs into instead of registering. Needed before the suite can be run again after deploy.
 > **ANSWERED ONCE, on 2026-09-09, and not yet routine.** The entry named three options and called the second Supabase project the durable one; that project now exists and the suite ran green on it — 33 passed, 1 skipped, 0 failed, in `docs/eval/fresh-clone-verification.md`. Not struck, because what the entry asks for is a suite that can be run, not a suite that was run: the project is named nowhere in this repository and `playwright.config.ts` starts `npm run dev`, which reads `.env.local` and nothing else, so choosing the test project is still a hand-edit of the app's own credentials. *Read these first* item 6 carries the list of what would make it standing. The entry above stays open.
 
 - **NIT — `IMPRESSUM_FILLED` is still `false`.** The page correctly says the operator's details are not published rather than rendering placeholder tokens, and `docs/deploy.md` step 20 makes filling it a condition of sharing the link. It is a one-line edit with two real values and is nobody's work but the owner's.
@@ -778,9 +836,8 @@ somebody remembering to run it.
 
 - **The e2e half is deliberately manual, and CI is why that is now a stated
   boundary rather than an omission.** The suite needs a Supabase project with
-  sign-ups open — all four specs register through the `/signup` form, and the
-  deployment's own project has registration closed as its only gate — and it
-  makes real, paid OpenRouter calls, which is precisely what makes it evidence
+  sign-ups open — all specs register through the `/signup` form; from v3.0c the
+  deployment's own project qualifies — and it makes real, paid OpenRouter calls, which is precisely what makes it evidence
   rather than a mock. On a pull request that means paying for model calls to
   prove a typo, or faking the calls and keeping none of the value. The runs stay
   in `docs/eval/`, and README's "What CI covers, and what it cannot" says so
@@ -818,3 +875,23 @@ somebody remembering to run it.
   - **Security NOTE (`</items>` escaping):** a career item containing `</items>` can close the data block early in the tool message, as it already can in P2/P3. It is the caller's own data and crosses no account. Escape `<` as `\u003c` at both sites.
   - **Security NOTE (grant constructor):** code already holding a grant could construct another through `grant.constructor`. Defence in depth only; use a module-private token argument.
   - **Security NOTE (retrievalLog.ts comment): checked and NOT changed.** `plan.ts` imports the ledger DAL lazily inside `currentPlan()`, and the first build of this branch failed because that pulled `supabase/server` into the client bundle. The comment is accurate.
+
+## v3.0c — from the go-public PR review (2026-10-13)
+
+- **MINOR gp-4 — go-public-pr review minors** (`docs/reviews/go-public-pr.md`).
+  The two factual minors (deploy.md S2 cited a constant that does not exist; the
+  README missed-webhook paragraph overstated the retry window and the Settings
+  notice) were fixed in the branch. Major 1 — registration open verified on the
+  deployment — is the hand-over's, after merge. What remains, one line each:
+  - **m2 (second half):** SPEC specifies a `/pricing` screen with `PRICING.*`
+    copy that is not built; confirm it as deferred or build it.
+  - **m4:** the 2026-09-04 deployment record in `docs/deploy.md` keeps a row 11
+    "Registration closed" under a heading that says it follows the checklist,
+    and nothing marks it as history; add one line above the table once the v3.0c
+    step-11 row exists.
+  - **n5:** `docs/eval/e2e-go-public-run.txt` carries repeated
+    `The destination stream closed early` server errors with no note on what
+    they are, and console-encoding mojibake in its first section.
+  - **n6:** the L7 test no longer checks that `/quality` shows the caller's plan
+    ceiling ("0 / 50", "0 / 20"); only the unit suite covers that now, and the
+    test's comment could say so.

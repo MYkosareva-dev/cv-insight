@@ -10,10 +10,9 @@
  * work rather than a mock-up of it doing the work.
  *
  * WHY IT SIGNS IN INSTEAD OF SIGNING UP. `scripts/coverage-probe.mjs --seed`
- * creates a throwaway account and deletes it again, which was the right shape
- * while registration was open. It is closed now (`docs/deploy.md` step 2), so a
- * script cannot create an account at all: the owner creates one by hand in the
- * Supabase dashboard and this script signs into it.
+ * creates a throwaway account and deletes it again. The demonstration account is
+ * the opposite: it is meant to persist, so the owner creates it once at /signup
+ * (registration is open from SPEC v3.0c) and this script only ever signs into it.
  *
  * CREDENTIALS COME FROM `.env.demo.local`, WHICH ONLY THIS SCRIPT OPENS.
  *
@@ -132,8 +131,8 @@ if (!EMAIL || !PASSWORD) {
   console.error(
     'demo-seed: no credentials. Expected CVI_DEMO_EMAIL and CVI_DEMO_PASSWORD in ' +
       `${CREDENTIALS_FILE} (git-ignored), or already exported in the shell. The ` +
-      'account is the demonstration one created by hand in the Supabase dashboard — ' +
-      'registration is closed, so this script cannot make one.',
+      'account is the demonstration one — create it at /signup first; this script ' +
+      'signs in and seeds, it never signs up.',
   );
   process.exit(2);
 }

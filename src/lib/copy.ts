@@ -55,8 +55,11 @@ export const PRIVACY_ERASURE = {
  * The reason is not decorative. The API key this deployment uses belongs to an
  * account the operator does not control, so its logging, retention and training
  * settings cannot be verified or promised to anyone — which is fine for invented
- * data and is not fine for a third party's real career history, since that third
- * party never agreed to any of it and is not the one clicking.
+ * data and is not fine for anyone's real career history — a third party's, who
+ * never agreed to any of it, or the member's own, which would go to a provider
+ * account nobody here can vouch for. So the instruction is invented data only,
+ * the same instruction /privacy gives (owner amendment, SPEC v3.0c; it used to
+ * permit the member's own history, and the two surfaces disagreed).
  *
  * It renders on the AUTHENTICATED SHELL, so it is present on every screen that
  * can upload, paste or generate — not on a page someone reads once and leaves.
@@ -65,7 +68,7 @@ export const PRIVACY_ERASURE = {
  */
 export const DEMO_NOTICE = {
   lead: 'Demonstration deployment.',
-  body: 'No other person’s real resume or personal details may be uploaded to it — use your own career history, or invented sample data.',
+  body: 'Do not upload a real resume or real personal details — use invented sample data.',
 } as const;
 
 /**
@@ -107,8 +110,11 @@ export const PRIVACY_UPDATED = '12 October 2026';
  * Never an invented street: a plausible fictitious address would be the one
  * sentence on this page that lies.
  *
- * THE SINGLE REMAINING TRIGGER: the day `STRIPE_SECRET_KEY` is not a `sk_test_`
- * key, the placeholder is a defect and the address goes in first.
+ * THE SINGLE REMAINING TRIGGER, as the page itself states it: before any
+ * deployment that can take a payment, the address goes in first. How that is
+ * detected: the day `STRIPE_SECRET_KEY` is not a `sk_test_` key, the placeholder
+ * is a defect. (Registration being open is not a trigger: SPEC v3.0 re-examined
+ * it, and the owner decided; counsel's review of that position is backlog.)
  */
 export const IMPRESSUM_FILLED = true;
 
@@ -203,19 +209,14 @@ export const AUTH = {
   privacyLink: 'Privacy',
   impressumLink: 'Impressum',
   /**
-   * /signup on a DEPLOYMENT (v2.25, closing gate finding `vs-1`).
-   *
-   * Password Protection turned out to be a Pro feature, so the deployment is
-   * reachable and the gate is registration being closed in the Supabase
-   * dashboard instead. That setting makes `signUpAction` fail server-side — and
-   * a form that submits into a guaranteed refusal is the app pretending to offer
-   * something it will not do. The route stays and EXPLAINS, which is the only
-   * version of this page that is honest about what the deployment is.
+   * The /signup card's privacy line (owner amendment, SPEC v3.0c). Informational
+   * on purpose, never "you accept" or "you agree": /privacy states that nothing
+   * here runs on consent (the basis is the contract, Art. 6(1)(b)), and a line
+   * asking for acceptance at the point of collection would contradict it.
    */
-  registrationClosedTitle: 'Registration is closed',
-  registrationClosedBody:
-    'CV Insight is a demonstration deployment, not a public service. Accounts are created by hand for a small number of named people, so this page has no sign-up form — an account cannot be created here.',
-  registrationClosedSignIn: 'If an account was created for you, sign in instead.',
+  signUpPrivacyBefore: 'How CV Insight handles your data is described in the ',
+  signUpPrivacyLink: 'privacy statement',
+  signUpPrivacyAfter: '.',
   invalidEmail: 'Enter a valid email address.',
   shortPassword: 'Password must be at least 8 characters.',
   /**

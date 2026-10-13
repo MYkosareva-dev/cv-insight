@@ -1,18 +1,15 @@
-# First deployment — ordered procedure
+# Deployment — ordered procedure
 
 Deployment configuration record for CV Insight. It states what must be set, in
-which dashboard, and **in what order**, for the first deployment of this
-application.
+which dashboard, and **in what order**, for a deployment of this application.
 
-The ordering is the substance of this document, not a presentation choice. The
-deployment is reachable by anyone who has the URL — Vercel Password Protection is
-a Pro feature and this project is on Hobby — so the only thing separating a
-stranger from an account is **registration being closed in Supabase**. That
-setting must therefore be in place *before* a URL exists, because there is no
-safe window in which the site is live and registration is open.
+The deployment is **public**: registration is open and email confirmation is off
+(SPEC v3.0c). What bounds spend is the Free plan, per account, enforced inside the
+two gates — not the door. Step 3 states plainly what that fence does not cover.
 
-Steps 1–3 happen before the first deploy. Steps 4–9 configure the project. Step
-10 deploys. Steps 11–21 verify.
+Steps 1–3 happen before the deploy. Steps 4–9 configure the project, and the
+Stripe steps S1–S6 below are done alongside step 8. Step 10 deploys. Steps 11–21
+verify.
 
 ---
 
@@ -20,7 +17,9 @@ Steps 1–3 happen before the first deploy. Steps 4–9 configure the project. S
 
 | Setting | Where | Value |
 |---|---|---|
-| New user sign-ups | Supabase → Authentication → Providers → Email | **disabled** |
+| New user sign-ups | Supabase → Authentication → Sign In / Providers | **enabled** |
+| Confirm email | Supabase → Authentication → Sign In / Providers → Email | **off** |
+| Stripe | Stripe dashboard, **test mode** | product, price, webhook, portal, one-subscription setting — S1–S6 |
 | Fluid compute | Vercel → Settings → Functions | **enabled** |
 | Function region | `vercel.json` in this repository | `fra1` (already committed) |
 | Node.js version | Vercel → Settings → General | **22.x** |
@@ -32,39 +31,52 @@ Steps 1–3 happen before the first deploy. Steps 4–9 configure the project. S
 
 ## Before the first deploy
 
-### 1. Run the suite while registration is still open
+### 1. Run the gates and the suite
 
 ```
 npm run check && npm test && npm run build
 npm run test:e2e
 ```
 
-**Do this first, and understand why it cannot be done later.** All four Playwright
-specs create a throwaway account through the `/signup` form, and they talk to the
-same Supabase project the deployment uses. The moment step 2 closes registration,
-the suite can no longer create accounts and every spec that needs one fails —
-not because the app broke, but because the fixture path did. Block H item 3 wants
-a green suite; this is the last moment it can be produced without extra work.
+Every Playwright spec creates a throwaway account through the `/signup` form, so
+the suite needs sign-ups open and confirm-email off on the project it talks to
+(step 2). With registration open on the deployment's own project, the suite can
+run against it at any time, not only before a deploy — and every run makes real,
+paid model calls, so it stays a deliberate, recorded run.
 
-If the suite must be run again after step 2, the options are a second Supabase
-project for testing, or pre-created test accounts with the suite reusing them
-instead of signing up. Neither is built today.
+### 2. Open registration, confirm email off
 
-### 2. Close registration in Supabase
+Supabase Dashboard → **Authentication** → **Sign In / Providers**:
 
-Supabase Dashboard → **Authentication** → **Sign In / Providers** → **Email** →
-turn **off** "Allow new users to sign up". Save.
+- **Allow new users to sign up** → **on**.
+- **Email** → **Confirm email** → **off**. This app sends no mail of its own: with
+  it on, a sign-up creates an account with no session and nothing behind the
+  login is reachable, and every Playwright spec turns into a mailbox test.
 
-**This is the gate.** Not Vercel, not the middleware, not the `/signup` page.
-Everything else is the app telling the truth about this setting; this setting is
-what makes the statement true.
+Save, then confirm both by reading the page back rather than trusting the click.
 
-### 3. Create the accounts by hand
+### 3. Record the bound on the model-provider key
 
-Supabase Dashboard → **Authentication** → **Users** → **Add user** / **Invite
-user**, one per named person. Do this now rather than after deploying, so the
-first person to open the link already has an account and nobody is tempted to
-re-open registration to fix it.
+The deployment's spend is bounded at the key when the key carries a credit
+limit, and this step records that limit. **This deployment's key carries none.**
+It belongs to another party, so the operator can neither set nor read a limit on
+it. Stated plainly, as it is in SPEC Block E (Decision v3.0c) and README:
+
+- **The Free limits are the only fence**, and they fence each **account**, not
+  the deployment: 50 chat calls, 3 scans, 1 tailored resume and 20 re-score
+  requests per rolling 24 hours (`src/lib/plan.ts`).
+- With registration open and confirm-email off, **the deployment's total is
+  unbounded under bulk sign-up** — N scripted accounts receive N allowances.
+  Backlog `gp-2`, owner-accepted.
+- **The per-account caps are not race-safe** under parallel requests from one
+  account. Backlog `gp-1`, owner-accepted.
+- When the other party's balance runs out, every model call answers
+  `AI_UNAVAILABLE`, which the app reports honestly and which costs nothing
+  further.
+
+When the deployment moves to an operator-owned OpenRouter key, set a credit limit
+on it in OpenRouter → **Keys** and record the figure and the date here, replacing
+this paragraph.
 
 ---
 
@@ -108,7 +120,7 @@ would process every resume in the United States.
 
 ### 8. Environment variables
 
-Settings → **Environment Variables**. Four names. **Never paste a value into a
+Settings → **Environment Variables**. Seven names. **Never paste a value into a
 commit, a log, an issue or a chat message.**
 
 | Name | Environments | Notes |
@@ -117,14 +129,16 @@ commit, a log, an issue or a chat message.**
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Production | Public by design; protected by RLS, not by secrecy |
 | `OPENROUTER_API_KEY` | **Production only** | Metered spend |
 | `SUPABASE_SERVICE_ROLE_KEY` | **Production only** | Bypasses RLS entirely |
+| `STRIPE_SECRET_KEY` | **Production only** | Must start `sk_test_` (S6) |
+| `STRIPE_WEBHOOK_SECRET` | **Production only** | From the dashboard endpoint (S3) — not the `stripe listen` one |
+| `STRIPE_PRICE_PRO` | **Production only** | The price id from S2 |
 
-Use the **Sensitive** setting for the two server-only keys where offered, so the
+Use the **Sensitive** setting for the server-only keys where offered, so the
 value cannot be read back out of the dashboard afterwards.
 
-**Do not set `NODE_ENV`.** Vercel sets it. Three separate behaviours depend on it
-being exactly what the platform sets: the `/api/dev/*` 404 fence, the `secure`
-flag on the session cookie, and the `/signup` registration-closed copy. Setting it
-by hand is a way to break all three at once.
+**Do not set `NODE_ENV`.** Vercel sets it. Two separate behaviours depend on it
+being exactly what the platform sets: the `/api/dev/*` 404 fence and the `secure`
+flag on the session cookie. Setting it by hand is a way to break both at once.
 
 ### 9. Disable preview deployments
 
@@ -154,19 +168,20 @@ suite; if `prebuild` fails, the deployment correctly did not happen.
 Replace `<url>` with the production hostname. A failure in steps 11, 13 or 14 is a
 stop-and-fix, not a note for later.
 
-### 11. Registration really is closed
+### 11. Registration works, and the fence still holds
 
-In a private window, open `https://<url>/signup`. It must show **"Registration is
-closed"** and **no form**. Then attempt to register a throwaway address through
-the API directly:
+In a private window, open `https://<url>/login`: it must show the "No account?
+Create one" link. Follow it, sign up with a throwaway address, and land on
+`/scan` signed in — no "Check your email" message (that would mean step 2's
+confirm-email setting did not take effect). Then, signed out:
 
 ```
 curl -i -X POST "https://<url>/api/career/items"     # expect 401, not 200
 ```
 
-The decisive check is the Supabase one: try creating an account from the
-dashboard's own sign-up flow or with a direct `signUp` call. **If an account can
-be created, take the deployment down** — step 2 did not take effect.
+Open registration does not open the API: a signed-out request is still refused
+before anything else happens. Delete the throwaway account through Settings
+afterwards.
 
 ### 12. Region
 
@@ -266,10 +281,80 @@ contact email and the **marked** postal-address placeholder. It must never show 
 
 ## Stripe in test mode
 
-The full dashboard procedure (product, price, webhook endpoint, portal, the
-one-subscription setting, the `sk_test_` check) lands with SPEC Block H item 12.
-What is recorded here already is the local forwarding command, because it has a
-trap.
+Every step below is in the Stripe dashboard with the **Test mode** toggle on. No
+card data and no Stripe script reach this app: Checkout and the Customer Portal
+are Stripe-hosted pages. Do S1–S5 before step 8, because three of the values go
+into the environment there.
+
+### S1. Product
+
+**Product catalogue** → **Add product**: name *CV Insight Pro*. The name is what
+Checkout and the portal show; nothing in the app reads it.
+
+### S2. Price
+
+On that product, add a **recurring** price of **five euros per month**. No
+constant in this repository holds the amount, and none should: the app never
+states or computes the price. Copy the price id (`price_…`) into
+`STRIPE_PRICE_PRO`. The checkout route sends only this id; the amount lives in
+Stripe.
+
+### S3. Webhook endpoint on the deployment URL
+
+**Developers** → **Webhooks** → **Add destination** (the dashboard calls an
+endpoint an *event destination*). The deployment's destination is named
+**"brilliant-breeze"**, on API version `2026-08-26.dahlia`:
+
+- URL: `https://cv-insight-lime.vercel.app/api/stripe/webhook`
+- Events — exactly these three, nothing else:
+  `checkout.session.completed`, `customer.subscription.updated`,
+  `customer.subscription.deleted`
+
+Reveal the endpoint's **signing secret** (`whsec_…`) and put it in
+`STRIPE_WEBHOOK_SECRET`. This is the deployment's secret and differs from the one
+`stripe listen` prints locally. The handler verifies the signature on the raw
+body before anything else, so a wrong secret answers every delivery 400 and
+writes nothing — S3 is checked by the 200s in the endpoint's delivery log, not by
+the setting existing.
+
+### S4. Customer Portal
+
+**Settings** → **Billing** → **Customer portal**: enable **cancel subscriptions**
+(at period end), and save the configuration in test mode. `/api/billing/portal`
+opens this page for a Pro account; with no saved configuration Stripe refuses to
+create a portal session.
+
+### S5. One subscription per customer
+
+**Settings** → **Checkout and Payment Links** → subscriptions → **Limit customers
+to one subscription** → on. The app derives one plan from the latest ledger row;
+a second concurrent subscription for the same customer would make that row
+ambiguous. If the dashboard has moved this setting, search the settings for
+"one subscription" — the setting must be on, wherever it lives.
+Turning it on is not proof that it fires: the checkout route does not pass an
+existing `customer`, so Stripe may create a new customer per session and never
+apply the limit. Backlog `m3` is that open question.
+
+### S6. The `sk_test_` check
+
+**Developers** → **API keys**, in test mode: the secret key starts `sk_test_`.
+Put it in `STRIPE_SECRET_KEY`. The check is not trust in the paste:
+`src/lib/stripe/server.ts` refuses to build a client on any key that does not
+start `sk_test_`, so after deploying, **[Upgrade to Pro]** in Settings returning
+a `checkout.stripe.com` page that shows Stripe's *Test mode* badge is the proof.
+Never compare or print the value — the prefix is all that is checked.
+
+**Then set the three values in Vercel** (step 8): Settings → Environment
+Variables → `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`,
+**Production only**, marked Sensitive. Environment variables are read at build
+time and at function start, so **redeploy** after adding or changing them — a
+value saved in the dashboard does nothing to the deployment already running.
+
+**The end-to-end record** of one real test-mode upgrade on the deployment — the
+session, the three deliveries with their 200s, the ledger rows, one redelivery
+producing no second row, Settings reading Pro — goes in
+`docs/eval/billing-webhook-evidence.md`, section "Deployment run" (SPEC Block H
+item 12).
 
 ### Local webhook forwarding
 
@@ -298,12 +383,12 @@ Not blockers, recorded so they are not rediscovered as surprises.
   notice, the `/privacy` paragraph, and gate finding `eu-2` together.
 - **Erasure is account-level.** Career items are individually deletable; job
   postings, scans and generated versions go with the account. `/privacy` says so.
-  Backlog `eu-8`.
+  Backlog `eu-8` — with registration open, its reopening condition has arrived.
 - ~~`0 owned rows` after deletion is not witnessed.~~ **Closed** — owner-run on
-  2026-09-04 and recorded in `docs/eval/erasure-evidence.md`. Note the run needed
-  registration to still be open, so it had to happen before step 2; re-running it
-  later needs a second Supabase project or registration briefly re-opened.
-- **The Playwright suite cannot create accounts once step 2 is done.** See step 1.
+  2026-09-04 and re-run for the billing ledger on 2026-10-12, both in
+  `docs/eval/erasure-evidence.md`.
+- **The deployment's total spend is unbounded, and the per-account caps are not
+  race-safe.** Step 3; backlog `gp-1` and `gp-2`, owner-accepted.
 
 ---
 
