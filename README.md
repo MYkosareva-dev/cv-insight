@@ -571,7 +571,7 @@ npm run test:e2e         # Playwright — see the caveat below
    the requirement-by-requirement coverage table and the keyword gaps.
 5. **Generate tailored resume**, on the result screen: the draft, the rubric
    judge's card beside it, and one automatic revision if the judge asked for one.
-   Then **Download .docx** — and **Quality**, for what the run actually cost.
+   Then **Download .docx** — and **AI usage**, for what the run actually cost.
 
 **The Playwright suite needs a project with registration open and confirm-email
 off.** Every spec creates a throwaway account through the `/signup` form. Since

@@ -114,6 +114,7 @@ export default async function QualityPage() {
     return (
       <section className="flex flex-col gap-3">
         <h1 className="text-2xl font-semibold">{QUALITY.title}</h1>
+        <p className="max-w-prose text-sm">{QUALITY.intro}</p>
         <p role="status" className="text-sm">
           {QUALITY.empty}
         </p>
@@ -126,6 +127,7 @@ export default async function QualityPage() {
     <section className="flex flex-col gap-8">
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">{QUALITY.title}</h1>
+        <p className="max-w-prose text-sm">{QUALITY.intro}</p>
         <p className="text-muted-foreground max-w-prose text-sm">{QUALITY.lead}</p>
       </header>
 
