@@ -370,6 +370,33 @@ command prints is the CLI's own, differs from the deployment's, and belongs in
 `.env.local` only. A run of this command is recorded in
 `docs/eval/billing-webhook-evidence.md`.
 
+### Recovering a missed event
+
+An event that fires while no endpoint is listening is never delivered, and
+nothing in this app reconciles it later (backlog `sc-3`): the ledger has no row,
+so the account reads Free while Stripe shows an active subscription. Find the
+event id in the Stripe dashboard (**Developers** → **Events**) and the endpoint
+id (`we_…`) on the destination's page, then resend it to the production
+endpoint:
+
+```
+stripe events resend <evt_id> --webhook-endpoint <we_id>
+```
+
+Check that the delivery answered 200 in the destination's log, then in the
+Supabase SQL editor:
+
+```sql
+select stripe_event_id, stripe_event_type, status, current_period_end, received_at
+from subscription_events
+where stripe_event_id = '<evt_id>';
+```
+
+Exactly one row, with the status Stripe shows, and Settings reading the plan it
+implies. Resending an event that WAS delivered is harmless — `stripe_event_id`
+is unique, so the replay is a caught violation and a 200. One recovery is
+recorded in `docs/eval/release-verification.md`, "Recovered delivery".
+
 ---
 
 ## Known open items at first deploy

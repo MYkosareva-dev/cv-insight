@@ -50,3 +50,27 @@ The full audit, including devDependencies, reports one dev-only chain (backlog `
 ## (d) Security scan
 
 `docs/eval/security-scan.md` — the `/security-scan` run on the same commit: 0 critical, 0 high, 0 medium, 2 low, 5 informational, with the owner's decision on each finding in its section 7.
+
+## /pricing on the deployment, 2026-10-13
+
+Owner run on https://cv-insight-lime.vercel.app:
+
+| Check | Result |
+|---|---|
+| Signed-out `/pricing` | both plan cards render; the Pro button reads "Sign in to upgrade" |
+| `pro-test@example.com` (Pro) on Settings | the Plan block reads "Pro plan · Renews on 12 November 2026" with [Manage subscription] |
+| [Manage subscription] | the Stripe Customer Portal opens |
+
+This closes the `/pricing` line of SPEC Block H item 12 (v3.0d item 5), which was the one part of that item left NOT WITNESSED after `feature/pricing-page`.
+
+## Recovered delivery
+
+`checkout.session.completed` `evt_1UPk6C2NKY1mL9wLALFOBJ04` (2026-10-12 14:21 UTC, customer `cus_VQbIEOa09iUaye`) was never delivered: it fired before any webhook endpoint was listening. The ledger had no row for it, so the account read as Free while Stripe showed an active subscription — the app's plan is derived only from `subscription_events`, so an event that never arrives is a plan that never changes.
+
+Recovered on 2026-10-13 by resending the event to the production endpoint:
+
+```
+stripe events resend evt_1UPk6C2NKY1mL9wLALFOBJ04 --webhook-endpoint <we_id>
+```
+
+The webhook answered 200, one ledger row with `status = active` appeared, and Settings switched to Pro. No code changed. The procedure is in `docs/deploy.md`, "Recovering a missed event"; the absence of any automatic reconciliation is backlog `sc-3`.

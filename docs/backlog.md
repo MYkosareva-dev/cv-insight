@@ -257,6 +257,11 @@ Each of these is a race that a single warm serverless instance hides.
   finding about the platform, and the next person to see it should find the answer
   rather than the search.
 - **Speed Insights**, above.
+- **`ops-1`** — the Stripe product's description still reads "Unlimited daily
+  usage", which is false: Pro raises the daily limits, it does not remove them.
+  Change it in the Stripe dashboard (test mode, **Product catalogue** → *CV
+  Insight Pro*) to "Higher daily limits and agentic retrieval". Checkout and the
+  portal show it; nothing in this repository holds it.
 
 ### Accepted at go-public (v3.0c, owner decision 2026-10-13)
 
@@ -412,6 +417,23 @@ both have to be answered before the deployment can take a payment.
   `Origin` check for every mutating `/api/*` method in one shared helper beside
   `requireApiUser`, and build Stripe `success_url` / `cancel_url` /
   `return_url` from an `APP_URL` server setting instead of `request.url`.
+
+### From the deployment billing run (2026-10-13)
+
+- **`sc-3` — an event lost while no endpoint is listening is recovered only by
+  a manual resend (OPEN, accepted by decision).** The ledger is written only by
+  delivered webhook events, so an event Stripe fired before any endpoint existed
+  never becomes a row, and the account reads Free while Stripe shows it active.
+  It happened once, and `docs/eval/release-verification.md` ("Recovered
+  delivery") records the recovery. There is no reconciliation job, by decision:
+  a scheduled job that reads Stripe and writes the ledger would be a second
+  writer of a table whose one writer is the point. The procedure is
+  `docs/deploy.md`, "Recovering a missed event".
+- **`ux-1` — `/pricing` is reachable only from the footer (OPEN, for the design
+  pass).** A signed-in user deciding whether to upgrade has no link to the page
+  that compares the plans from where the plan is shown. Add a "Compare plans"
+  link in the Settings Plan block, and a sidebar entry when the design pass
+  reworks the navigation.
 
 ### Parked product decisions, not defects
 
@@ -953,3 +975,17 @@ somebody remembering to run it.
   from the request host** (`docs/eval/security-scan.md`, F4 and F5). Not
   reachable without a custom domain; done when one is introduced. Worklist entry
   above.
+
+## From the deployment billing run (2026-10-13)
+
+- **INFO sc-3 — a webhook event fired before any endpoint was listening is never
+  delivered and never reconciled** (`docs/eval/release-verification.md`,
+  "Recovered delivery"). `evt_1UPk6C2NKY1mL9wLALFOBJ04` was resent by hand on
+  2026-10-13 and wrote its row. No reconciliation job, by decision. Worklist
+  entry above.
+- **MINOR ux-1 — `/pricing` is linked only from the footer.** A "Compare plans"
+  link in the Settings Plan block, and a sidebar entry in the design pass.
+  Worklist entry above.
+- **MINOR ops-1 — the Stripe product description says "Unlimited daily
+  usage"**, which contradicts `/pricing`. A dashboard change, not a code one.
+  Worklist entry above.
