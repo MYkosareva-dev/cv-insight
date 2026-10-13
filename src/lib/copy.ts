@@ -1225,7 +1225,7 @@ export const QUALITY = {
    * sidebar calls it "AI usage", so the first thing on the page says why.
    */
   intro:
-    'This is the AI usage and cost record for your account: AI calls today against your daily ceiling, the cost of each call and the model that served each step. It also holds the scores the quality check gave every generated resume.',
+    'This is the AI usage and cost record for your account: AI calls in the last 24 hours against your daily ceiling, the cost of each call and the model that served each step. It also holds the scores the quality check gave every generated resume.',
   lead: 'Every number here is counted from rows this app already stores: the AI-call log and the reviewer verdicts saved with each resume version. Nothing on this screen is estimated.',
   empty: 'No AI calls yet.',
   emptyHint: 'Match a job and generate a resume — this screen fills in from the rows that run writes.',
