@@ -43,8 +43,8 @@ export type AppendOutcome = 'inserted' | 'duplicate' | 'unknown_user';
  *
  * A foreign-key violation means the account this event names has been deleted
  * since (P12: the Stripe subscription outlives the account, by design). That is
- * `unknown_user`, not a failure — redelivering it for three days would not make
- * the account exist again.
+ * `unknown_user`, not a failure: the handler answers 200, because no redelivery
+ * would make the account exist again.
  */
 export async function appendFromStripeEvent(
   serviceRole: SupabaseClient,
