@@ -60,7 +60,7 @@ const uniqueEmail = () => {
 async function signUp(page: Page, email: string, settle = true) {
   await page.goto('/signup');
   await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
+  await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Create account' }).click();
   if (settle) await page.waitForURL(/\/career$/);
 }
@@ -68,7 +68,7 @@ async function signUp(page: Page, email: string, settle = true) {
 async function signIn(page: Page, email: string, pw = password, settle = true) {
   await page.goto('/login');
   await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(pw);
+  await page.getByLabel('Password', { exact: true }).fill(pw);
   await page.getByRole('button', { name: 'Sign in' }).click();
   if (settle) await page.waitForURL(/\/scan$/);
 }
@@ -243,7 +243,7 @@ test.describe('auth', () => {
       });
 
       await page.getByLabel('Email').fill(email);
-      await page.getByLabel('Password').fill(password);
+      await page.getByLabel('Password', { exact: true }).fill(password);
       await page.getByRole('button', { name: 'Create account' }).click();
 
       // OUR copy, rendered inline in the page — not a native validation bubble,
@@ -268,6 +268,39 @@ test.describe('auth', () => {
       .evaluate((el) => (el as HTMLInputElement).form?.noValidate === true);
     expect(nativelyValid).toBe(true);
   });
+
+  /**
+   * The show/hide toggle (SPEC v3.0e), on both forms: reached by Tab from the
+   * field, named by what a press will do, and display only — the value typed
+   * is the value still there after two presses, and nothing is submitted.
+   */
+  for (const path of ['/login', '/signup'] as const) {
+    test(`the password toggle on ${path} is keyboard reachable and flips the field`, async ({
+      page,
+    }) => {
+      await page.goto(path);
+      let posted = false;
+      page.on('request', (r) => {
+        if (r.method() === 'POST') posted = true;
+      });
+      const field = page.getByLabel('Password', { exact: true });
+      await field.fill('typed-secret');
+      await expect(field).toHaveAttribute('type', 'password');
+
+      await field.press('Tab');
+      const show = page.getByRole('button', { name: 'Show password' });
+      await expect(show).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(field).toHaveAttribute('type', 'text');
+
+      const hide = page.getByRole('button', { name: 'Hide password' });
+      await expect(hide).toBeFocused();
+      await page.keyboard.press('Space');
+      await expect(field).toHaveAttribute('type', 'password');
+      await expect(field).toHaveValue('typed-secret');
+      expect(posted, 'the toggle must never submit the form').toBe(false);
+    });
+  }
 
   test('a duplicate email is reported as such', async ({ page }) => {
     const email = uniqueEmail();

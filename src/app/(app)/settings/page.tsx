@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { BillingButton } from '@/components/billing-button';
@@ -223,6 +224,13 @@ function PlanBlock({ plan, pending }: { plan: PlanView; pending: boolean }) {
           )}
         </>
       )}
+      {/* Every state, Pro included: where the plan is shown is where it is compared (ux-1). */}
+      <Link
+        href="/pricing"
+        className="text-primary self-start text-sm underline-offset-4 hover:underline"
+      >
+        {SETTINGS.comparePlans}
+      </Link>
     </div>
   );
 }

@@ -176,7 +176,7 @@ const RESUME_LINES_SECOND = [
 async function signUp(page: Page, email: string) {
   await page.goto('/signup');
   await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
+  await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Create account' }).click();
   // Sign-up lands on /career, which is this phase's screen.
   await page.waitForURL(/\/career$/);
@@ -196,7 +196,7 @@ async function deleteAccountViaUi(page: Page, email: string) {
   if (!(await trigger.isVisible().catch(() => false))) {
     await page.goto('/login');
     await page.getByLabel('Email').fill(email);
-    await page.getByLabel('Password').fill(password);
+    await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: 'Sign in' }).click();
     await page.waitForURL(/\/scan$/, { timeout: 15_000 }).catch(() => {});
     await page.goto('/settings');

@@ -234,11 +234,15 @@ export const ERROR_PAGE = {
 } as const;
 
 export const NAV = {
-  scan: 'New scan',
+  /** The /scan entry. The route, API paths and identifiers keep "scan"; the label names the task (v3.0e). */
+  scan: 'Match a job',
   career: 'Career base',
   applications: 'Applications',
-  quality: 'Quality',
+  /** The /quality entry (v3.0e): the label says what the page records, and matches `QUALITY.title`. */
+  quality: 'AI usage',
   settings: 'Settings',
+  /** After Settings (v3.0e, backlog ux-1): the plans page was reachable from the footer only. */
+  pricing: 'Pricing',
 } as const;
 
 export const AUTH = {
@@ -247,6 +251,9 @@ export const AUTH = {
   signOut: 'Sign out',
   emailLabel: 'Email',
   passwordLabel: 'Password',
+  /** The eye toggle inside the password field; the name says what a press will do. */
+  showPassword: 'Show password',
+  hidePassword: 'Hide password',
   signingIn: 'Signing in…',
   creatingAccount: 'Creating account…',
   toSignUp: 'No account? Create one',
@@ -381,7 +388,7 @@ export const SCAN = {
   dropzone: PDF_DROPZONE,
 
   // --- Block E: stepper, two panels, resume-source tabs (Phase 3) ---
-  title: 'New scan',
+  title: 'Match a job',
   /** "Stepper on top: 1 Resume → 2 Vacancy → 3 Results". */
   steps: ['Resume', 'Vacancy', 'Results'] as const,
   resumeSourceLabel: 'Resume source',
@@ -892,7 +899,7 @@ export const RESULT = {
    * where the counts are without making the user go there to learn the fact.
    */
   writtenByFallbackAlways:
-    'This has happened on every generation for this scan. Quality has the per-step counts.',
+    'This has happened on every generation for this scan. AI usage has the per-step counts.',
   /**
    * PER VERSION, from 006 onward (SPEC v3.0): `resume_versions.model` records the
    * writer of each AI version, so where it is set the line can speak about THIS
@@ -1149,8 +1156,8 @@ export const RESULT = {
 
 export const APPLICATIONS = {
   title: 'Applications',
-  emptyTitle: 'No scans yet. Run your first scan.',
-  newScan: 'New scan',
+  emptyTitle: 'No applications yet. Match your first job.',
+  newScan: 'Match a job',
   loadFailed: "Couldn't load applications. Refresh the page.",
 
   // --- Block E table (Phase 3) ---
@@ -1214,10 +1221,20 @@ export const QUALITY = {
    * always rendered and the percentage is dropped below `SMALL_SAMPLE`
    * observations, where it would imply precision nobody measured.
    */
-  title: 'Quality',
+  /** Heading, browser title and sidebar item all read "AI usage" (v3.0e); the route stays /quality. */
+  title: 'AI usage',
+  /**
+   * What this page IS, said under the heading before any number (v3.0e).
+   * "Recent", never "each" or "every": the totals and the rubric read bounded
+   * windows (`QUALITY_CALL_WINDOW`, `QUALITY_VERSION_WINDOW`), and this page's
+   * own rule is that it claims nothing it did not count. Not rendered on the
+   * empty page, where none of these figures exist yet.
+   */
+  intro:
+    'This is the AI usage and cost record for your account: AI calls in the last 24 hours against your daily ceiling, what your recent calls cost and the model that served each step. It also holds the scores the quality check gave your recent generated resumes.',
   lead: 'Every number here is counted from rows this app already stores: the AI-call log and the reviewer verdicts saved with each resume version. Nothing on this screen is estimated.',
   empty: 'No AI calls yet.',
-  emptyHint: 'Run a scan and generate a resume — this screen fills in from the rows that run writes.',
+  emptyHint: 'Match a job and generate a resume — this screen fills in from the rows that run writes.',
   loadFailed: "Couldn't load metrics.",
 
   /** The window the totals are computed over, said out loud. */
@@ -1566,6 +1583,8 @@ export const SETTINGS = {
    */
   planUnavailable: 'Your plan could not be read — the app is treating you as Free until it can.',
   planUpgraded: 'You’re on Pro.',
+  /** The link to /pricing at the foot of the Plan block, in every state (v3.0e, backlog ux-1). */
+  comparePlans: 'Compare plans',
 } as const;
 
 /**

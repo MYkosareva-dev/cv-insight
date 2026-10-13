@@ -175,8 +175,14 @@ export function ScanForm({
         <Stepper active={pending ? 2 : vacancyText.length > 0 ? 1 : 0} />
       </header>
 
-      {/* Two panels at 1280, one stacked column at 375 (Block E). */}
-      <div className={`grid grid-cols-1 gap-6 md:grid-cols-2 ${pending ? 'opacity-60' : ''}`}>
+      {/*
+        Two panels from 768, one stacked column at 375 (Block E). From 1280 the
+        job posting gets the larger share: it is the long text being read and
+        pasted, while the resume source is a tab strip and a line of status.
+      */}
+      <div
+        className={`grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-[2fr_3fr] ${pending ? 'opacity-60' : ''}`}
+      >
         <Panel title={SCAN.resumeSourceLabel}>
           <Tabs value={source} onValueChange={(value) => setSource(value as Source)}>
             <TabsList>

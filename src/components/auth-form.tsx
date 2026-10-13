@@ -1,5 +1,6 @@
 'use client';
 
+import { Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -7,6 +8,7 @@ import { useFormStatus } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AUTH } from '@/lib/copy';
+import { cn } from '@/lib/utils';
 import {
   type AuthState,
   type FieldErrors,
@@ -124,21 +126,50 @@ function Field({
   id,
   label,
   error,
+  type,
+  className,
   ...props
 }: React.ComponentProps<typeof Input> & { id: string; label: string; error?: string }) {
   const errorId = `${id}-error`;
+  /**
+   * The show/hide toggle on a password field. Display only: the value, the
+   * name and the validation are untouched, so what is submitted is the same
+   * whichever way the field is showing. A real `<button type="button">`, so it
+   * is in the tab order after the field and never submits the form.
+   */
+  const revealable = type === 'password';
+  const [revealed, setRevealed] = useState(false);
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm font-medium">
         {label}
       </label>
-      <Input
-        id={id}
-        required
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-        {...props}
-      />
+      <div className="relative">
+        <Input
+          id={id}
+          required
+          type={revealable && revealed ? 'text' : type}
+          className={cn(revealable && 'pr-10', className)}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          {...props}
+        />
+        {revealable ? (
+          <button
+            type="button"
+            aria-label={revealed ? AUTH.hidePassword : AUTH.showPassword}
+            aria-controls={id}
+            onClick={() => setRevealed((value) => !value)}
+            className="text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute inset-y-0 right-0 flex w-9 items-center justify-center rounded-r-md outline-none focus-visible:ring-2"
+          >
+            {revealed ? (
+              <EyeOff className="size-4" aria-hidden />
+            ) : (
+              <Eye className="size-4" aria-hidden />
+            )}
+          </button>
+        ) : null}
+      </div>
       {error ? (
         <p id={errorId} className="text-destructive text-sm">
           {error}
