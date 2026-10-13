@@ -8,6 +8,8 @@ which found one defect, recorded below with its fix — and then the deployment
 run of 2026-10-13 through the dashboard's own webhook destination and its
 delivery log, under "Deployment run" at the end.
 
+The rest of Block H item 12 is in `docs/eval/release-verification.md`: "/pricing on the deployment, 2026-10-13" (the Pro account's [Manage subscription] and the Portal) and "Recovered delivery" (one `checkout.session.completed` that fired before any endpoint listened, resent by hand).
+
 ## How it was run
 
 - **When:** 2026-10-12, by the owner.

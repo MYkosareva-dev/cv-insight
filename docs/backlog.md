@@ -413,6 +413,23 @@ both have to be answered before the deployment can take a payment.
   `requireApiUser`, and build Stripe `success_url` / `cancel_url` /
   `return_url` from an `APP_URL` server setting instead of `request.url`.
 
+### From the deployment billing run (2026-10-13)
+
+- **`sc-3` — an event lost while no endpoint is listening is recovered only by
+  a manual resend (OPEN, accepted by decision).** The ledger is written only by
+  delivered webhook events, so an event Stripe fired before any endpoint existed
+  never becomes a row, and the account reads Free while Stripe shows it active.
+  It happened once, and `docs/eval/release-verification.md` ("Recovered
+  delivery") records the recovery. There is no reconciliation job, by decision:
+  a scheduled job that reads Stripe and writes the ledger would be a second
+  writer of a table whose one writer is the point. The procedure is
+  `docs/deploy.md`, "Recovering a missed event".
+- **`ux-1` — `/pricing` is reachable only from the footer (OPEN, for the design
+  pass).** A signed-in user deciding whether to upgrade has no link to the page
+  that compares the plans from where the plan is shown. Add a "Compare plans"
+  link in the Settings Plan block, and a sidebar entry when the design pass
+  reworks the navigation.
+
 ### Parked product decisions, not defects
 
 Four **FEATURE** entries in the Phase-2 owner-feedback section: grouping `/career`
@@ -438,6 +455,7 @@ only one place is a closure the next reader argues with.
 | `vs-1`, `vs-4`, `vs-5`, `vs-6`, `ns-2`, `eu-2`, `eu-5`, `eu-6`, `eu-7`, `eu-10` | Phase 6, SPEC v2.25 | the owner triage round — its own section below says what each one was |
 | `p3-13`, `p3-17`, `p4-19`, `p3-8`, `m-4` (budget half only) | Phases 3–4 | already marked beside their entries |
 | `eu-12` | Phase 7 | `README.md` now points at `docs/openrouter-processing.md` for the provider retention decision, which is what the finding asked for |
+| `ops-1` | dashboard change, 2026-10-13 | the Stripe product *CV Insight Pro* (test mode) reads "Higher daily limits and agentic retrieval" — a dashboard setting, so the check is the dashboard or a Checkout page, not this repository |
 | `p4-27` | Phase 7, SPEC v2.26 | `docs/eval/fresh-clone-verification.md` — `001`–`005` applied in order to a brand-new project, RLS and the policy count read back on all eight tables; and SPEC Block C now carries `004_profiles.sql` |
 
 Two things this table deliberately does not say. `p3-22` is not a closure — it
@@ -953,3 +971,19 @@ somebody remembering to run it.
   from the request host** (`docs/eval/security-scan.md`, F4 and F5). Not
   reachable without a custom domain; done when one is introduced. Worklist entry
   above.
+
+## From the deployment billing run (2026-10-13)
+
+- **INFO sc-3 — a webhook event fired before any endpoint was listening is never
+  delivered and never reconciled** (`docs/eval/release-verification.md`,
+  "Recovered delivery"). `evt_1UPk6C2NKY1mL9wLALFOBJ04` was resent by hand on
+  2026-10-13 and wrote its row. No reconciliation job, by decision. Worklist
+  entry above.
+- **MINOR ux-1 — `/pricing` is linked only from the footer.** A "Compare plans"
+  link in the Settings Plan block, and a sidebar entry in the design pass.
+  Worklist entry above.
+- **MINOR ops-1 — the Stripe product description said "Unlimited daily
+  usage"**, which contradicts `/pricing`: Pro raises the daily limits, it does
+  not remove them. A dashboard change, not a code one.
+  > **Closed 2026-10-13** — changed in the Stripe dashboard (test mode) to
+  > "Higher daily limits and agentic retrieval".
