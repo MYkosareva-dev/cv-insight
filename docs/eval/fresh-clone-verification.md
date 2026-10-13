@@ -161,8 +161,8 @@ violations cannot be classified cannot be counted alongside runs that were, whic
 is the whole lesson of `p7-1`.
 
 **Does not prove: anything about the deployment.** This is a local run against a
-new database. The deployed project still has registration closed, which is the
-only thing keeping strangers out of it, and none of the dashboard settings in
+new database. At the time of this run the deployed project still had
+registration closed (SPEC v3.0c opened it on 2026-10-13), and none of the dashboard settings in
 `docs/deploy.md` is witnessed here.
 
 ## What the run found
@@ -191,3 +191,75 @@ invisible to anyone who already had the app working.
 4. **README listed `npm run test:e2e` without `npx playwright install`.** The
    browsers are not in `node_modules`, so on a fresh clone the suite fails before
    its first assertion.
+
+## Re-run for `001`–`007` (SPEC Block H item 15) — PREPARED, NOT RUN
+
+The run above stops at `005`. Item 15 asks for the same thing with the billing
+ledger and the agentic step in: `001`–`007` in order on a brand-new project,
+RLS and policy counts on all **nine** tables, and the Stripe CLI forwarding a
+test event to the local webhook. Nothing in this section is evidence until the
+`<PASTE…>` markers are replaced by what was observed.
+
+**Checklist**
+
+1. `git clone <repo> fresh && cd fresh && npm install` — from `main` at commit
+   `<SHA>`.
+2. New Supabase project (EU-Frankfurt). `.env.local` with the seven names from
+   README; `STRIPE_WEBHOOK_SECRET` is the one `stripe listen` prints (step 7).
+3. SQL editor, in order, declining the editor's offer to enable RLS:
+   ```
+   supabase/migrations/001_init.sql
+   supabase/migrations/002_audit_retention.sql
+   supabase/migrations/003_imports.sql
+   supabase/migrations/004_profiles.sql
+   supabase/migrations/005_profile_contacts.sql
+   supabase/migrations/006_subscription_events.sql
+   supabase/migrations/007_agentic_step.sql
+   ```
+4. Read RLS back with the query under "How to re-verify it". Expected, against
+   the matrix in CLAUDE.md:
+
+   | table | matrix | expected |
+   |---|---|---|
+   | `career_items` | S/I/U/D | 4 |
+   | `documents` | S/I/D | 3 |
+   | `vacancies` | S/I/U | 3 |
+   | `applications` | S/I/U | 3 |
+   | `resume_versions` | S/I | 2 |
+   | `llm_calls` | S/I | 2 |
+   | `imports` | S/I/U | 3 |
+   | `profiles` | S/I/U | 3 |
+   | `subscription_events` | S only | **1** |
+
+   Twenty-four policies on nine tables, every row `true`.
+5. The ledger trigger: as a signed-in user, an `insert` into
+   `subscription_events` through the REST endpoint is refused (no INSERT policy).
+6. Auth settings: sign-ups on, Confirm email off. `npx playwright install`, then
+   `npm run build` and the README first-run sequence.
+7. Webhook forwarding (PowerShell — the event list quoted):
+   ```
+   stripe listen --events "checkout.session.completed,customer.subscription.updated,customer.subscription.deleted" --forward-to localhost:3000/api/stripe/webhook
+   stripe trigger checkout.session.completed
+   ```
+   Expect the forwarded event to answer `200` from the local handler. A
+   triggered fixture carries no `client_reference_id` for a real account, so
+   whether it writes a ledger row is part of what is recorded, not assumed.
+
+**Run results**
+
+```
+### 1. MIGRATIONS
+<PASTE RUN OUTPUT HERE>
+
+### 2. RLS, READ BACK AFTERWARDS
+<PASTE RUN OUTPUT HERE>
+
+### 3. LEDGER INSERT REFUSED
+<PASTE RUN OUTPUT HERE>
+
+### 4. THE PRODUCT AND THE SUITES
+<PASTE RUN OUTPUT HERE>
+
+### 5. STRIPE CLI FORWARDING
+<PASTE RUN OUTPUT HERE>
+```

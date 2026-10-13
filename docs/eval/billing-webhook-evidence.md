@@ -113,3 +113,41 @@ ones, which is how a cancellation that was undone and redone reads in a ledger.
 - **A failed renewal** (`past_due`, edge case P11/P16), or the portal opened from
   the past-due card.
 - **The agentic path.** It is not built; a Pro account runs the single-shot path.
+
+## Deployment run — TEMPLATE, not yet run
+
+The half SPEC Block H item 12 still needs. Until the placeholders below are
+replaced by what was observed, this section witnesses nothing and the status
+line at the top stays "DEPLOYMENT HALF PENDING". Set-up is `docs/deploy.md`,
+"Stripe in test mode", S1–S6.
+
+- **When / by whom:** `<DATE>`, `<OPERATOR>`
+- **Deployment:** https://cv-insight-lime.vercel.app, commit `<SHA>`
+- **Account:** a throwaway account signed up at `/signup` for this run
+
+1. **Checkout.** Settings → [Upgrade to Pro] → card `4242 4242 4242 4242`.
+   Checkout session id (`cs_test_…`): `<PASTE>`
+2. **Deliveries.** Stripe dashboard → Developers → Webhooks → the deployment
+   endpoint → delivery log. One line per event, with its HTTP status:
+   ```
+   <PASTE: checkout.session.completed — 200>
+   <PASTE: customer.subscription.updated — 200>
+   <PASTE: customer.subscription.deleted — 200, after cancelling in the portal>
+   ```
+3. **Ledger rows.** SQL editor, the run account's id only, no other columns:
+   ```sql
+   select stripe_event_id, stripe_event_type, status, current_period_end, cancel_at_period_end, received_at
+   from subscription_events where user_id = '<ACCOUNT_ID>' order by received_at;
+   ```
+   ```
+   <PASTE RUN OUTPUT HERE>
+   ```
+4. **Replay.** Delivery log → one of the delivered events → **Resend**. Its
+   status (expect 200) and the same query re-run (expect the same row count):
+   ```
+   <PASTE RUN OUTPUT HERE>
+   ```
+5. **Settings reads Pro** after step 1 (and Free after the period end or the
+   deletion in step 2): `<OBSERVED TEXT>`
+
+Delete the run account through Settings afterwards; the ledger rows go with it.
