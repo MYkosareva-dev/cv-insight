@@ -12,9 +12,13 @@ import { AUTH_COOKIE_OPTIONS, cappedMaxAge } from '@/lib/supabase/cookie-options
  * `/impressum` joins them in v2.24. Both pages exist to be readable by someone
  * with no account — an Impressum a visitor is redirected away from does not
  * identify anyone, and a privacy statement you must sign up to read is the same
- * defect. They are the only two member-less pages that render content.
+ * defect.
+ *
+ * `/pricing` joins them in v3.0: the plans have to be readable before anyone
+ * decides to sign up. It is the one public page that reads the session — for
+ * the button alone — and it does that itself, with getUser(), in the page.
  */
-const PUBLIC_PATHS = ['/login', '/signup', '/privacy', '/impressum'];
+const PUBLIC_PATHS = ['/login', '/signup', '/privacy', '/impressum', '/pricing'];
 /** Signed-in users are bounced away from these. */
 const AUTH_PATHS = ['/login', '/signup'];
 
@@ -105,6 +109,9 @@ export const config = {
   //                `impressum(?:/|$)`. It has no children either, and the day
   //                it grows one, that child should be inside the fence until
   //                someone decides otherwise.
+  //  - `pricing` — public too (v3.0), EXACT path on the same terms. The page
+  //                reads the session itself for its one button; a visitor
+  //                must reach it without a redirect to /login.
   //  - static assets.
   // Dots are written [.] so a later edit cannot silently un-escape them into
   // "any character".
@@ -114,6 +121,6 @@ export const config = {
   // /applications/x.png skipped the fence entirely. The (app) layout caught
   // those, but a second net is not the boundary.
   matcher: [
-    '/((?!api(?:/|$)|privacy$|impressum$|_next/static(?:/|$)|_next/image(?:/|$)|favicon[.]ico$|[^/]+[.](?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest)$).*)',
+    '/((?!api(?:/|$)|privacy$|impressum$|pricing$|_next/static(?:/|$)|_next/image(?:/|$)|favicon[.]ico$|[^/]+[.](?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest)$).*)',
   ],
 };

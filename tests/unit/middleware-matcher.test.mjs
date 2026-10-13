@@ -48,6 +48,8 @@ const EXPECTATIONS = [
   // v2.24: the same lookalike, one page later. `impressum` unanchored would
   // also excuse /impressumleak from the fence.
   ['/impressumleak', RUNS],
+  // v3.0: and once more for /pricing.
+  ['/pricingleak', RUNS],
 
   ['/', RUNS],
   ['/scan', RUNS],
@@ -77,6 +79,9 @@ const EXPECTATIONS = [
   // The Impressum is public for the same reason and on the same terms (v2.24).
   ['/impressum', BYPASSED],
   ['/impressum/contact', RUNS],
+  // /pricing is public on the same terms (v3.0): the page, never a subtree.
+  ['/pricing', BYPASSED],
+  ['/pricing/checkout', RUNS],
   // Real static assets.
   ['/favicon.ico', BYPASSED],
   ['/logo.png', BYPASSED],
@@ -107,6 +112,8 @@ describe('middleware matcher — the fence must cover every member route', () =>
       'privacy(?:/|$)|',
       'impressum|',
       'impressum(?:/|$)|',
+      'pricing|',
+      'pricing(?:/|$)|',
     ]) {
       assert.ok(
         !pattern.includes(bare),
