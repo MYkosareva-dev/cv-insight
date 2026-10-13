@@ -155,8 +155,10 @@ function snapshotOf(raw: unknown): Snapshot | null {
  *     written, so Stripe redelivers.
  *  4. ATTRIBUTE: `client_reference_id`, then `subscription.metadata.user_id`,
  *     then the ledger's own record of the customer. Ids that are not UUIDs are
- *     ignored rather than written — a malformed id would fail the insert and be
- *     retried for three days. No user → 200 and a warn line with the event id.
+ *     ignored rather than written — a malformed id would fail the insert, answer
+ *     500 and be redelivered to no purpose. No user → 200 and a warn line with
+ *     the event id, and no redelivery: only read, parse and insert failures
+ *     answer 500 and are redelivered (SPEC M12, "no reconciliation job").
  *  5. APPEND one row. A replay is a unique violation, caught in the DAL and
  *     answered 200 — the idempotency is the database's. A deleted account
  *     (foreign-key violation) is unattributable, not a failure → 200 and a warn.
